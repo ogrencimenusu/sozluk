@@ -1,14 +1,24 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import PracticeTestOptions from './PracticeTestOptions';
 import PracticeTestActive from './PracticeTestActive';
 import Swal from 'sweetalert2';
 
-function PracticeTestContainer({ words, onCancel, savedOptions, onSaveOptions, onUpdateStage }) {
+function PracticeTestContainer({ words, onCancel, savedOptions, onSaveOptions, onUpdateStage, onToggleStar, onDelete, initialConfig }) {
     const [testState, setTestState] = useState('options'); // 'options' | 'running' | 'results'
     const [questions, setQuestions] = useState([]);
+    const [lastConfig, setLastConfig] = useState(null);
+    const [testKey, setTestKey] = useState(0);
+
+    // If initialConfig is passed (e.g. from bulk actions), start directly
+    useEffect(() => {
+        if (initialConfig) {
+            handleStart(initialConfig);
+        }
+    }, [initialConfig]);
 
     // Generate Questions when starting
     const handleStart = (config) => {
+        setLastConfig(config);
         let pool = [...words];
 
         // 1. Filter
@@ -48,7 +58,11 @@ function PracticeTestContainer({ words, onCancel, savedOptions, onSaveOptions, o
 
         // 4. Generate Questions for selected words
         const generatedQuestions = selectedWords.map(targetWord => {
-            const isFormatDefinition = config.questionFormat === 'definition';
+            let activeFormat = config.questionFormat;
+            if (activeFormat === 'mixed') {
+                activeFormat = Math.random() > 0.5 ? 'definition' : 'term';
+            }
+            const isFormatDefinition = activeFormat === 'definition';
 
             const prompt = isFormatDefinition
                 ? (targetWord.shortMeanings || targetWord.generalDefinition || 'Anlam girilmemiş')
@@ -68,7 +82,7 @@ function PracticeTestContainer({ words, onCancel, savedOptions, onSaveOptions, o
                     prompt,
                     answer: correctAnswerText,
                     type: 'flashcard',
-                    format: config.questionFormat,
+                    format: activeFormat,
                     pronunciation: targetWord.pronunciation
                 };
             } else if (qType === 'written') {
@@ -78,7 +92,7 @@ function PracticeTestContainer({ words, onCancel, savedOptions, onSaveOptions, o
                     prompt,
                     answer: correctAnswerText,
                     type: 'written',
-                    format: config.questionFormat,
+                    format: activeFormat,
                     pronunciation: targetWord.pronunciation
                 };
             } else if (qType === 'tf') {
@@ -108,7 +122,7 @@ function PracticeTestContainer({ words, onCancel, savedOptions, onSaveOptions, o
                     prompt,
                     displayedAnswerText, // The text to show for "Is this correct?"
                     type: 'tf',
-                    format: config.questionFormat,
+                    format: activeFormat,
                     options,
                     pronunciation: targetWord.pronunciation // pass pronunciation
                 };
@@ -137,7 +151,7 @@ function PracticeTestContainer({ words, onCancel, savedOptions, onSaveOptions, o
                     wordId: targetWord.id,
                     prompt,
                     type: 'mcq',
-                    format: config.questionFormat,
+                    format: activeFormat,
                     options,
                     pronunciation: targetWord.pronunciation // pass pronunciation
                 };
@@ -146,11 +160,27 @@ function PracticeTestContainer({ words, onCancel, savedOptions, onSaveOptions, o
 
         setQuestions(generatedQuestions);
         setTestState('running');
+        setTestKey(prev => prev + 1);
     };
 
     const handleFinish = () => {
         setTestState('options');
         setQuestions([]);
+    };
+
+    const handleRetakeSame = () => {
+        setTestKey(prev => prev + 1);
+    };
+
+    const handleRetakeNew = () => {
+        if (lastConfig) {
+            handleStart(lastConfig);
+        }
+    };
+
+    const handleRetakeMissed = (missedQuestions) => {
+        setQuestions(missedQuestions);
+        setTestKey(prev => prev + 1);
     };
 
     return (
@@ -167,12 +197,18 @@ function PracticeTestContainer({ words, onCancel, savedOptions, onSaveOptions, o
             )}
             {testState === 'running' && (
                 <PracticeTestActive
+                    key={testKey}
                     questions={questions}
                     words={words}
                     onClose={() => setTestState('options')}
                     onHome={onCancel}
                     onFinish={handleFinish}
                     onUpdateStage={onUpdateStage}
+                    onToggleStar={onToggleStar}
+                    onDelete={onDelete}
+                    onRetakeSame={handleRetakeSame}
+                    onRetakeNew={handleRetakeNew}
+                    onRetakeMissed={handleRetakeMissed}
                 />
             )}
         </div>

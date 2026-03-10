@@ -1,18 +1,43 @@
-import React, { useState, useRef } from 'react';
-import { Container, Button, Row, Col, Card, Badge } from 'react-bootstrap';
+import React, { useState, useRef, useEffect } from 'react';
+import { Container, Button, Row, Col, Card, Badge, OverlayTrigger, Popover } from 'react-bootstrap';
 import WordDetailModal from './WordDetailModal';
 import LearningStageBar from '../LearningStageBar';
 import Swal from 'sweetalert2';
 
-function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpdateStage }) {
+function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpdateStage, onToggleStar, onDelete, onRetakeSame, onRetakeNew, onRetakeMissed }) {
     const [answers, setAnswers] = useState({}); // { [questionIdx]: { selected: OptionObj } }
     const [writtenInputs, setWrittenInputs] = useState({}); // { [questionIdx]: string } for 'written' type
     const [completed, setCompleted] = useState(false);
     const [flippedCards, setFlippedCards] = useState({}); // { [questionIdx]: true/false }
     const [detailWord, setDetailWord] = useState(null); // word to show in detail modal
+    const [hintsUsed, setHintsUsed] = useState({}); // { [questionIdx]: count }
+    const [hiddenOptions, setHiddenOptions] = useState({}); // { [questionIdx]: [optionIndex, ...] }
 
     // Refs for scrolling to questions
     const questionRefs = useRef([]);
+    const submitBtnRef = useRef(null);
+
+    // Prevent accidental reload/leave if test has started
+    useEffect(() => {
+        const handleBeforeUnload = (e) => {
+            let hasAnswers = false;
+            for (let idx = 0; idx < questions.length; idx++) {
+                if (answers[idx] || (questions[idx].type === 'written' && (writtenInputs[idx] || '').trim().length > 0)) {
+                    hasAnswers = true;
+                    break;
+                }
+            }
+
+            if (hasAnswers && !completed) {
+                e.preventDefault();
+                e.returnValue = '';
+                return '';
+            }
+        };
+
+        window.addEventListener('beforeunload', handleBeforeUnload);
+        return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+    }, [answers, writtenInputs, completed, questions]);
 
     const flipCard = (idx) => setFlippedCards(prev => ({ ...prev, [idx]: !prev[idx] }));
 
@@ -20,14 +45,36 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
         if (completed) return; // Prevent changing answers after completion
 
         setAnswers(prev => {
+            const currentAnswer = prev[qIdx];
+            if (currentAnswer && currentAnswer.selected.text === optionObj.text) {
+                // If clicking the same option, deselect it
+                const newAnswers = { ...prev };
+                delete newAnswers[qIdx];
+                return newAnswers;
+            }
+
             const newAnswers = { ...prev, [qIdx]: { selected: optionObj } };
 
-            // Auto-advance to next unanswered question
-            const nextUnansweredIdx = questions.findIndex((_, idx) => idx > qIdx && !newAnswers[idx]);
-            if (nextUnansweredIdx !== -1 && questionRefs.current[nextUnansweredIdx]) {
+            const hasUnanswered = questions.some((q, i) => !newAnswers[i] && !(q.type === 'written' && (writtenInputs[i] || '').trim().length > 0));
+
+            if (!hasUnanswered) {
                 setTimeout(() => {
-                    questionRefs.current[nextUnansweredIdx].scrollIntoView({ behavior: 'smooth', block: 'center' });
-                }, 300); // slight delay to show selection
+                    if (submitBtnRef.current) {
+                        submitBtnRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                }, 300);
+            } else {
+                let nextUnansweredIdx = questions.findIndex((q, i) => i > qIdx && !newAnswers[i] && !(q.type === 'written' && (writtenInputs[i] || '').trim().length > 0));
+
+                if (nextUnansweredIdx === -1) {
+                    nextUnansweredIdx = questions.findIndex((q, i) => !newAnswers[i] && !(q.type === 'written' && (writtenInputs[i] || '').trim().length > 0));
+                }
+
+                if (nextUnansweredIdx !== -1 && questionRefs.current[nextUnansweredIdx]) {
+                    setTimeout(() => {
+                        questionRefs.current[nextUnansweredIdx].scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }, 300); // slight delay to show selection
+                }
             }
 
             return newAnswers;
@@ -35,21 +82,62 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
     };
 
     const handleWrittenSubmit = (qIdx, correctAnswer) => {
-        if (completed) return;
+        if (completed || !!answers[qIdx]) return;
         const typed = (writtenInputs[qIdx] || '').trim().toLowerCase();
         const correct = correctAnswer.trim().toLowerCase();
         const isCorrect = typed === correct;
         setAnswers(prev => {
             const newAnswers = { ...prev, [qIdx]: { selected: { text: writtenInputs[qIdx] || '', isCorrect } } };
-            // Auto-advance to next unanswered
-            const nextUnansweredIdx = questions.findIndex((_, idx) => idx > qIdx && !newAnswers[idx]);
-            if (nextUnansweredIdx !== -1 && questionRefs.current[nextUnansweredIdx]) {
+
+            const hasUnanswered = questions.some((q, i) => !newAnswers[i] && !(q.type === 'written' && (writtenInputs[i] || '').trim().length > 0));
+
+            if (!hasUnanswered) {
                 setTimeout(() => {
-                    questionRefs.current[nextUnansweredIdx].scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    if (submitBtnRef.current) {
+                        submitBtnRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
                 }, 300);
+            } else {
+                let nextUnansweredIdx = questions.findIndex((q, i) => i > qIdx && !newAnswers[i] && !(q.type === 'written' && (writtenInputs[i] || '').trim().length > 0));
+
+                if (nextUnansweredIdx === -1) {
+                    nextUnansweredIdx = questions.findIndex((q, i) => !newAnswers[i] && !(q.type === 'written' && (writtenInputs[i] || '').trim().length > 0));
+                }
+
+                if (nextUnansweredIdx !== -1 && questionRefs.current[nextUnansweredIdx]) {
+                    setTimeout(() => {
+                        questionRefs.current[nextUnansweredIdx].scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }, 300);
+                }
             }
+
             return newAnswers;
         });
+    };
+
+    const handleHintClick = (idx, q) => {
+        if (completed || !!answers[idx]) return;
+
+        const currentHints = hintsUsed[idx] || 0;
+        const isMcq = q.type !== 'tf' && q.type !== 'written' && q.type !== 'flashcard' && q.options && q.options.length > 0;
+
+        if (isMcq) {
+            const incorrectOptions = q.options.filter(opt => !opt.isCorrect);
+            const hiddenForQ = hiddenOptions[idx] || [];
+
+            if (hiddenForQ.length < incorrectOptions.length - 1) {
+                const availableToHide = q.options.map((opt, i) => ({ opt, i })).filter(item => !item.opt.isCorrect && !hiddenForQ.includes(item.i));
+                if (availableToHide.length > 0) {
+                    const toHide = availableToHide[Math.floor(Math.random() * availableToHide.length)].i;
+                    setHiddenOptions(prev => ({ ...prev, [idx]: [...hiddenForQ, toHide] }));
+                    setHintsUsed(prev => ({ ...prev, [idx]: currentHints + 1 }));
+                }
+            }
+        } else {
+            if (currentHints < 3) {
+                setHintsUsed(prev => ({ ...prev, [idx]: currentHints + 1 }));
+            }
+        }
     };
 
     const handleSpeak = (text) => {
@@ -123,8 +211,21 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
         onClose();
     };
 
+    const getAnsweredCount = () => {
+        let count = 0;
+        questions.forEach((q, idx) => {
+            if (answers[idx]) {
+                count++;
+            } else if (q.type === 'written' && (writtenInputs[idx] || '').trim().length > 0) {
+                count++;
+            }
+        });
+        return count;
+    };
+
     const handleSubmit = async () => {
-        if (Object.keys(answers).length < questions.length) {
+        const answeredCount = getAnsweredCount();
+        if (answeredCount < questions.length) {
             const result = await Swal.fire({
                 title: 'Emin misiniz?',
                 text: 'Tüm soruları cevaplamadınız. Yine de testi bitirmek istiyor musunuz?',
@@ -139,13 +240,29 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                 return;
             }
         }
+
+        // Auto-grade written inputs and unanswered text
+        const finalAnswers = { ...answers };
+        questions.forEach((q, idx) => {
+            if (!finalAnswers[idx]) {
+                if (q.type === 'written') {
+                    const typed = (writtenInputs[idx] || '').trim();
+                    const correct = q.answer.trim();
+                    const isCorrect = typed.toLowerCase() === correct.toLowerCase() && typed.length > 0;
+                    finalAnswers[idx] = { selected: { text: typed || 'Boş bırakıldı', isCorrect } };
+                } else {
+                    finalAnswers[idx] = { selected: { text: 'Boş bırakıldı', isCorrect: false } };
+                }
+            }
+        });
+
+        setAnswers(finalAnswers);
         setCompleted(true);
 
         // Update learning stages for each answered question
         if (onUpdateStage) {
             const updatePromises = questions.map((q, idx) => {
-                if (answers[idx] === undefined) return Promise.resolve();
-                const isCorrect = answers[idx]?.selected?.isCorrect;
+                const isCorrect = finalAnswers[idx]?.selected?.isCorrect;
                 return onUpdateStage(q.wordId, isCorrect);
             });
             await Promise.all(updatePromises);
@@ -156,14 +273,50 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
     };
 
     const correctCount = completed ? questions.filter((q, idx) => answers[idx]?.selected?.isCorrect).length : 0;
-    const allAnswered = Object.keys(answers).length === questions.length;
+    const allAnswered = getAnsweredCount() === questions.length;
+
+    const skippedCount = completed ? questions.filter((q, idx) => answers[idx]?.selected?.text === 'Boş bırakıldı').length : 0;
+    const incorrectCount = completed ? (questions.length - correctCount - skippedCount) : 0;
+    const scorePercent = questions.length > 0 ? Math.round((correctCount / questions.length) * 100) : 0;
+    const missedQuestions = completed ? questions.filter((q, idx) => !answers[idx]?.selected?.isCorrect) : [];
+
+    // Calculate Stage Metrics based on all words in the dictionary
+    const stageMetrics = React.useMemo(() => {
+        let yeni = 0;
+        let ogreniyor = 0;
+        let ogrendi = 0;
+
+        if (completed && words?.length > 0) {
+            words.forEach(word => {
+                // Map learningStage (0-10) to statuses
+                const s = word.learningStage || 0;
+                if (s === 0) {
+                    yeni++;
+                } else if (s < 10) {
+                    ogreniyor++;
+                } else {
+                    ogrendi++;
+                }
+            });
+        }
+
+        const total = words?.length || 1; // avoid / 0
+        return {
+            yeni,
+            ogreniyor,
+            ogrendi,
+            yeniPercent: Math.round((yeni / total) * 100),
+            ogreniyorPercent: Math.round((ogreniyor / total) * 100),
+            ogrendiPercent: Math.round((ogrendi / total) * 100)
+        };
+    }, [completed, words]);
 
     return (
         <>
             <Container fluid className="py-4 h-100 bg-body">
                 <div className="d-flex justify-content-between align-items-center mb-4 px-md-4 sticky-top bg-body py-2 z-index-10 border-bottom border-secondary border-opacity-25 pb-3">
-                    <div className="d-flex align-items-center gap-3">
-
+                    <div className="d-flex align-items-center gap-2">
+                        <img src="/iconv2.png" alt="Sözlük Logo" style={{ width: '32px', height: '32px', objectFit: 'contain' }} />
                         <span className="fw-bold fs-5 text-body">Sözlük</span>
                     </div>
                     <div className="d-flex align-items-center gap-3">
@@ -186,8 +339,8 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                 <Button variant="link" className="p-0 text-body-secondary"><i className="bi bi-chevron-double-left"></i></Button>
                             </div>
                             <div className="d-flex flex-wrap gap-2 justify-content-start pb-4">
-                                {questions.map((_, idx) => {
-                                    const isAnswered = !!answers[idx];
+                                {questions.map((q, idx) => {
+                                    const isAnswered = !!answers[idx] || (q.type === 'written' && (writtenInputs[idx] || '').trim().length > 0);
 
                                     let btnClass = "btn btn-sm rounded-circle fw-bold border-secondary border-opacity-50 ";
 
@@ -221,19 +374,139 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
 
                         {/* Results / Score Summary Header */}
                         {completed && (
-                            <Card className="bg-body-tertiary border-secondary border-opacity-25 rounded-4 p-4 shadow-sm mb-5 text-center" style={{ borderTop: '4px solid #198754' }}>
-                                <div className="mb-3">
-                                    <i className="bi bi-trophy-fill text-warning" style={{ fontSize: '3rem' }}></i>
-                                </div>
-                                <h2 className="fw-bold text-body mb-2">Test Tamamlandı!</h2>
-                                <h4 className="text-body-secondary mb-4">{questions.length} sorudan {correctCount} doğru yaptın.</h4>
-                                <div className="d-flex gap-3 justify-content-center">
-                                    <Button variant="outline-secondary" className="rounded-pill px-4" onClick={onFinish}>
-                                        Yeniden Çöz
-                                    </Button>
-                                    <Button variant="info" className="rounded-pill px-4 fw-bold text-dark" style={{ backgroundColor: '#4fd1c5', border: 'none' }} onClick={onClose}>
-                                        Sözlüğe Dön
-                                    </Button>
+                            <Card className="bg-body-tertiary border-secondary border-opacity-25 rounded-4 p-4 shadow-sm mb-5 text-start" style={{ borderTop: '4px solid #198754' }}>
+                                <Row className="align-items-center">
+                                    <Col lg={5} className="d-flex flex-column gap-3">
+                                        <h5 className="fw-bold text-body mb-0">Test Başarı Oranı</h5>
+                                        <div className="d-flex align-items-center gap-4">
+                                            {/* Circular Progress */}
+                                            <div className="position-relative flex-shrink-0" style={{ width: '130px', height: '130px' }}>
+                                                <svg width="130" height="130" viewBox="0 0 130 130">
+                                                    <circle cx="65" cy="65" r="52" fill="transparent" stroke="var(--bs-secondary-bg)" strokeWidth="10" />
+                                                    <circle cx="65" cy="65" r="52" fill="transparent" stroke="#20c997" strokeWidth="10" strokeDasharray={2 * Math.PI * 52} strokeDashoffset={2 * Math.PI * 52 - (scorePercent / 100) * (2 * Math.PI * 52)} strokeLinecap="round" style={{ transform: 'rotate(-90deg)', transformOrigin: '50% 50%', transition: 'stroke-dashoffset 1s ease-in-out' }} />
+                                                </svg>
+                                                <div className="position-absolute top-50 start-50 translate-middle fw-bold display-6 text-body">
+                                                    {scorePercent}%
+                                                </div>
+                                            </div>
+
+                                            {/* Metrics list */}
+                                            <div className="d-flex flex-column gap-2 flex-grow-1">
+                                                <div className="d-flex align-items-center gap-2">
+                                                    <div className="rounded-circle bg-success bg-opacity-25 text-success d-flex align-items-center justify-content-center fw-bold" style={{ width: '28px', height: '28px', fontSize: '13px' }}>{correctCount}</div>
+                                                    <span className="fw-medium text-body-secondary">Doğru</span>
+                                                </div>
+                                                <div className="d-flex align-items-center gap-2">
+                                                    <div className="rounded-circle bg-danger bg-opacity-25 text-danger d-flex align-items-center justify-content-center fw-bold" style={{ width: '28px', height: '28px', fontSize: '13px' }}>{incorrectCount}</div>
+                                                    <span className="fw-medium text-body-secondary">Yanlış</span>
+                                                </div>
+                                                <div className="d-flex align-items-center gap-2">
+                                                    <div className="rounded-circle bg-secondary bg-opacity-25 text-secondary d-flex align-items-center justify-content-center fw-bold" style={{ width: '28px', height: '28px', fontSize: '13px' }}>{skippedCount}</div>
+                                                    <span className="fw-medium text-body-secondary">Boş bırakıldı</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </Col>
+
+                                    <Col lg={7} className="border-start-lg border-secondary border-opacity-25 ps-lg-4 mt-4 mt-lg-0">
+                                        <div className="d-flex flex-column gap-2 mt-2">
+                                            <Button variant="outline-success" className="d-flex justify-content-between align-items-center rounded-3 p-3 text-start bg-success bg-opacity-10 border-success border-opacity-50 border-2 transition-all hover-opacity-75" onClick={onRetakeSame}>
+                                                <div>
+                                                    <div className="fw-bold text-success mb-1">Aynı testi yeniden çöz</div>
+                                                    <small className="text-body-secondary">Mevcut testi birebir baştan tekrarla.</small>
+                                                </div>
+                                                <div className="bg-body rounded-circle d-flex align-items-center justify-content-center border shadow-sm flex-shrink-0" style={{ width: 36, height: 36 }}><i className="bi bi-arrow-right fw-bold text-body fs-5"></i></div>
+                                            </Button>
+
+                                            {missedQuestions.length > 0 && (
+                                                <Button variant="outline-warning" className="d-flex justify-content-between align-items-center rounded-3 p-3 text-start bg-warning bg-opacity-10 border-warning border-opacity-50 border-2 transition-all hover-opacity-75" onClick={() => onRetakeMissed(missedQuestions)}>
+                                                    <div>
+                                                        <div className="fw-bold text-warning-emphasis mb-1">Yanlış cevapları tekrarla</div>
+                                                        <small className="text-body-secondary">Sadece {missedQuestions.length} yanlış ve boş soruyu çöz.</small>
+                                                    </div>
+                                                    <div className="bg-body rounded-circle d-flex align-items-center justify-content-center border shadow-sm flex-shrink-0" style={{ width: 36, height: 36 }}><i className="bi bi-arrow-right fw-bold text-body fs-5"></i></div>
+                                                </Button>
+                                            )}
+
+                                            <Button variant="outline-primary" className="d-flex justify-content-between align-items-center rounded-3 p-3 text-start bg-body-secondary border-secondary border-opacity-25 border-2 transition-all hover-opacity-75" onClick={onRetakeNew}>
+                                                <div>
+                                                    <div className="fw-bold text-body mb-1">Yeni test çöz</div>
+                                                    <small className="text-body-secondary">Mevcut ayarlarla farklı kelimeler sorulsun.</small>
+                                                </div>
+                                                <div className="bg-body rounded-circle d-flex align-items-center justify-content-center border shadow-sm flex-shrink-0" style={{ width: 36, height: 36 }}><i className="bi bi-arrow-right fw-bold text-body fs-5"></i></div>
+                                            </Button>
+
+
+                                        </div>
+                                    </Col>
+                                </Row>
+                            </Card>
+                        )}
+
+                        {/* Studying Progress Section */}
+                        {completed && (
+                            <Card className="bg-body-tertiary border-secondary border-opacity-25 rounded-4 p-4 shadow-sm mb-5 text-start">
+                                <Row className="align-items-center mb-4">
+                                    <Col>
+                                        <h5 className="fw-bold text-body mb-0">Çalışma Durumu</h5>
+                                        <small className="text-body-secondary">Tüm kelimelerinizin genel durumu</small>
+                                    </Col>
+                                    <Col xs="auto">
+                                        <div className="bg-secondary bg-opacity-25 text-body fw-bold rounded-pill px-3 py-1">
+                                            {stageMetrics.ogrendiPercent}%
+                                        </div>
+                                    </Col>
+                                </Row>
+
+                                <div className="d-flex flex-column gap-3">
+                                    {/* Yeni */}
+                                    <div className="d-flex align-items-center gap-3">
+                                        <div className="flex-grow-1 position-relative" style={{ height: '36px' }}>
+                                            {/* Background Base */}
+                                            <div className="w-100 h-100 rounded-pill" style={{ backgroundColor: 'rgba(214, 51, 132, 0.1)' }}></div>
+                                            {/* Fill */}
+                                            <div className="h-100 rounded-pill position-absolute top-0 start-0 d-flex align-items-center ps-3 text-danger whitespace-nowrap overflow-hidden transition-all" style={{ backgroundColor: 'rgba(214, 51, 132, 0.2)', width: `${Math.max(15, stageMetrics.yeniPercent)}%`, border: '1px solid rgba(214, 51, 132, 0.4)' }}>
+                                                <i className="bi bi-circle me-2 fw-bold" style={{ color: '#d63384' }}></i>
+                                                <span className="fw-bold" style={{ color: '#d63384' }}>Yeni Kelimeler</span>
+                                            </div>
+                                        </div>
+                                        <div className="fw-bold text-body" style={{ minWidth: '40px', textAlign: 'right' }}>
+                                            {stageMetrics.yeni}
+                                        </div>
+                                    </div>
+
+                                    {/* Öğreniyor */}
+                                    <div className="d-flex align-items-center gap-3">
+                                        <div className="flex-grow-1 position-relative" style={{ height: '36px' }}>
+                                            {/* Background Base */}
+                                            <div className="w-100 h-100 rounded-pill" style={{ backgroundColor: 'rgba(111, 66, 193, 0.1)' }}></div>
+                                            {/* Fill */}
+                                            <div className="h-100 rounded-pill position-absolute top-0 start-0 d-flex align-items-center ps-3 text-purple whitespace-nowrap overflow-hidden transition-all" style={{ backgroundColor: 'rgba(111, 66, 193, 0.2)', width: `${Math.max(15, stageMetrics.ogreniyorPercent)}%`, border: '1px solid rgba(111, 66, 193, 0.4)' }}>
+                                                <i className="bi bi-circle-half me-2 fw-bold" style={{ color: '#6f42c1' }}></i>
+                                                <span className="fw-bold" style={{ color: '#6f42c1' }}>Öğreniliyor</span>
+                                            </div>
+                                        </div>
+                                        <div className="fw-bold text-body" style={{ minWidth: '40px', textAlign: 'right' }}>
+                                            {stageMetrics.ogreniyor}
+                                        </div>
+                                    </div>
+
+                                    {/* Öğrendi */}
+                                    <div className="d-flex align-items-center gap-3">
+                                        <div className="flex-grow-1 position-relative" style={{ height: '36px' }}>
+                                            {/* Background Base */}
+                                            <div className="w-100 h-100 rounded-pill" style={{ backgroundColor: 'rgba(32, 201, 151, 0.1)' }}></div>
+                                            {/* Fill */}
+                                            <div className="h-100 rounded-pill position-absolute top-0 start-0 d-flex align-items-center ps-3 text-success whitespace-nowrap overflow-hidden transition-all" style={{ backgroundColor: 'rgba(32, 201, 151, 0.2)', width: `${Math.max(15, stageMetrics.ogrendiPercent)}%`, border: '1px solid rgba(32, 201, 151, 0.4)' }}>
+                                                <i className="bi bi-check-circle me-2 fw-bold" style={{ color: '#20c997' }}></i>
+                                                <span className="fw-bold" style={{ color: '#20c997' }}>Öğrenildi</span>
+                                            </div>
+                                        </div>
+                                        <div className="fw-bold text-body" style={{ minWidth: '40px', textAlign: 'right' }}>
+                                            {stageMetrics.ogrendi}
+                                        </div>
+                                    </div>
+
                                 </div>
                             </Card>
                         )}
@@ -256,25 +529,97 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                                     const wordObj = (words || []).find(w => w.id === currentQuestion.wordId);
                                                     const stage = wordObj?.learningStage ?? 0;
                                                     return (
-                                                        <div style={{ minWidth: '110px' }}>
-                                                            <LearningStageBar stage={stage} showLabel />
+                                                        <div className="d-flex align-items-center gap-2" style={{ minWidth: '110px' }}>
+                                                            {wordObj && onToggleStar && (
+                                                                <button
+                                                                    className="btn btn-link p-0 border-0 text-decoration-none"
+                                                                    onClick={(e) => onToggleStar(e, wordObj)}
+                                                                    title={wordObj.isStarred ? "Yıldızı Kaldır" : "Yıldız Ekle"}
+                                                                >
+                                                                    <i className={`fs-5 bi ${wordObj.isStarred ? 'bi-star-fill text-warning' : 'bi-star text-secondary'}`}></i>
+                                                                </button>
+                                                            )}
+                                                            <div className="flex-grow-1">
+                                                                <LearningStageBar stage={stage} showLabel />
+                                                            </div>
                                                         </div>
                                                     );
                                                 })()}
                                                 {(() => {
                                                     const wordObj = (words || []).find(w => w.id === currentQuestion.wordId);
-                                                    return wordObj ? (
-                                                        <Button
-                                                            variant="outline-secondary"
-                                                            size="sm"
-                                                            className="rounded-pill px-3 py-1 d-flex align-items-center gap-1"
-                                                            onClick={() => setDetailWord(wordObj)}
-                                                            title="Kelime Detayı"
-                                                        >
-                                                            <i className="bi bi-book"></i>
-                                                            <span className="d-none d-sm-inline small">Detayı Aç</span>
-                                                        </Button>
-                                                    ) : null;
+
+                                                    const isMcq = currentQuestion.type !== 'tf' && currentQuestion.type !== 'written' && currentQuestion.type !== 'flashcard' && currentQuestion.options;
+                                                    const maxHints = isMcq ? Math.max(0, (currentQuestion.options?.filter(o => !o.isCorrect).length || 0) - 1) : (currentQuestion.type === 'tf' ? 0 : 3);
+                                                    const currentHints = hintsUsed[idx] || 0;
+                                                    const canHint = !completed && !answers[idx] && currentHints < maxHints;
+
+                                                    const popover = (
+                                                        <Popover id={`popover-hint-${idx}`}>
+                                                            <Popover.Header as="h3">İpucu <i className="bi bi-lightbulb text-warning"></i></Popover.Header>
+                                                            <Popover.Body>
+                                                                {currentHints === 0 ? (
+                                                                    canHint ? "İpucu almak için butona tıklayın." : "İpucu kalmadı."
+                                                                ) : isMcq ? (
+                                                                    `${currentHints} yanlış şık elendi!`
+                                                                ) : (
+                                                                    <ul className="mb-0 ps-3">
+                                                                        {currentHints >= 1 && currentQuestion.answer?.length > 0 && <li>İlk harf: <strong className="text-primary">{currentQuestion.answer[0].toUpperCase()}</strong></li>}
+                                                                        {currentHints >= 2 && currentQuestion.answer?.length > 1 && <li>Son harf: <strong className="text-primary">{currentQuestion.answer[currentQuestion.answer.length - 1].toUpperCase()}</strong></li>}
+                                                                        {currentHints >= 3 && currentQuestion.answer?.length > 0 && <li>Harf sayısı: <strong className="text-primary">{currentQuestion.answer?.length}</strong></li>}
+                                                                    </ul>
+                                                                )}
+                                                            </Popover.Body>
+                                                        </Popover>
+                                                    );
+
+                                                    return (
+                                                        <div className="d-flex gap-2">
+                                                            {maxHints > 0 && (
+                                                                <OverlayTrigger trigger={['hover', 'focus']} placement="top" overlay={popover}>
+                                                                    <span className="d-inline-block">
+                                                                        <Button
+                                                                            variant="outline-warning"
+                                                                            size="sm"
+                                                                            className="rounded-pill px-3 py-1 d-flex align-items-center gap-1 border-opacity-75"
+                                                                            onClick={() => canHint && handleHintClick(idx, currentQuestion)}
+                                                                            disabled={!canHint}
+                                                                            title="İpucu Al"
+                                                                            style={{ pointerEvents: canHint ? 'auto' : 'none' }}
+                                                                        >
+                                                                            <i className="bi bi-lightbulb-fill"></i>
+                                                                            <span className="d-none d-sm-inline small">İpucu {currentHints}/{maxHints}</span>
+                                                                        </Button>
+                                                                    </span>
+                                                                </OverlayTrigger>
+                                                            )}
+                                                            {wordObj ? (
+                                                                <>
+                                                                    <Button
+                                                                        variant="outline-secondary"
+                                                                        size="sm"
+                                                                        className="rounded-pill px-3 py-1 d-flex align-items-center gap-1"
+                                                                        onClick={() => setDetailWord(wordObj)}
+                                                                        title="Kelime Detayı"
+                                                                    >
+                                                                        <i className="bi bi-book"></i>
+                                                                        <span className="d-none d-sm-inline small">Detayı Aç</span>
+                                                                    </Button>
+                                                                    {onDelete && (
+                                                                        <Button
+                                                                            variant="outline-danger"
+                                                                            size="sm"
+                                                                            className="rounded-pill px-3 py-1 d-flex align-items-center gap-1"
+                                                                            onClick={(e) => onDelete(e, wordObj.id, wordObj.term)}
+                                                                            title="Kelimeyi Sil"
+                                                                        >
+                                                                            <i className="bi bi-trash"></i>
+                                                                            <span className="d-none d-sm-inline small">Sil</span>
+                                                                        </Button>
+                                                                    )}
+                                                                </>
+                                                            ) : null}
+                                                        </div>
+                                                    );
                                                 })()}
                                                 {completed && (
                                                     <Badge bg={answers[idx]?.selected?.isCorrect ? 'success' : 'danger'} className="rounded-pill px-2 py-1">
@@ -313,12 +658,39 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                                     {!answers[idx] ? (
                                                         <div className="d-flex gap-2">
                                                             <input
+                                                                id={`written-input-${idx}`}
                                                                 type="text"
                                                                 className="form-control bg-transparent text-body border-secondary border-opacity-50 rounded-3"
                                                                 placeholder="Cevabınızı yazın..."
                                                                 value={writtenInputs[idx] || ''}
                                                                 onChange={e => setWrittenInputs(prev => ({ ...prev, [idx]: e.target.value }))}
-                                                                onKeyDown={e => { if (e.key === 'Enter') handleWrittenSubmit(idx, currentQuestion.answer); }}
+                                                                onKeyDown={e => {
+                                                                    if (e.key === 'Enter') {
+                                                                        e.preventDefault();
+
+                                                                        let nextUnansweredIdx = questions.findIndex((q, i) => i > idx && !answers[i] && !(q.type === 'written' && (writtenInputs[i] || '').trim().length > 0));
+
+                                                                        if (nextUnansweredIdx === -1) {
+                                                                            nextUnansweredIdx = questions.findIndex((q, i) => !answers[i] && !(q.type === 'written' && (writtenInputs[i] || '').trim().length > 0));
+                                                                        }
+
+                                                                        if (nextUnansweredIdx !== -1) {
+                                                                            scrollToQuestion(nextUnansweredIdx);
+
+                                                                            if (questions[nextUnansweredIdx].type === 'written') {
+                                                                                setTimeout(() => {
+                                                                                    const nextInput = document.getElementById(`written-input-${nextUnansweredIdx}`);
+                                                                                    if (nextInput) nextInput.focus();
+                                                                                }, 100);
+                                                                            }
+                                                                        } else {
+                                                                            // All answered! Scroll to submit.
+                                                                            if (submitBtnRef.current) {
+                                                                                submitBtnRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }}
                                                                 disabled={completed}
                                                                 autoComplete="off"
                                                             />
@@ -343,7 +715,7 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                                                 } fs-5 mt-1`}></i>
                                                             <div className="flex-grow-1">
                                                                 <div className={`fw-bold ${answers[idx]?.selected?.isCorrect ? 'text-success' : 'text-danger'}`}>
-                                                                    Yazanız: "{answers[idx]?.selected?.text}"
+                                                                    Cevabınız: "{answers[idx]?.selected?.text}"
                                                                 </div>
                                                                 {/* Always show the correct answer with pronunciation + speak button */}
                                                                 <div className="d-flex align-items-center gap-2 flex-wrap mt-2">
@@ -457,6 +829,15 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                                 {(currentQuestion.options || []).map((opt, i) => {
                                                     const isSelected = answers[idx]?.selected?.text === opt.text;
                                                     const isAnswered = !!answers[idx];
+                                                    const isHidden = (hiddenOptions[idx] || []).includes(i);
+
+                                                    if (isHidden && !completed && !isSelected) {
+                                                        return (
+                                                            <Col md={6} key={i} className="d-flex" style={{ visibility: 'hidden' }}>
+                                                                <div className="border rounded-3 p-3 w-100"></div>
+                                                            </Col>
+                                                        );
+                                                    }
 
                                                     let btnStateClass = "border-secondary border-opacity-50 text-body-secondary";
                                                     let numberBadgeClass = "bg-secondary bg-opacity-25 text-body";
@@ -533,7 +914,7 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
 
                         {/* Submit Button */}
                         {!completed && (
-                            <div className="mt-5 text-center">
+                            <div className="mt-5 text-center" ref={submitBtnRef}>
                                 <Button
                                     variant={allAnswered ? "primary" : "outline-primary"}
                                     size="lg"
@@ -541,7 +922,7 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                     style={{ maxWidth: '400px' }}
                                     onClick={handleSubmit}
                                 >
-                                    <i className="bi bi-check-circle-fill me-2"></i> Kontrol Et {allAnswered ? '' : `(${Object.keys(answers).length}/${questions.length})`}
+                                    <i className="bi bi-check-circle-fill me-2"></i> Kontrol Et {allAnswered ? '' : `(${getAnsweredCount()}/${questions.length})`}
                                 </Button>
                             </div>
                         )}

@@ -5,7 +5,7 @@ import Swal from 'sweetalert2';
 function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOptions, onSaveOptions }) {
     const [questionCount, setQuestionCount] = useState(Math.min(10, maxQuestions));
     const [onlyStarred, setOnlyStarred] = useState(false);
-    const [questionFormat, setQuestionFormat] = useState('definition'); // 'definition' or 'term'
+    const [questionFormat, setQuestionFormat] = useState('mixed'); // 'definition' or 'term' or 'mixed'
     const [shuffle, setShuffle] = useState(true);
 
     // New State for Learning Status
@@ -59,6 +59,13 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
         if (learningStatus && !learningStatus[w.learningStatus || 'Yeni']) return false;
         return true;
     }).length;
+
+    const counts = {
+        yeni: (words || []).filter(w => (w.learningStatus || 'Yeni') === 'Yeni').length,
+        ogreniyor: (words || []).filter(w => w.learningStatus === 'Öğreniyor').length,
+        ogrendi: (words || []).filter(w => w.learningStatus === 'Öğrendi').length,
+        starred: (words || []).filter(w => w.isStarred).length
+    };
 
     const maxSelectableCount = Math.min(availableWordsCount, maxQuestions);
 
@@ -173,29 +180,22 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
 
                 <div className="mb-5 pb-4 border-bottom border-secondary border-opacity-25">
                     <h5 className="text-body fw-bold mb-4">Soru Formatı</h5>
-                    <div className="d-flex justify-content-between align-items-center mb-4 text-body">
-                        <span className="fs-5 d-flex align-items-center gap-2">
-                            Kelime ile Sorup Anlam İsteme <i className="bi bi-question-circle text-muted fs-6" title="Soru olarak İngilizce kelime çıkacak"></i>
-                        </span>
-                        <FormCheck
-                            type="switch"
-                            id="format-term"
-                            className="custom-switch-lg"
-                            checked={questionFormat === 'term'}
-                            onChange={() => setQuestionFormat('term')}
-                        />
-                    </div>
-                    <div className="d-flex justify-content-between align-items-center text-body">
-                        <span className="fs-5 d-flex align-items-center gap-2">
-                            Anlamı ile Sorup Kelime İsteme <i className="bi bi-question-circle text-muted fs-6" title="Soru olarak Türkçe anlam çıkacak"></i>
-                        </span>
-                        <FormCheck
-                            type="switch"
-                            id="format-definition"
-                            className="custom-switch-lg"
-                            checked={questionFormat === 'definition'}
-                            onChange={() => setQuestionFormat('definition')}
-                        />
+                    <div className="d-flex gap-2">
+                        {[
+                            { key: 'mixed', label: 'Karışık' },
+                            { key: 'term', label: 'İngilizce → Türkçe' },
+                            { key: 'definition', label: 'Türkçe → İngilizce' }
+                        ].map(({ key, label }) => (
+                            <Button
+                                key={key}
+                                type="button"
+                                variant={questionFormat === key ? 'primary' : 'outline-secondary'}
+                                className={`rounded-pill px-3 py-2 fw-medium flex-grow-1 border-opacity-50`}
+                                onClick={() => setQuestionFormat(key)}
+                            >
+                                {label}
+                            </Button>
+                        ))}
                     </div>
                 </div>
 
@@ -209,6 +209,7 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
                     <div className="d-flex justify-content-between align-items-center mb-3 ms-3 text-body">
                         <span className="fs-6 d-flex align-items-center gap-2">
                             <i className="bi bi-circle-fill text-primary small"></i> Yeni
+                            <Badge bg="secondary" className="bg-opacity-25 text-body rounded-pill ms-1">{counts.yeni}</Badge>
                         </span>
                         <FormCheck
                             type="switch"
@@ -220,6 +221,7 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
                     <div className="d-flex justify-content-between align-items-center mb-3 ms-3 text-body">
                         <span className="fs-6 d-flex align-items-center gap-2">
                             <i className="bi bi-circle-fill text-warning small"></i> Öğreniyor
+                            <Badge bg="secondary" className="bg-opacity-25 text-body rounded-pill ms-1">{counts.ogreniyor}</Badge>
                         </span>
                         <FormCheck
                             type="switch"
@@ -231,6 +233,7 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
                     <div className="d-flex justify-content-between align-items-center mb-4 ms-3 border-bottom border-secondary border-opacity-25 pb-4 text-body">
                         <span className="fs-6 d-flex align-items-center gap-2">
                             <i className="bi bi-circle-fill text-success small"></i> Öğrendi
+                            <Badge bg="secondary" className="bg-opacity-25 text-body rounded-pill ms-1">{counts.ogrendi}</Badge>
                         </span>
                         <FormCheck
                             type="switch"
@@ -243,6 +246,7 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
                     <div className="d-flex justify-content-between align-items-center mb-4 mt-2 text-body">
                         <span className="fs-5 d-flex align-items-center gap-2">
                             Sadece Yıldızlı Kelimeleri Çalış <i className="bi bi-star-fill text-warning fs-6"></i>
+                            <Badge bg="warning" className="text-dark rounded-pill ms-1">{counts.starred}</Badge>
                         </span>
                         <FormCheck
                             type="switch"

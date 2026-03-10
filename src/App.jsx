@@ -201,14 +201,29 @@ function App() {
 
   const [sortRules, setSortRules] = useState([]);
 
-  const [bulkActionType, setBulkActionType] = useState('status'); // 'status', 'star', 'date', 'delete'
+  const [bulkActionType, setBulkActionType] = useState('status'); // 'status', 'star', 'date', 'delete', 'practice'
   const [bulkStatusValue, setBulkStatusValue] = useState('Yeni');
   const [bulkStarValue, setBulkStarValue] = useState('starred');
   const [bulkDateValue, setBulkDateValue] = useState(new Date().toISOString().split('T')[0]);
 
+  // Bulk Practice State
+  const [bulkPracticeTypes, setBulkPracticeTypes] = useState({ mcq: true, written: false, tf: false, flashcard: false });
+  const [bulkPracticeFormat, setBulkPracticeFormat] = useState('mixed');
+  const [bulkPracticeShuffle, setBulkPracticeShuffle] = useState(true);
+  const [directPracticeConfig, setDirectPracticeConfig] = useState(null);
+  const [directPracticeWords, setDirectPracticeWords] = useState(null);
+
   const [theme, setTheme] = useState(() => {
     return localStorage.getItem('theme') || 'dark';
   });
+
+  const [viewMode, setViewMode] = useState(() => {
+    return localStorage.getItem('viewMode') || 'grid';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('viewMode', viewMode);
+  }, [viewMode]);
 
   const [practiceOptions, setPracticeOptions] = useState(null);
 
@@ -454,7 +469,7 @@ function App() {
   };
 
   const handleToggleStar = async (e, word) => {
-    e.stopPropagation();
+    if (e && e.stopPropagation) e.stopPropagation();
     if (isSelectionMode) {
       handleSelectWord(e, word.id);
       return;
@@ -541,6 +556,27 @@ function App() {
           Swal.fire({ icon: 'error', title: 'Hata', text: 'Toplu silme sırasında hata oluştu.', confirmButtonText: 'Tamam' });
         }
       }
+      return;
+    }
+
+    if (bulkActionType === 'practice') {
+      const config = {
+        questionCount: selectedWords.length,
+        questionTypes: bulkPracticeTypes,
+        questionFormat: bulkPracticeFormat,
+        shuffle: bulkPracticeShuffle,
+        onlyStarred: false, // Selected explicitly
+        learningStatus: null // Selected explicitly
+      };
+
+      const wordsToPractice = words.filter(w => selectedWords.includes(w.id));
+
+      setDirectPracticeConfig(config);
+      setDirectPracticeWords(wordsToPractice);
+      setCurrentView('practice-test');
+      setShowBulkEditModal(false);
+      setSelectedWords([]);
+      setIsSelectionMode(false);
       return;
     }
 
@@ -673,11 +709,18 @@ function App() {
   if (currentView === 'practice-test') {
     return (
       <PracticeTestContainer
-        words={words}
-        onCancel={() => setCurrentView('home')}
+        words={directPracticeWords || words}
+        initialConfig={directPracticeConfig}
+        onCancel={() => {
+          setCurrentView('home');
+          setDirectPracticeConfig(null);
+          setDirectPracticeWords(null);
+        }}
         savedOptions={practiceOptions}
         onSaveOptions={setPracticeOptions}
         onUpdateStage={handleUpdateStage}
+        onToggleStar={handleToggleStar}
+        onDelete={handleDelete}
       />
     );
   }
@@ -687,12 +730,8 @@ function App() {
       <Container>
         <Navbar className="glass-navbar border border-opacity-25 rounded-4 mb-4 px-2 px-md-4 py-2 py-md-3 shadow-sm d-flex flex-row align-items-center justify-content-between flex-nowrap bg-body-tertiary">
           <Navbar.Brand className="d-flex align-items-center gap-2 m-0 p-0 h1 fs-4 fw-bold">
-            <i className="bi bi-translate text-primary" style={{ fontSize: '28px' }}></i>
-            <span className="bg-gradient text-transparent bg-clip-text d-none d-md-block" style={{
-              backgroundImage: 'linear-gradient(to right, #6366f1, #a855f7, #ec4899)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent'
-            }}>İngilizce Sözlük</span>
+            <img src="/iconv2.png" alt="Sözlük Logo" style={{ width: '36px', height: '36px', objectFit: 'contain' }} />
+
           </Navbar.Brand>
 
           <InputGroup className="w-auto flex-grow-1 mx-2 mx-md-4" style={{ maxWidth: '400px' }}>
@@ -704,9 +743,19 @@ function App() {
               placeholder="Ara..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="bg-body-secondary border-0 shadow-none rounded-end-pill pe-2 pe-md-3 py-1 py-md-2"
+              className={`bg-body-secondary border-0 shadow-none ${searchQuery ? '' : 'rounded-end-pill pe-2 pe-md-3'} py-1 py-md-2`}
               style={{ fontSize: '15px' }}
             />
+            {searchQuery && (
+              <InputGroup.Text
+                className="bg-body-secondary border-0 text-secondary rounded-end-pill pe-3"
+                style={{ cursor: 'pointer' }}
+                onClick={() => setSearchQuery('')}
+                title="Aramayı Temizle"
+              >
+                <i className="bi bi-x-circle-fill text-opacity-50 text-body"></i>
+              </InputGroup.Text>
+            )}
           </InputGroup>
 
           <div className="d-flex gap-1 gap-md-2">
@@ -756,6 +805,25 @@ function App() {
           <Collapse in={showFiltersCollapse}>
             <div className="d-md-none">
               <div className="d-flex flex-column gap-2 mt-2">
+                <div className="d-flex gap-2">
+                  <ButtonGroup size="sm" className="shadow-sm rounded-pill w-100">
+                    <Button
+                      variant={viewMode === 'grid' ? 'primary' : 'outline-primary'}
+                      className={`rounded-start-pill py-2 w-50 ${viewMode === 'grid' ? '' : 'bg-body'}`}
+                      onClick={() => setViewMode('grid')}
+                    >
+                      <i className="bi bi-grid-3x3-gap-fill me-2"></i>Klasik Tasarım
+                    </Button>
+                    <Button
+                      variant={viewMode === 'detailed' ? 'primary' : 'outline-primary'}
+                      className={`rounded-end-pill py-2 w-50 ${viewMode === 'detailed' ? '' : 'bg-body'}`}
+                      onClick={() => setViewMode('detailed')}
+                    >
+                      <i className="bi bi-view-list me-2"></i>Detaylı Tasarım
+                    </Button>
+                  </ButtonGroup>
+                </div>
+
                 <Button variant="outline-primary" size="sm" className="rounded-pill px-3 py-2 shadow-sm bg-body fw-medium d-flex align-items-center justify-content-between gap-1" onClick={() => setShowFilterModal(true)}>
                   <div className="d-flex align-items-center gap-2">
                     <i className="bi bi-funnel-fill"></i>
@@ -824,6 +892,25 @@ function App() {
           {/* Desktop/Tablet View: Inline Buttons */}
           <div className="d-none d-md-flex justify-content-between align-items-center mt-2">
             <div className="d-flex gap-2">
+              <ButtonGroup size="sm" className="shadow-sm rounded-pill">
+                <Button
+                  variant={viewMode === 'grid' ? 'primary' : 'outline-primary'}
+                  className={`rounded-start-pill d-flex align-items-center px-3 ${viewMode === 'grid' ? '' : 'bg-body'}`}
+                  onClick={() => setViewMode('grid')}
+                  title="Klasik Tasarım (3 Sütun)"
+                >
+                  <i className="bi bi-grid-3x3-gap-fill"></i>
+                </Button>
+                <Button
+                  variant={viewMode === 'detailed' ? 'primary' : 'outline-primary'}
+                  className={`rounded-end-pill d-flex align-items-center px-3 ${viewMode === 'detailed' ? '' : 'bg-body'}`}
+                  onClick={() => setViewMode('detailed')}
+                  title="Detaylı Tasarım (2 Sütun)"
+                >
+                  <i className="bi bi-view-list"></i>
+                </Button>
+              </ButtonGroup>
+
               <Button variant="outline-primary" size="sm" className="rounded-pill px-3 shadow-sm bg-body fw-medium d-flex align-items-center gap-1" onClick={() => setShowFilterModal(true)}>
                 <i className="bi bi-funnel-fill"></i>
                 <span>Filtrele</span>
@@ -904,7 +991,7 @@ function App() {
               <Spinner animation="border" variant="primary" />
             </div>
           ) : filteredWords.length > 0 ? (
-            <Row xs={1} md={2} lg={3} className="g-4">
+            <Row xs={1} md={2} lg={viewMode === 'detailed' ? 2 : 3} className="g-4">
               {filteredWords.map((word) => (
                 <Col key={word.id}>
                   <Card
@@ -965,22 +1052,56 @@ function App() {
                       )}
 
                       {word.shortMeanings && (
-                        <Card.Text className="text-primary fw-medium mb-3">
+                        <Card.Text className="text-primary fw-medium mb-2">
                           {word.shortMeanings}
                         </Card.Text>
                       )}
 
-                      {word.generalDefinition && !word.shortMeanings && (
-                        <Card.Text className="text-muted">
+                      {(viewMode === 'detailed' || !word.shortMeanings) && word.generalDefinition && (
+                        <Card.Text className="text-muted mb-2 small">
+                          {viewMode === 'detailed' && <strong className="d-block text-body opacity-75">Genel Tanımı:</strong>}
                           {word.generalDefinition}
                         </Card.Text>
                       )}
 
-                      <div className="mb-3 mt-auto pt-2">
-                        <LearningStageBar stage={word.learningStage ?? 0} showLabel />
-                      </div>
+                      {viewMode === 'detailed' && word.meanings && word.meanings.length > 0 && (
+                        <div className="mb-2">
+                          <strong className="small text-body opacity-75 d-block mb-1">Anlamları ve Örnek Cümleler:</strong>
+                          {word.meanings.map((meaning, mIdx) => (
+                            <div key={mIdx} className="mb-2 ps-2 border-start border-2 border-primary border-opacity-25">
+                              <div className="small fw-medium text-body">
+                                {mIdx + 1}. {meaning.definition} {meaning.context && <span className="text-muted fst-italic">({meaning.context})</span>}
+                              </div>
+                              {meaning.examples && meaning.examples.length > 0 && (
+                                <ul className="small text-muted mb-0 ps-3 mt-1">
+                                  {meaning.examples.map((ex, exIdx) => (
+                                    <li key={exIdx} className="fst-italic text-break">"{ex}"</li>
+                                  ))}
+                                </ul>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
 
-                      <div className="border-top border-opacity-10 pt-3 d-flex justify-content-between align-items-center">
+                      {viewMode === 'detailed' && word.grammar && word.grammar.length > 0 && (
+                        <div className="mb-2">
+                          <strong className="small text-body opacity-75 d-block">Gramer Özellikleri:</strong>
+                          <ul className="small text-muted mb-0 ps-3">
+                            {word.grammar.map((g, idx) => (
+                              <li key={idx}>{g}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      {viewMode === 'grid' && (
+                        <div className="mb-3 mt-auto pt-2">
+                          <LearningStageBar stage={word.learningStage ?? 0} showLabel />
+                        </div>
+                      )}
+
+                      <div className={`border-top border-opacity-10 pt-3 d-flex justify-content-between align-items-center ${viewMode === 'detailed' ? 'mt-auto' : ''}`}>
                         <span className="text-muted d-flex align-items-center gap-2 fw-medium small" title="Eklenme Tarihi">
                           <i className="bi bi-calendar3" style={{ fontSize: '15px' }}></i>
                           {word.createdAt ? (
@@ -989,6 +1110,13 @@ function App() {
                               : new Date(word.createdAt).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })
                           ) : ''}
                         </span>
+
+                        {viewMode === 'detailed' && (
+                          <div className="flex-grow-1 px-4" style={{ maxWidth: '250px' }}>
+                            <LearningStageBar stage={word.learningStage ?? 0} showLabel />
+                          </div>
+                        )}
+
                         <div className="d-flex gap-3">
                           <Button
                             variant="link"
@@ -1373,6 +1501,7 @@ function App() {
             <div className="d-flex gap-2 mb-4 flex-wrap">
               {[
                 { key: 'status', icon: 'bi-mortarboard', label: 'Öğrenme' },
+                { key: 'practice', icon: 'bi-controller', label: 'Test Çöz' },
                 { key: 'star', icon: 'bi-star', label: 'Yıldız' },
                 { key: 'date', icon: 'bi-calendar', label: 'Tarih' },
                 { key: 'delete', icon: 'bi-trash', label: 'Sil', danger: true },
@@ -1392,6 +1521,67 @@ function App() {
                 </button>
               ))}
             </div>
+
+            {/* Practice Options */}
+            {bulkActionType === 'practice' && (
+              <div className="d-flex flex-column gap-4">
+                <div>
+                  <p className="fw-medium text-muted small text-uppercase letter-spacing-1 mb-2">Soru Tipleri</p>
+                  <div className="d-flex flex-wrap gap-2">
+                    {[
+                      { key: 'mcq', label: 'Çoktan Seçmeli' },
+                      { key: 'written', label: 'Yazılı' },
+                      { key: 'tf', label: 'Doğru/Yanlış' },
+                      { key: 'flashcard', label: 'Flashcard' }
+                    ].map(({ key, label }) => (
+                      <button
+                        key={key}
+                        type="button"
+                        className={`btn btn-sm rounded-pill px-3 py-2 fw-medium ${bulkPracticeTypes[key] ? 'btn-primary' : 'btn-outline-secondary'}`}
+                        onClick={() => setBulkPracticeTypes(prev => ({ ...prev, [key]: !prev[key] }))}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <p className="fw-medium text-muted small text-uppercase letter-spacing-1 mb-2">Soru Formatı</p>
+                  <div className="d-flex gap-2">
+                    {[
+                      { key: 'mixed', label: 'Karışık' },
+                      { key: 'term', label: 'İngilizce → Türkçe' },
+                      { key: 'definition', label: 'Türkçe → İngilizce' }
+                    ].map(({ key, label }) => (
+                      <button
+                        key={key}
+                        type="button"
+                        className={`btn btn-sm rounded-pill px-3 py-2 fw-medium flex-grow-1 ${bulkPracticeFormat === key ? 'btn-primary' : 'btn-outline-secondary'}`}
+                        onClick={() => setBulkPracticeFormat(key)}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="d-flex justify-content-between align-items-center">
+                  <label htmlFor="bulkPracticeShuffle" className="fw-medium text-body mb-0" style={{ cursor: 'pointer' }}>Kelimeleri Karıştır</label>
+                  <div className="form-check form-switch m-0">
+                    <input
+                      className="form-check-input ios-switch-input"
+                      type="checkbox"
+                      role="switch"
+                      id="bulkPracticeShuffle"
+                      checked={bulkPracticeShuffle}
+                      onChange={(e) => setBulkPracticeShuffle(e.target.checked)}
+                      style={{ width: '46px', height: '26px', cursor: 'pointer' }}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Status */}
             {bulkActionType === 'status' && (
@@ -1464,8 +1654,13 @@ function App() {
           <Modal.Footer className="flex-column align-items-stretch border-top-0 pt-2 px-4 pb-4 gap-2">
             <div className="d-flex gap-3 w-100">
               <Button variant="outline-secondary" className="flex-grow-1 rounded-pill" type="button" onClick={() => setShowBulkEditModal(false)}>İptal</Button>
-              <Button variant={bulkActionType === 'delete' ? 'danger' : 'primary'} className="flex-grow-1 rounded-pill fw-bold" type="submit">
-                {bulkActionType === 'delete' ? 'Evet, Sil' : 'Uygula'}
+              <Button
+                variant={bulkActionType === 'delete' ? 'danger' : 'primary'}
+                className="flex-grow-1 rounded-pill fw-bold"
+                type="submit"
+                disabled={bulkActionType === 'practice' && !Object.values(bulkPracticeTypes).some(Boolean)}
+              >
+                {bulkActionType === 'delete' ? 'Evet, Sil' : bulkActionType === 'practice' ? 'Testi Başlat' : 'Uygula'}
               </Button>
             </div>
           </Modal.Footer>
