@@ -155,8 +155,31 @@ function App() {
   const [editingWordId, setEditingWordId] = useState(null);
   const [learningStatus, setLearningStatus] = useState('Yeni');
 
-  const [isSelectionMode, setIsSelectionMode] = useState(false);
-  const [selectedWords, setSelectedWords] = useState([]);
+  const [isSelectionMode, setIsSelectionMode] = useState(() => {
+    try {
+      const saved = localStorage.getItem('isSelectionMode');
+      return saved ? JSON.parse(saved) : false;
+    } catch {
+      return false;
+    }
+  });
+
+  const [selectedWords, setSelectedWords] = useState(() => {
+    try {
+      const saved = localStorage.getItem('selectedWords');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem('isSelectionMode', JSON.stringify(isSelectionMode));
+  }, [isSelectionMode]);
+
+  useEffect(() => {
+    localStorage.setItem('selectedWords', JSON.stringify(selectedWords));
+  }, [selectedWords]);
 
   const [showFilterModal, setShowFilterModal] = useState(false);
   const [showSortModal, setShowSortModal] = useState(false);
@@ -198,8 +221,26 @@ function App() {
     endDate: ''
   });
 
-  const [showOnlyStarred, setShowOnlyStarred] = useState(false);
-  const [quickStatusFilter, setQuickStatusFilter] = useState(''); // '' | 'Yeni' | 'Öğreniyor' | 'Öğrendi'
+  const [showOnlyStarred, setShowOnlyStarred] = useState(() => {
+    try {
+      const saved = localStorage.getItem('showOnlyStarred');
+      return saved ? JSON.parse(saved) : false;
+    } catch {
+      return false;
+    }
+  });
+
+  const [quickStatusFilter, setQuickStatusFilter] = useState(() => {
+    return localStorage.getItem('quickStatusFilter') || '';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('showOnlyStarred', JSON.stringify(showOnlyStarred));
+  }, [showOnlyStarred]);
+
+  useEffect(() => {
+    localStorage.setItem('quickStatusFilter', quickStatusFilter);
+  }, [quickStatusFilter]);
 
   const [sortRules, setSortRules] = useState([]);
 
@@ -354,7 +395,7 @@ function App() {
     const unsubscribeStats = onSnapshot(qStats, (snapshot) => {
       const stats = {};
       snapshot.forEach(doc => {
-        stats[doc.id] = doc.data().correctCount || 0;
+        stats[doc.id] = doc.data(); // store entire document { correctCount, words }
       });
       setDailyStats(stats);
     }, (error) => {
@@ -367,28 +408,36 @@ function App() {
     };
   }, []);
 
-  const handleLogTestResults = async (correctDelta) => {
-    if (correctDelta === 0) return;
+  const handleLogTestResults = async (correctDelta, wordStats) => {
+    if (correctDelta === 0 && (!wordStats || Object.keys(wordStats).length === 0)) return;
 
     const tzOffset = (new Date()).getTimezoneOffset() * 60000;
     const localToday = new Date(Date.now() - tzOffset).toISOString().split('T')[0];
 
-    const currentCount = dailyStats[localToday] || 0;
+    const currentDoc = dailyStats[localToday] || {};
+    const currentCount = currentDoc.correctCount || 0;
+    const currentWords = currentDoc.words || {};
+
     const newCount = Math.max(0, currentCount + correctDelta);
 
+    // Merge wordStats
+    const newWords = { ...currentWords };
+    if (wordStats) {
+      for (const [wId, stats] of Object.entries(wordStats)) {
+        if (!newWords[wId]) newWords[wId] = { correct: 0, incorrect: 0, term: stats.term };
+        newWords[wId].correct += stats.correct;
+        newWords[wId].incorrect += stats.incorrect;
+      }
+    }
+
     if (isConfigMissing) {
-      const newStats = { ...dailyStats, [localToday]: newCount };
+      const newStats = { ...dailyStats, [localToday]: { correctCount: newCount, words: newWords } };
       setDailyStats(newStats);
       localStorage.setItem('dailyStats', JSON.stringify(newStats));
     } else {
       const docRef = doc(db, 'daily_stats', localToday);
       try {
-        const snap = await getDoc(docRef);
-        if (snap.exists()) {
-          await updateDoc(docRef, { correctCount: newCount });
-        } else {
-          await setDoc(docRef, { correctCount: newCount });
-        }
+        await setDoc(docRef, { correctCount: newCount, words: newWords }, { merge: true });
       } catch (e) {
         console.error('Failed to update daily stats', e);
       }
@@ -1045,7 +1094,8 @@ function App() {
                 <Col key={word.id}>
                   <Card
                     className={`h-100 interactive-card border ${isSelectionMode && selectedWords.includes(word.id) ? 'border-primary border-2 bg-primary bg-opacity-10' : 'border-opacity-25'} bg-body-tertiary shadow-sm`}
-                    onClick={(e) => isSelectionMode ? handleSelectWord(e, word.id) : setSelectedWord(word)}
+                    onClick={(e) => isSelectionMode && handleSelectWord(e, word.id)}
+                    style={{ cursor: isSelectionMode ? 'pointer' : 'default' }}
                   >
                     <Card.Body className="d-flex flex-column">
                       <div className="d-flex justify-content-between align-items-center mb-2">
@@ -1060,7 +1110,18 @@ function App() {
                               style={{ transform: 'scale(1.2)' }}
                             />
                           )}
-                          <Card.Title className="m-0 fs-4 fw-bold">{word.term}</Card.Title>
+                          <Card.Title
+                            className="m-0 fs-4 fw-bold"
+                            style={{ cursor: !isSelectionMode ? 'pointer' : 'default' }}
+                            onClick={(e) => {
+                              if (!isSelectionMode) {
+                                e.stopPropagation();
+                                setSelectedWord(word);
+                              }
+                            }}
+                          >
+                            {word.term}
+                          </Card.Title>
                           <i
                             className={`bi ${word.isStarred ? 'bi-star-fill text-warning' : 'bi-star text-muted'} fs-5`}
                             style={{ cursor: 'pointer' }}

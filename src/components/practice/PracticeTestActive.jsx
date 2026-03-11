@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Container, Button, Row, Col, Card, Badge, OverlayTrigger, Popover } from 'react-bootstrap';
 import WordDetailModal from './WordDetailModal';
 import LearningStageBar from '../LearningStageBar';
+import { levenshteinDistance } from '../../utils/stringUtils';
 import DailyGoalTracker from '../DailyGoalTracker';
 import Swal from 'sweetalert2';
 
@@ -249,10 +250,40 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                 if (q.type === 'written') {
                     const typed = (writtenInputs[idx] || '').trim();
                     const correct = q.answer.trim();
-                    const isCorrect = typed.toLowerCase() === correct.toLowerCase() && typed.length > 0;
-                    finalAnswers[idx] = { selected: { text: typed || 'Boş bırakıldı', isCorrect } };
+
+                    let isCorrect = false;
+                    let hasTypo = false;
+
+                    if (typed.length > 0) {
+                        if (typed.toLowerCase() === correct.toLowerCase()) {
+                            isCorrect = true;
+                        } else {
+                            // Check Levenshtein distance
+                            const distance = levenshteinDistance(typed.toLowerCase(), correct.toLowerCase());
+                            // Allow up to 3 typos
+                            if (distance <= 3) {
+                                isCorrect = true;
+                                hasTypo = true;
+                            }
+                        }
+                    }
+
+                    finalAnswers[idx] = { selected: { text: typed || 'Boş bırakıldı', isCorrect, hasTypo, correctText: correct } };
                 } else {
                     finalAnswers[idx] = { selected: { text: 'Boş bırakıldı', isCorrect: false } };
+                }
+            } else if (q.type === 'written' && finalAnswers[idx].selected.hasTypo === undefined) {
+                // Re-evaluate previously submitted written answers in case they were submitted individually
+                const typed = finalAnswers[idx].selected.text;
+                if (typed !== 'Boş bırakıldı') {
+                    const correct = q.answer.trim();
+                    if (typed.toLowerCase() !== correct.toLowerCase()) {
+                        const distance = levenshteinDistance(typed.toLowerCase(), correct.toLowerCase());
+                        if (distance <= 3) {
+                            finalAnswers[idx].selected.hasTypo = true;
+                            finalAnswers[idx].selected.correctText = correct;
+                        }
+                    }
                 }
             }
         });
@@ -263,13 +294,24 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
         // Update learning stages for each answered question
         let correctCountLocal = 0;
         let incorrectCountLocal = 0;
-
+        let wordStats = {};
         if (onUpdateStage) {
             const updatePromises = questions.map((q, idx) => {
                 const ans = finalAnswers[idx]?.selected;
                 const isCorrect = ans?.isCorrect;
-                if (isCorrect) correctCountLocal++;
-                else if (ans?.text !== 'Boş bırakıldı') incorrectCountLocal++;
+
+                if (ans?.text !== 'Boş bırakıldı') {
+                    if (isCorrect) correctCountLocal++;
+                    else incorrectCountLocal++;
+
+                    if (!wordStats[q.wordId]) {
+                        const wordObj = words.find(w => w.id === q.wordId);
+                        wordStats[q.wordId] = { correct: 0, incorrect: 0, term: wordObj?.term || 'Bilinmeyen' };
+                    }
+                    if (isCorrect) wordStats[q.wordId].correct++;
+                    else wordStats[q.wordId].incorrect++;
+                }
+
                 return onUpdateStage(q.wordId, isCorrect);
             });
             await Promise.all(updatePromises);
@@ -277,13 +319,22 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
             questions.forEach((q, idx) => {
                 const ans = finalAnswers[idx]?.selected;
                 const isCorrect = ans?.isCorrect;
-                if (isCorrect) correctCountLocal++;
-                else if (ans?.text !== 'Boş bırakıldı') incorrectCountLocal++;
+                if (ans?.text !== 'Boş bırakıldı') {
+                    if (isCorrect) correctCountLocal++;
+                    else incorrectCountLocal++;
+
+                    if (!wordStats[q.wordId]) {
+                        const wordObj = words.find(w => w.id === q.wordId);
+                        wordStats[q.wordId] = { correct: 0, incorrect: 0, term: wordObj?.term || 'Bilinmeyen' };
+                    }
+                    if (isCorrect) wordStats[q.wordId].correct++;
+                    else wordStats[q.wordId].incorrect++;
+                }
             });
         }
 
         if (onLogTestResults) {
-            await onLogTestResults(correctCountLocal - incorrectCountLocal);
+            await onLogTestResults(correctCountLocal - incorrectCountLocal, wordStats);
         }
 
         // Scroll to top to see results summary
@@ -725,21 +776,27 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                                         </div>
                                                     ) : (
                                                         <div className={`rounded-3 p-3 border d-flex align-items-start gap-3 ${answers[idx]?.selected?.isCorrect
-                                                            ? 'border-success bg-success bg-opacity-10'
+                                                            ? answers[idx]?.selected?.hasTypo ? 'border-warning bg-warning bg-opacity-10' : 'border-success bg-success bg-opacity-10'
                                                             : 'border-danger bg-danger bg-opacity-10'
                                                             }`}>
                                                             <i className={`bi ${answers[idx]?.selected?.isCorrect
-                                                                ? 'bi-check-circle-fill text-success'
+                                                                ? answers[idx]?.selected?.hasTypo ? 'bi-exclamation-circle-fill text-warning' : 'bi-check-circle-fill text-success'
                                                                 : 'bi-x-circle-fill text-danger'
-                                                                } fs-5 mt-1`}></i>
+                                                                } fs-6 `}></i>
                                                             <div className="flex-grow-1">
-                                                                <div className={`fw-bold ${answers[idx]?.selected?.isCorrect ? 'text-success' : 'text-danger'}`}>
+                                                                <div className={`fw-bold justify-content-between d-flex ${answers[idx]?.selected?.isCorrect ? (answers[idx]?.selected?.hasTypo ? 'text-warning' : 'text-success') : 'text-danger'}`}>
                                                                     Cevabınız: "{answers[idx]?.selected?.text}"
+                                                                    {answers[idx]?.selected?.hasTypo && (
+                                                                        <div className="text-warning small mt-1 fw-medium">
+                                                                            <i className="bi bi-info-circle me-1"></i> Ufak harf hatalarıyla doğru kabul edildi.
+                                                                        </div>
+                                                                    )}
                                                                 </div>
+
                                                                 {/* Always show the correct answer with pronunciation + speak button */}
                                                                 <div className="d-flex align-items-center gap-2 flex-wrap mt-2">
                                                                     <span className="text-body-secondary small">Doğru cevap:</span>
-                                                                    <span className="fw-bold text-success fs-6">{currentQuestion.answer}</span>
+                                                                    <span className={`fw-bold fs-6 ${answers[idx]?.selected?.isCorrect && !answers[idx]?.selected?.hasTypo ? 'text-success' : 'text-body'}`}>{currentQuestion.answer}</span>
                                                                     {currentQuestion.format === 'definition' && currentQuestion.pronunciation && (
                                                                         <>
                                                                             <span className="small font-monospace text-muted">/{currentQuestion.pronunciation}/</span>
