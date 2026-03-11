@@ -3,7 +3,7 @@ import PracticeTestOptions from './PracticeTestOptions';
 import PracticeTestActive from './PracticeTestActive';
 import Swal from 'sweetalert2';
 
-function PracticeTestContainer({ words, onCancel, savedOptions, onSaveOptions, onUpdateStage, onToggleStar, onDelete, initialConfig }) {
+function PracticeTestContainer({ words, onCancel, savedOptions, onSaveOptions, onUpdateStage, onToggleStar, onDelete, initialConfig, onLogTestResults, dailyStats }) {
     const [testState, setTestState] = useState('options'); // 'options' | 'running' | 'results'
     const [questions, setQuestions] = useState([]);
     const [lastConfig, setLastConfig] = useState(null);
@@ -209,6 +209,8 @@ function PracticeTestContainer({ words, onCancel, savedOptions, onSaveOptions, o
                     onRetakeSame={handleRetakeSame}
                     onRetakeNew={handleRetakeNew}
                     onRetakeMissed={handleRetakeMissed}
+                    onLogTestResults={onLogTestResults}
+                    dailyStats={dailyStats}
                 />
             )}
         </div>

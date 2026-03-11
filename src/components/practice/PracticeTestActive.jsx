@@ -2,9 +2,10 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Container, Button, Row, Col, Card, Badge, OverlayTrigger, Popover } from 'react-bootstrap';
 import WordDetailModal from './WordDetailModal';
 import LearningStageBar from '../LearningStageBar';
+import DailyGoalTracker from '../DailyGoalTracker';
 import Swal from 'sweetalert2';
 
-function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpdateStage, onToggleStar, onDelete, onRetakeSame, onRetakeNew, onRetakeMissed }) {
+function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpdateStage, onToggleStar, onDelete, onRetakeSame, onRetakeNew, onRetakeMissed, onLogTestResults, dailyStats }) {
     const [answers, setAnswers] = useState({}); // { [questionIdx]: { selected: OptionObj } }
     const [writtenInputs, setWrittenInputs] = useState({}); // { [questionIdx]: string } for 'written' type
     const [completed, setCompleted] = useState(false);
@@ -260,12 +261,29 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
         setCompleted(true);
 
         // Update learning stages for each answered question
+        let correctCountLocal = 0;
+        let incorrectCountLocal = 0;
+
         if (onUpdateStage) {
             const updatePromises = questions.map((q, idx) => {
-                const isCorrect = finalAnswers[idx]?.selected?.isCorrect;
+                const ans = finalAnswers[idx]?.selected;
+                const isCorrect = ans?.isCorrect;
+                if (isCorrect) correctCountLocal++;
+                else if (ans?.text !== 'Boş bırakıldı') incorrectCountLocal++;
                 return onUpdateStage(q.wordId, isCorrect);
             });
             await Promise.all(updatePromises);
+        } else {
+            questions.forEach((q, idx) => {
+                const ans = finalAnswers[idx]?.selected;
+                const isCorrect = ans?.isCorrect;
+                if (isCorrect) correctCountLocal++;
+                else if (ans?.text !== 'Boş bırakıldı') incorrectCountLocal++;
+            });
+        }
+
+        if (onLogTestResults) {
+            await onLogTestResults(correctCountLocal - incorrectCountLocal);
         }
 
         // Scroll to top to see results summary
@@ -320,6 +338,7 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                         <span className="fw-bold fs-5 text-body">Sözlük</span>
                     </div>
                     <div className="d-flex align-items-center gap-3">
+                        {dailyStats && <DailyGoalTracker dailyStats={dailyStats} />}
                         <div className="bg-body-tertiary border border-secondary border-opacity-50 rounded-pill px-3 py-1 text-body fw-bold d-flex align-items-center gap-2" title="Soru Sayısı">
                             <i className="bi bi-pencil-fill text-info"></i> {questions.length}
                         </div>

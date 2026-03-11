@@ -17,6 +17,7 @@ import { Container, Row, Col, Card, Navbar, Form, Button, InputGroup, Modal, Bad
 import PracticeTestContainer from './components/practice/PracticeTestContainer';
 import LearningStageBar from './components/LearningStageBar';
 import WordDetailModal from './components/practice/WordDetailModal';
+import DailyGoalTracker from './components/DailyGoalTracker';
 import Swal from 'sweetalert2';
 
 const isConfigMissing = db._app.options.apiKey === "YOUR_API_KEY";
@@ -141,6 +142,7 @@ const mockData = [
 function App() {
   const [currentView, setCurrentView] = useState('home');
   const [words, setWords] = useState([]);
+  const [dailyStats, setDailyStats] = useState({});
   const [searchQuery, setSearchQuery] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedWord, setSelectedWord] = useState(null);
@@ -330,11 +332,13 @@ function App() {
     if (isConfigMissing) {
       setWords(mockData);
       setLoading(false);
+      const localStats = JSON.parse(localStorage.getItem('dailyStats') || '{}');
+      setDailyStats(localStats);
       return;
     }
 
     const q = query(collection(db, 'words'), orderBy('createdAt', 'desc'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    const unsubscribeWords = onSnapshot(q, (snapshot) => {
       const wordsData = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
@@ -346,8 +350,50 @@ function App() {
       setLoading(false);
     });
 
-    return () => unsubscribe();
+    const qStats = query(collection(db, 'daily_stats'));
+    const unsubscribeStats = onSnapshot(qStats, (snapshot) => {
+      const stats = {};
+      snapshot.forEach(doc => {
+        stats[doc.id] = doc.data().correctCount || 0;
+      });
+      setDailyStats(stats);
+    }, (error) => {
+      console.error("Firestore stats error:", error);
+    });
+
+    return () => {
+      unsubscribeWords();
+      unsubscribeStats();
+    };
   }, []);
+
+  const handleLogTestResults = async (correctDelta) => {
+    if (correctDelta === 0) return;
+
+    const tzOffset = (new Date()).getTimezoneOffset() * 60000;
+    const localToday = new Date(Date.now() - tzOffset).toISOString().split('T')[0];
+
+    const currentCount = dailyStats[localToday] || 0;
+    const newCount = Math.max(0, currentCount + correctDelta);
+
+    if (isConfigMissing) {
+      const newStats = { ...dailyStats, [localToday]: newCount };
+      setDailyStats(newStats);
+      localStorage.setItem('dailyStats', JSON.stringify(newStats));
+    } else {
+      const docRef = doc(db, 'daily_stats', localToday);
+      try {
+        const snap = await getDoc(docRef);
+        if (snap.exists()) {
+          await updateDoc(docRef, { correctCount: newCount });
+        } else {
+          await setDoc(docRef, { correctCount: newCount });
+        }
+      } catch (e) {
+        console.error('Failed to update daily stats', e);
+      }
+    }
+  };
 
   const handleEdit = (e, word) => {
     e.stopPropagation();
@@ -721,6 +767,8 @@ function App() {
         onUpdateStage={handleUpdateStage}
         onToggleStar={handleToggleStar}
         onDelete={handleDelete}
+        onLogTestResults={handleLogTestResults}
+        dailyStats={dailyStats}
       />
     );
   }
@@ -759,6 +807,7 @@ function App() {
           </InputGroup>
 
           <div className="d-flex gap-1 gap-md-2">
+            <DailyGoalTracker dailyStats={dailyStats} />
             <Button variant="info" className="rounded-pill d-flex align-items-center justify-content-center gap-2 px-0 px-md-3 fw-bold shadow-sm text-dark" style={{ backgroundColor: '#4fd1c5', border: 'none', minWidth: '40px', height: '40px' }} onClick={() => setCurrentView('practice-test')}>
               <i className="bi bi-controller" style={{ fontSize: '20px' }}></i> <span className="d-none d-md-inline">Test Çöz</span>
             </Button>
@@ -1436,7 +1485,35 @@ function App() {
         <Modal.Body>
           {sortRules.map((rule, idx) => (
             <div key={idx} className="d-flex gap-2 mb-3 px-3 py-2 bg-body-secondary rounded-3 align-items-center">
-              <span className="fw-bold text-muted small">{idx + 1}.</span>
+              <div className="d-flex flex-column align-items-center justify-content-center me-1" style={{ lineHeight: '0.8' }}>
+                <i
+                  className={`bi bi-caret-up-fill ${idx > 0 ? 'text-muted' : 'text-muted opacity-25'}`}
+                  style={{ fontSize: '16px', cursor: idx > 0 ? 'pointer' : 'default' }}
+                  onClick={() => {
+                    if (idx > 0) {
+                      const newRules = [...sortRules];
+                      [newRules[idx - 1], newRules[idx]] = [newRules[idx], newRules[idx - 1]];
+                      setSortRules(newRules);
+                    }
+                  }}
+                  onMouseEnter={e => idx > 0 && e.currentTarget.classList.replace('text-muted', 'text-primary')}
+                  onMouseLeave={e => idx > 0 && e.currentTarget.classList.replace('text-primary', 'text-muted')}
+                ></i>
+                <i
+                  className={`bi bi-caret-down-fill ${idx < sortRules.length - 1 ? 'text-muted' : 'text-muted opacity-25'}`}
+                  style={{ fontSize: '16px', cursor: idx < sortRules.length - 1 ? 'pointer' : 'default' }}
+                  onClick={() => {
+                    if (idx < sortRules.length - 1) {
+                      const newRules = [...sortRules];
+                      [newRules[idx + 1], newRules[idx]] = [newRules[idx], newRules[idx + 1]];
+                      setSortRules(newRules);
+                    }
+                  }}
+                  onMouseEnter={e => idx < sortRules.length - 1 && e.currentTarget.classList.replace('text-muted', 'text-primary')}
+                  onMouseLeave={e => idx < sortRules.length - 1 && e.currentTarget.classList.replace('text-primary', 'text-muted')}
+                ></i>
+              </div>
+              <span className="fw-bold text-muted small" style={{ minWidth: '15px' }}>{idx + 1}.</span>
               <Form.Select
                 value={rule.field}
                 onChange={(e) => {
