@@ -386,7 +386,7 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                 <div className="d-flex justify-content-between align-items-center mb-4 px-md-4 sticky-top bg-body py-2 z-index-10 border-bottom border-secondary border-opacity-25 pb-3">
                     <div className="d-flex align-items-center gap-2">
                         <img src="/iconv2.png" alt="Sözlük Logo" style={{ width: '32px', height: '32px', objectFit: 'contain' }} />
-                        <span className="fw-bold fs-5 text-body">Sözlük</span>
+                        <span className="fw-bold fs-5 text-body d-none d-md-inline">Sözlük</span>
                     </div>
                     <div className="d-flex align-items-center gap-3">
                         {dailyStats && <DailyGoalTracker dailyStats={dailyStats} />}
@@ -416,8 +416,15 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
 
                                     if (completed) {
                                         // Show correct/incorrect in navigation map if completed
-                                        const isCorrect = answers[idx]?.selected?.isCorrect;
-                                        btnClass += isCorrect ? "bg-success text-white border-success" : (isAnswered ? "bg-danger text-white border-danger" : "bg-transparent text-body-secondary");
+                                        const ans = answers[idx]?.selected;
+                                        const isCorrect = ans?.isCorrect;
+                                        const hasTypo = ans?.hasTypo;
+
+                                        if (isCorrect) {
+                                            btnClass += hasTypo ? "bg-warning text-dark border-warning" : "bg-success text-white border-success";
+                                        } else {
+                                            btnClass += isAnswered ? "bg-danger text-white border-danger" : "bg-transparent text-body-secondary";
+                                        }
                                     } else {
                                         // Just show answered state
                                         btnClass += isAnswered ? "bg-info text-dark border-info" : "bg-transparent text-body-secondary";
@@ -733,7 +740,8 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                                                 className="form-control bg-transparent text-body border-secondary border-opacity-50 rounded-3"
                                                                 placeholder="Cevabınızı yazın..."
                                                                 value={writtenInputs[idx] || ''}
-                                                                onChange={e => setWrittenInputs(prev => ({ ...prev, [idx]: e.target.value }))}
+                                                                autoCapitalize="none"
+                                                                onChange={e => setWrittenInputs(prev => ({ ...prev, [idx]: e.target.value.toLowerCase() }))}
                                                                 onKeyDown={e => {
                                                                     if (e.key === 'Enter') {
                                                                         e.preventDefault();

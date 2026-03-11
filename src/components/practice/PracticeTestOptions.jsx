@@ -92,26 +92,26 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
     };
 
     return (
-        <Container className="py-4 px-md-5 bg-body text-body">
-            <div className="d-flex justify-content-between align-items-center border-bottom border-secondary border-opacity-25 pb-3 mb-4">
+        <Container className="py-2 px-md-5 bg-body text-body">
+            <div className="d-flex justify-content-between align-items-center border-bottom border-secondary border-opacity-25 pb-2 mb-3 sticky-top bg-body py-2" style={{ zIndex: 10 }}>
                 <div className="d-flex align-items-center gap-3">
                     <Button variant="link" className="p-0 text-muted" onClick={onCancel}>
                         <i className="bi bi-arrow-left fs-4"></i>
                     </Button>
                     <h2 className="fw-bold m-0 text-body">Test Seçenekleri</h2>
                 </div>
-                <Button variant="info" className="rounded-pill px-4 fw-bold" onClick={handleStart} style={{ backgroundColor: '#4fd1c5', color: '#1a202c', border: 'none' }}>
+                <Button variant="info" className="rounded-pill px-4 fw-bold" onClick={handleStart} style={{ backgroundColor: '#4fd1c5', color: '#1a202c', border: 'none', fontSize: '14px' }}>
                     Teste Başla
                 </Button>
             </div>
 
             <div className="text-body-secondary mx-auto" style={{ maxWidth: '800px' }}>
-                <div className="mb-5 pb-4 border-bottom border-secondary border-opacity-25">
-                    <h5 className="text-body fw-bold mb-4">Test Uzunluğu</h5>
+                <div className="mb-4 pb-3 border-bottom border-secondary border-opacity-25">
+                    <h5 className="text-body fw-bold mb-3">Test Uzunluğu</h5>
                     <div className="d-flex justify-content-between align-items-center">
                         <div>
-                            <span className="fs-5 text-body">Soru Sayısı</span>
-                            <div className="text-muted small mt-1">
+                            <span className="text-body">Soru Sayısı</span>
+                            <div className="text-muted mt-1" style={{ fontSize: '14px' }}>
                                 Seçili ayarlarla {availableWordsCount} kelime bulunuyor.
                                 {availableWordsCount > 0 && availableWordsCount < questionCount && (
                                     <span className="text-warning ms-1">Maksimum {availableWordsCount} soru çıkacak.</span>
@@ -125,15 +125,15 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
                             max={maxQuestions}
                             min={1}
                             className="bg-transparent text-body text-center border-secondary border-opacity-50 rounded-pill"
-                            style={{ width: '80px' }}
+                            style={{ width: '80px', fontSize: '14px' }}
                         />
                     </div>
                 </div>
 
-                <div className="mb-5 pb-4 border-bottom border-secondary border-opacity-25">
-                    <h5 className="text-body fw-bold mb-4">Soru Tipleri</h5>
-                    <div className="d-flex justify-content-between align-items-center mb-4 text-body">
-                        <span className="fs-5">Çoktan Seçmeli (4 Şık)</span>
+                <div className="mb-4 pb-3 border-bottom border-secondary border-opacity-25">
+                    <h5 className="text-body fw-bold mb-3">Soru Tipleri</h5>
+                    <div className="d-flex justify-content-between align-items-center mb-3 text-body">
+                        <span>Çoktan Seçmeli (4 Şık)</span>
                         <FormCheck
                             type="switch"
                             id="type-mcq"
@@ -142,8 +142,8 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
                             onChange={(e) => setQuestionTypes(prev => ({ ...prev, mcq: e.target.checked }))}
                         />
                     </div>
-                    <div className="d-flex justify-content-between align-items-center mb-4 text-body">
-                        <span className="fs-5">Doğru / Yanlış</span>
+                    <div className="d-flex justify-content-between align-items-center mb-3 text-body">
+                        <span>Doğru / Yanlış</span>
                         <FormCheck
                             type="switch"
                             id="type-tf"
@@ -152,8 +152,8 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
                             onChange={(e) => setQuestionTypes(prev => ({ ...prev, tf: e.target.checked }))}
                         />
                     </div>
-                    <div className="d-flex justify-content-between align-items-center mb-4 text-body">
-                        <span className="fs-5 d-flex align-items-center gap-2">
+                    <div className="d-flex justify-content-between align-items-center mb-3 text-body">
+                        <span className="d-flex align-items-center gap-2">
                             Flash Kart
                         </span>
                         <FormCheck
@@ -165,7 +165,7 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
                         />
                     </div>
                     <div className="d-flex justify-content-between align-items-center text-body">
-                        <span className="fs-5 d-flex align-items-center gap-2">
+                        <span className="d-flex align-items-center gap-2">
                             Yazarak Cevapla
                         </span>
                         <FormCheck
@@ -178,8 +178,8 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
                     </div>
                 </div>
 
-                <div className="mb-5 pb-4 border-bottom border-secondary border-opacity-25">
-                    <h5 className="text-body fw-bold mb-4">Soru Formatı</h5>
+                <div className="mb-4 pb-3 border-bottom border-secondary border-opacity-25">
+                    <h5 className="text-body fw-bold mb-3">Soru Formatı</h5>
                     <div className="d-flex gap-2">
                         {[
                             { key: 'mixed', label: 'Karışık' },
@@ -192,6 +192,7 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
                                 variant={questionFormat === key ? 'primary' : 'outline-secondary'}
                                 className={`rounded-pill px-3 py-2 fw-medium flex-grow-1 border-opacity-50`}
                                 onClick={() => setQuestionFormat(key)}
+                                style={{ fontSize: '14px' }}
                             >
                                 {label}
                             </Button>
@@ -199,17 +200,14 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
                     </div>
                 </div>
 
-                <div className="mb-4">
-                    <h5 className="text-body fw-bold mb-4">Öğrenme Seçenekleri</h5>
-
-                    <div className="mb-4 d-flex justify-content-between align-items-center">
-                        <span className="fs-5 fw-bold text-body-secondary">Öğrenme Durumları</span>
+                <div className="mb-3">
+                    <div className="mb-2 d-flex justify-content-between align-items-center">
+                        <span className="fw-bold text-body-secondary">Öğrenme Durumları</span>
                     </div>
-
-                    <div className="d-flex justify-content-between align-items-center mb-3 ms-3 text-body">
-                        <span className="fs-6 d-flex align-items-center gap-2">
-                            <i className="bi bi-circle-fill text-primary small"></i> Yeni
-                            <Badge bg="secondary" className="bg-opacity-25 text-body rounded-pill ms-1">{counts.yeni}</Badge>
+                    <div className="d-flex justify-content-between align-items-center mb-2 ms-3 text-body">
+                        <span className="d-flex align-items-center gap-2">
+                            <i className="bi bi-circle-fill text-primary small" style={{ fontSize: '10px' }}></i> Yeni
+                            <Badge bg="secondary" className="bg-opacity-25 text-body rounded-pill ms-1" style={{ fontSize: '12px' }}>{counts.yeni}</Badge>
                         </span>
                         <FormCheck
                             type="switch"
@@ -218,10 +216,10 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
                             onChange={(e) => setLearningStatus(prev => ({ ...prev, "Yeni": e.target.checked }))}
                         />
                     </div>
-                    <div className="d-flex justify-content-between align-items-center mb-3 ms-3 text-body">
-                        <span className="fs-6 d-flex align-items-center gap-2">
-                            <i className="bi bi-circle-fill text-warning small"></i> Öğreniyor
-                            <Badge bg="secondary" className="bg-opacity-25 text-body rounded-pill ms-1">{counts.ogreniyor}</Badge>
+                    <div className="d-flex justify-content-between align-items-center mb-2 ms-3 text-body">
+                        <span className="d-flex align-items-center gap-2">
+                            <i className="bi bi-circle-fill text-warning small" style={{ fontSize: '10px' }}></i> Öğreniyor
+                            <Badge bg="secondary" className="bg-opacity-25 text-body rounded-pill ms-1" style={{ fontSize: '12px' }}>{counts.ogreniyor}</Badge>
                         </span>
                         <FormCheck
                             type="switch"
@@ -230,10 +228,10 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
                             onChange={(e) => setLearningStatus(prev => ({ ...prev, "Öğreniyor": e.target.checked }))}
                         />
                     </div>
-                    <div className="d-flex justify-content-between align-items-center mb-4 ms-3 border-bottom border-secondary border-opacity-25 pb-4 text-body">
-                        <span className="fs-6 d-flex align-items-center gap-2">
-                            <i className="bi bi-circle-fill text-success small"></i> Öğrendi
-                            <Badge bg="secondary" className="bg-opacity-25 text-body rounded-pill ms-1">{counts.ogrendi}</Badge>
+                    <div className="d-flex justify-content-between align-items-center mb-3 ms-3 border-bottom border-secondary border-opacity-25 pb-3 text-body">
+                        <span className="d-flex align-items-center gap-2">
+                            <i className="bi bi-circle-fill text-success small" style={{ fontSize: '10px' }}></i> Öğrendi
+                            <Badge bg="secondary" className="bg-opacity-25 text-body rounded-pill ms-1" style={{ fontSize: '12px' }}>{counts.ogrendi}</Badge>
                         </span>
                         <FormCheck
                             type="switch"
@@ -243,10 +241,10 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
                         />
                     </div>
 
-                    <div className="d-flex justify-content-between align-items-center mb-4 mt-2 text-body">
-                        <span className="fs-5 d-flex align-items-center gap-2">
+                    <div className="d-flex justify-content-between align-items-center mb-3 mt-2 text-body">
+                        <span className="d-flex align-items-center gap-2">
                             Sadece Yıldızlı Kelimeleri Çalış <i className="bi bi-star-fill text-warning fs-6"></i>
-                            <Badge bg="warning" className="text-dark rounded-pill ms-1">{counts.starred}</Badge>
+                            <Badge bg="warning" className="text-dark rounded-pill ms-1" style={{ fontSize: '12px' }}>{counts.starred}</Badge>
                         </span>
                         <FormCheck
                             type="switch"
@@ -257,7 +255,7 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
                         />
                     </div>
                     <div className="d-flex justify-content-between align-items-center text-body">
-                        <span className="fs-5">
+                        <span>
                             Kelimeleri Karıştır
                         </span>
                         <FormCheck
