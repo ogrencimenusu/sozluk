@@ -144,7 +144,7 @@ function DailyGoalTracker({ dailyStats }) {
         </Button>
       </OverlayTrigger>
 
-      <Modal show={showModal} onHide={() => { setShowModal(false); setCurrentMonthDate(new Date()); }} centered size="lg" contentClassName="border-0 bg-transparent shadow-none" backdrop="static">
+      <Modal show={showModal} onHide={() => { setShowModal(false); setCurrentMonthDate(new Date()); }} centered size="lg" contentClassName="border-0 bg-transparent shadow-none">
         <div className="position-relative mx-auto" style={{ maxWidth: '800px', width: '100%' }}>
           {/* Top section (header) */}
           <div className="bg-body-secondary rounded-top-4 pt-4 pb-5 position-relative text-center overflow-hidden" style={{ minHeight: '140px' }}>

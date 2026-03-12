@@ -6,12 +6,11 @@ import { levenshteinDistance } from '../../utils/stringUtils';
 import DailyGoalTracker from '../DailyGoalTracker';
 import Swal from 'sweetalert2';
 
-function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpdateStage, onToggleStar, onDelete, onRetakeSame, onRetakeNew, onRetakeMissed, onLogTestResults, dailyStats }) {
+function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpdateStage, onToggleStar, onDelete, onEdit, onRetakeSame, onRetakeNew, onRetakeMissed, onLogTestResults, dailyStats }) {
     const [answers, setAnswers] = useState({}); // { [questionIdx]: { selected: OptionObj } }
     const [writtenInputs, setWrittenInputs] = useState({}); // { [questionIdx]: string } for 'written' type
     const [completed, setCompleted] = useState(false);
     const [flippedCards, setFlippedCards] = useState({}); // { [questionIdx]: true/false }
-    const [detailWord, setDetailWord] = useState(null); // word to show in detail modal
     const [hintsUsed, setHintsUsed] = useState({}); // { [questionIdx]: count }
     const [hiddenOptions, setHiddenOptions] = useState({}); // { [questionIdx]: [optionIndex, ...] }
 
@@ -675,11 +674,11 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                                                         variant="outline-secondary"
                                                                         size="sm"
                                                                         className="rounded-pill px-3 py-1 d-flex align-items-center gap-1"
-                                                                        onClick={() => setDetailWord(wordObj)}
+                                                                        onClick={(e) => onEdit(e, wordObj)}
                                                                         title="Kelime Detayı"
                                                                     >
-                                                                        <i className="bi bi-book"></i>
-                                                                        <span className="d-none d-sm-inline small">Detayı Aç</span>
+                                                                        <i className="bi bi-pencil-square"></i>
+                                                                        <span className="d-none d-sm-inline small">Detayı Düzenle</span>
                                                                     </Button>
                                                                     {onDelete && (
                                                                         <Button
@@ -1014,12 +1013,7 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                 </Row>
             </Container>
 
-            {/* WORD DETAIL MODAL — shared component, identical to App.jsx */}
-            <WordDetailModal
-                word={detailWord}
-                onHide={() => setDetailWord(null)}
-                onSpeak={handleSpeak}
-            />
+
         </>);
 }
 
