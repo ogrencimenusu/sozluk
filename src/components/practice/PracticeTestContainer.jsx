@@ -101,6 +101,8 @@ function PracticeTestContainer({ words, onCancel, savedOptions, onSaveOptions, o
                 const isTrue = Math.random() > 0.5;
 
                 let displayedAnswerText = correctAnswerText;
+                let pronunciation = targetWord.pronunciation;
+
                 if (!isTrue && pool.length > 1) {
                     // Pick a random wrong answer from the pool
                     const wrongPool = pool.filter(w => w.id !== targetWord.id);
@@ -109,6 +111,12 @@ function PracticeTestContainer({ words, onCancel, savedOptions, onSaveOptions, o
                         displayedAnswerText = isFormatDefinition
                             ? randomWrongWord.term
                             : (randomWrongWord.shortMeanings || randomWrongWord.generalDefinition || 'Anlam girilmemiş');
+                        
+                        // If displayedAnswerText is an English term (isFormatDefinition is true),
+                        // we need to show the pronunciation of that term.
+                        if (isFormatDefinition) {
+                            pronunciation = randomWrongWord.pronunciation;
+                        }
                     }
                 }
 
@@ -124,7 +132,7 @@ function PracticeTestContainer({ words, onCancel, savedOptions, onSaveOptions, o
                     type: 'tf',
                     format: activeFormat,
                     options,
-                    pronunciation: targetWord.pronunciation // pass pronunciation
+                    pronunciation // pass the appropriate pronunciation
                 };
             } else {
                 // Multiple Choice Question (MCQ) - Default fallback
