@@ -805,7 +805,7 @@ function App() {
 
   return (
     <div className="min-vh-100 py-4">
-      <Container>
+    <Container fluid>
         {currentView === 'practice-test' ? (
           <PracticeTestContainer
             words={directPracticeWords || words}
