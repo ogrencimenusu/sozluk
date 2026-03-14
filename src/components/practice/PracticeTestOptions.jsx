@@ -118,15 +118,27 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
                                 )}
                             </div>
                         </div>
-                        <Form.Control
-                            type="number"
-                            value={questionCount}
-                            onChange={e => setQuestionCount(Math.max(1, parseInt(e.target.value) || 1))}
-                            max={maxQuestions}
-                            min={1}
-                            className="bg-transparent text-body text-center border-secondary border-opacity-50 rounded-pill"
-                            style={{ width: '80px', fontSize: '14px' }}
-                        />
+                        <div className="d-flex align-items-center gap-2">
+                            <Form.Control
+                                type="number"
+                                value={questionCount}
+                                onChange={e => setQuestionCount(Math.max(1, parseInt(e.target.value) || 1))}
+                                max={maxQuestions}
+                                min={1}
+                                className="bg-transparent text-body text-center border-secondary border-opacity-50 rounded-pill"
+                                style={{ width: '80px', fontSize: '14px' }}
+                            />
+                            <Button 
+                                variant="outline-secondary" 
+                                size="sm" 
+                                className="rounded-pill px-2 border-opacity-50 d-flex align-items-center justify-content-center"
+                                onClick={() => setQuestionCount(maxSelectableCount)}
+                                style={{ height: '31px', width: '31px' }}
+                                title="Tümünü Seç"
+                            >
+                                <i className="bi bi-check-all fs-5"></i>
+                            </Button>
+                        </div>
                     </div>
                 </div>
 
