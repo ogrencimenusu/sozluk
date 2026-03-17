@@ -9,7 +9,8 @@ import {
   doc,
   updateDoc,
   setDoc,
-  getDoc
+  getDoc,
+  getDocs
 } from 'firebase/firestore';
 import { db } from './firebase';
 
@@ -38,6 +39,7 @@ const parseTemplate = (text) => {
     wordFamily: [],
     tips: [],
     grammar: [],
+    templateName: '',
     raw: text
   };
 
@@ -54,7 +56,7 @@ const parseTemplate = (text) => {
     if (lowerLine.startsWith('kelime:')) {
       data.term = cleanLine.substring(7).trim();
     } else if (lowerLine.startsWith('türkçe okunuşu:')) {
-      data.pronunciation = cleanLine.substring(15).trim();
+      data.pronunciation = cleanLine.substring(15).trim().replace(/^\/|\/$/g, '');
     } else if (lowerLine.startsWith('kısa anlamları:')) {
       data.shortMeanings = cleanLine.substring(15).trim();
     } else if (lowerLine.startsWith('genel tanımı:')) {
@@ -68,16 +70,41 @@ const parseTemplate = (text) => {
       currentSection = 'meanings';
     } else if (lowerLine.includes('gramer özellikleri')) {
       currentSection = 'grammar';
+      const cIdx = cleanLine.indexOf(':');
+      if (cIdx !== -1) {
+        const content = cleanLine.substring(cIdx + 1).trim();
+        if (content) data.grammar.push(content);
+      }
     } else if (lowerLine.includes('eş ve zıt anlamlılar')) {
       currentSection = 'synant';
     } else if (lowerLine.includes('birlikte kullanıldığı edatlar')) {
       currentSection = 'collocations';
+      const cIdx = cleanLine.indexOf(':');
+      if (cIdx !== -1) {
+        const content = cleanLine.substring(cIdx + 1).trim();
+        if (content) data.collocations.push(content);
+      }
     } else if (lowerLine.includes('yaygın deyimler')) {
       currentSection = 'idioms';
+      const cIdx = cleanLine.indexOf(':');
+      if (cIdx !== -1) {
+        const content = cleanLine.substring(cIdx + 1).trim();
+        if (content) data.idioms.push(content);
+      }
     } else if (lowerLine.includes('kelime ailesi')) {
       currentSection = 'wordFamily';
+      const cIdx = cleanLine.indexOf(':');
+      if (cIdx !== -1) {
+        const content = cleanLine.substring(cIdx + 1).trim();
+        if (content) data.wordFamily.push(content);
+      }
     } else if (lowerLine.includes('sık yapılan hatalar')) {
       currentSection = 'tips';
+      const cIdx = cleanLine.indexOf(':');
+      if (cIdx !== -1) {
+        const content = cleanLine.substring(cIdx + 1).trim();
+        if (content) data.tips.push(content);
+      }
     } else if (lowerLine.includes('detaylı inceleme')) {
       currentSection = 'details';
     }
@@ -92,7 +119,11 @@ const parseTemplate = (text) => {
       const idx = cleanLine.indexOf(':');
       data.antonyms = idx !== -1 ? cleanLine.substring(idx + 1).trim() : cleanLine;
     }
-    else if (currentSection === 'meanings' && (lowerLine.startsWith('anlamı') || /^\d+\.\s*anlamı/.test(lowerLine))) {
+    else if (currentSection === 'meanings' && (
+      lowerLine.startsWith('anlamı') || 
+      /^\d+\.\s*anlamı/.test(lowerLine) || 
+      (originalLine.trim().startsWith('-') && cleanLine.includes(':'))
+    )) {
       const colonIdx = cleanLine.indexOf(':');
       currentMeaning = {
         definition: colonIdx !== -1 ? cleanLine.substring(colonIdx + 1).trim() : cleanLine,
@@ -104,13 +135,21 @@ const parseTemplate = (text) => {
       if (!lowerLine.startsWith('detaylı inceleme') && cleanLine.replace(/['"]+/g, '').trim() !== '') {
         currentMeaning.examples.push(cleanLine.replace(/^['"]|['"]$/g, ''));
       }
-    } else if (currentSection === 'grammar' && cleanLine.includes(':')) {
+    } else if (currentSection === 'grammar' && (cleanLine.includes(':') || cleanLine.includes('–') || originalLine.trim().startsWith('-'))) {
       data.grammar.push(cleanLine);
-    } else if (currentSection === 'collocations' && cleanLine.includes(':')) {
-      data.collocations.push(cleanLine);
-    } else if (currentSection === 'idioms' && cleanLine.includes(':')) {
-      data.idioms.push(cleanLine);
-    } else if (currentSection === 'wordFamily' && cleanLine.includes(':')) {
+    } else if (currentSection === 'collocations' && cleanLine.trim() !== '') {
+      if ((originalLine.trim().startsWith('(') || originalLine.trim().startsWith('[')) && data.collocations.length > 0) {
+        data.collocations[data.collocations.length - 1] += '\n' + cleanLine;
+      } else {
+        data.collocations.push(cleanLine);
+      }
+    } else if (currentSection === 'idioms' && cleanLine.trim() !== '') {
+      if ((originalLine.trim().startsWith('(') || originalLine.trim().startsWith('[')) && data.idioms.length > 0) {
+        data.idioms[data.idioms.length - 1] += '\n' + cleanLine;
+      } else {
+        data.idioms.push(cleanLine);
+      }
+    } else if (currentSection === 'wordFamily' && (cleanLine.includes(':') || cleanLine.includes(']') || cleanLine.includes('–') || originalLine.trim().startsWith('-'))) {
       data.wordFamily.push(cleanLine);
     } else if (currentSection === 'tips') {
       data.tips.push(cleanLine);
@@ -142,6 +181,18 @@ const mockData = [
 function App() {
   const [currentView, setCurrentView] = useState('home');
   const [words, setWords] = useState([]);
+  const [templates, setTemplates] = useState([
+    {
+      id: 'standart',
+      name: 'Genel İngilizce Şablonu',
+      example: 'Kelime: compromise\nTürkçe Okunuşu: kom-pro-mayz\nKısa Anlamları: uzlaşma, anlaşma, taviz verme\nGenel Tanımı: Karşılıklı ödünler vererek bir anlaşmaya varma süreci veya sonucu.\n\nAnlamları ve Örnek Cümleler:\n1. Anlamı (Uzlaşma): Taraflar uzun pazarlıklar sonunda bir uzlaşmaya vardılar.\n- "After long negotiations, they reached a compromise."\n\nDetaylı İnceleme:\nZorluk Seviyesi (CEFR): B2\n\nGramer Özellikleri:\n- İsim (Noun): compromise\n- Fiil (Verb): compromise (uzlaşmak, ödün vermek)\n\nEş ve Zıt Anlamlılar:\n- Eş Anlamlılar: agreement, settlement, concession\n- Zıt Anlamlılar: disagreement, conflict, refusal\n\nBirlikte Kullanıldığı Edatlar:\n- reach a compromise: uzlaşmaya varmak\n\nYaygın Deyimler:\n- no room for compromise: uzlaşmaya yer yok\n\nKelime Ailesi:\n- uncompromising (sıfat): tavizsiz\n\nSık Yapılan Hatalar:\n- Hata: "make a compromise" yerine bazen yanlış edat kullanımı.\n- Doğru: We reached a compromise.'
+    },
+    {
+      id: 'sablon2',
+      name: 'Şablon 2',
+      example: 'Kelime: [Kök Kelime]\nTürkçe Okunuşu: [Okunuş]\nKısa Anlamları: [1, 2, 3...]\nGenel Tanımı: [Akademik Tanım]\n\nAnlamları ve Örnek Cümleler:\n\n- Yalın Hal (V1): [İngilizce Cümle]\n([Türkçe Çeviri])\n- Geniş Zaman (3. Tekil): ...\n- Geçmiş Zaman (Geniş Zaman Kurgulu): ...\n- Past Participle (Geniş Zaman Kurgulu): ...\n- Şimdiki Zaman / Devam Eden: ...\n\nDetaylı İnceleme:\nZorluk Seviyesi (CEFR): [A1-C2]\n\nGramer Özellikleri (Fiil Çekimleri):\n\n- Yalın Hal (V1): [Kelime] ([Türkçe Anlamı])\n- Geniş Zaman 3. Tekil (V+s): [Kelime] ([Türkçe Anlamı])\n- Geçmiş Zaman (V2): [Kelime] ([Türkçe Anlamı])\n- Past Participle (V3): [Kelime] ([Türkçe Anlamı])\n- Şimdiki Zaman / Sıfat Fiil (-ing): [Kelime] ([Türkçe Anlamı])\n\nEş ve Zıt Anlamlılar:\n\n- Eş Anlamlılar: [Kelime (Türkçe)], [Kelime (Türkçe)]...\n- Zıt Anlamlılar: [Kelime (Türkçe)], [Kelime (Türkçe)]...\n\nBirlikte Kullanıldığı Edatlar ve Kelimeler (Collocations):\n\n- [Kelime + Edat]: [Kısa Örnek Cümle]\n([Türkçe Çeviri])\n\nYaygın Deyimler ve İfadeler (Idioms): [Deyim (Türkçe)]...\nKelime Ailesi (Word Family): [İsim, Sıfat, Zarf halleri ve Türkçeleri]\n\nSık Yapılan Hatalar ve İpuçları:\n\n- **Hata Nedeni:** [Açıklama]\n- Yanlış Kullanım: *[İngilizce Cümle]*\n([Türkçe Çeviri])\n- Doğru Kullanım: *[İngilizce Cümle]*\n([Türkçe Çeviri])'
+    }
+  ]);
   const [dailyStats, setDailyStats] = useState({});
   const [searchQuery, setSearchQuery] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -185,6 +236,7 @@ function App() {
   const [showSortModal, setShowSortModal] = useState(false);
   const [showBulkEditModal, setShowBulkEditModal] = useState(false);
   const [showFiltersCollapse, setShowFiltersCollapse] = useState(false);
+  const [showTemplateExampleModal, setShowTemplateExampleModal] = useState(false);
 
   const [templateType, setTemplateType] = useState('standart');
 
@@ -299,6 +351,29 @@ function App() {
       }
     };
     loadSettings();
+
+    // Load/Seed templates
+    const loadTemplates = async () => {
+      if (isConfigMissing) return;
+      try {
+        const querySnapshot = await getDocs(collection(db, 'templates'));
+        if (querySnapshot.empty) {
+          // Seed initial templates if collection is empty
+          for (const t of templates) {
+            await setDoc(doc(db, 'templates', t.id), t);
+          }
+        } else {
+          const fetchedTemplates = querySnapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          }));
+          setTemplates(fetchedTemplates);
+        }
+      } catch (e) {
+        console.warn('Şablonlar yüklenemedi:', e);
+      }
+    };
+    loadTemplates();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -1158,7 +1233,7 @@ function App() {
                             }
                           }}
                         >
-                          <i className="bi bi-volume-up-fill me-1 mb-1" style={{ fontSize: '14px' }}></i> /{word.pronunciation}/
+                          <i className="bi bi-volume-up-fill me-1 mb-1" style={{ fontSize: '14px' }}></i> /{word.pronunciation.replace(/^\/|\/$/g, '')}/
                         </div>
                       )}
 
@@ -1279,7 +1354,7 @@ function App() {
   </Container>
 
       {/* NEW WORD MODAL */}
-      <Modal show={isModalOpen} onHide={closeModal} size="lg" centered backdrop="static" contentClassName="bg-body-tertiary border border-opacity-25 rounded-4 shadow-lg">
+      <Modal show={isModalOpen} onHide={closeModal} size="lg" centered backdrop="static" contentClassName="bg-body-tertiary border border-opacity-25 rounded-4 shadow-lg" style={{ zIndex: 1060 }}>
         <Form onSubmit={handleSubmit}>
           <Modal.Header closeButton className="border-bottom border-opacity-10 pb-3">
             <Modal.Title className="fs-3 fw-bold ps-2">{editingWordId ? "Kelime Şablonu Düzenle" : "Kelime Şablonu Ekle"}</Modal.Title>
@@ -1293,8 +1368,20 @@ function App() {
                   onChange={e => setTemplateType(e.target.value)}
                   className="bg-body-secondary border-0 px-3 py-2 rounded-3 shadow-none w-100"
                 >
-                  <option value="standart">Genel İngilizce Şablonu</option>
+                  {templates.map(t => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
                 </Form.Select>
+              </div>
+              <div className="flex-shrink-0 d-flex align-items-end">
+                <Button 
+                  variant="outline-info" 
+                  className="mb-0 rounded-3" 
+                  onClick={() => setShowTemplateExampleModal(true)}
+                  title="Şablon Örneğini Gör"
+                >
+                  <i className="bi bi-eye"></i> Örnek
+                </Button>
               </div>
               <div className="flex-grow-1">
                 <Form.Label className="mb-1 fw-semibold text-muted">Öğrenme Durumu</Form.Label>
@@ -1408,11 +1495,41 @@ function App() {
         </Form>
       </Modal>
 
+      {/* TEMPLATE EXAMPLE MODAL */}
+      <Modal show={showTemplateExampleModal} onHide={() => setShowTemplateExampleModal(false)} size="lg" centered contentClassName="bg-body-tertiary border border-opacity-25 rounded-4 shadow-lg">
+        <Modal.Header closeButton className="border-bottom border-opacity-10 pb-3">
+          <Modal.Title className="fs-4 fw-bold">Şablon Örneği: {templates.find(t => t.id === templateType)?.name}</Modal.Title>
+        </Modal.Header>
+        <Modal.Body className="p-4">
+          <pre className="bg-body-secondary p-4 rounded-4 border-0 font-monospace mb-4" style={{ whiteSpace: 'pre-wrap', maxHeight: '400px', overflowY: 'auto' }}>
+            {templates.find(t => t.id === templateType)?.example}
+          </pre>
+          <div className="d-flex justify-content-end gap-2">
+            <Button variant="outline-secondary" className="rounded-pill px-4" onClick={() => setShowTemplateExampleModal(false)}>
+              Kapat
+            </Button>
+            <Button 
+              variant="primary" 
+              className="rounded-pill px-4" 
+              onClick={() => {
+                const example = templates.find(t => t.id === templateType)?.example;
+                if (example) setTermText(example);
+                setShowTemplateExampleModal(false);
+              }}
+            >
+              Şablonu Kullan
+            </Button>
+          </div>
+        </Modal.Body>
+      </Modal>
+
       {/* WORD DETAILS MODAL — shared component */}
       <WordDetailModal
+        show={!!selectedWord}
         word={selectedWord}
         onHide={() => setSelectedWord(null)}
         onSpeak={handleSpeak}
+        onEdit={(word) => handleEdit({ stopPropagation: () => {} }, word)}
       />
 
       {/* FILTER MODAL */}

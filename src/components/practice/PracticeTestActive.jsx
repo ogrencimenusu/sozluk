@@ -14,6 +14,7 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
     const [hintsUsed, setHintsUsed] = useState({}); // { [questionIdx]: count }
     const [hiddenOptions, setHiddenOptions] = useState({}); // { [questionIdx]: [optionIndex, ...] }
     const [activeQuestionIdx, setActiveQuestionIdx] = useState(0);
+    const [selectedWordForModal, setSelectedWordForModal] = useState(null);
     const [mobileNavExpanded, setMobileNavExpanded] = useState(false);
     const [mobileShowAll, setMobileShowAll] = useState(false);
 
@@ -809,11 +810,11 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                                                         variant="outline-secondary"
                                                                         size="sm"
                                                                         className="rounded-pill px-3 py-1 d-flex align-items-center gap-1"
-                                                                        onClick={(e) => onEdit(e, wordObj)}
+                                                                        onClick={() => setSelectedWordForModal(wordObj)}
                                                                         title="Kelime Detayı"
                                                                     >
-                                                                        <i className="bi bi-pencil-square"></i>
-                                                                        <span className="d-none d-sm-inline small">Detayı Düzenle</span>
+                                                                        <i className="bi bi-info-circle"></i>
+                                                                        <span className="d-none d-sm-inline small">Detay</span>
                                                                     </Button>
                                                                     {onDelete && (
                                                                         <Button
@@ -1148,7 +1149,15 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                 </Row>
             </Container>
 
-
+            <WordDetailModal
+                word={selectedWordForModal}
+                onHide={() => setSelectedWordForModal(null)}
+                onSpeak={handleSpeak}
+                onEdit={(word) => {
+                    setSelectedWordForModal(null);
+                    onEdit && onEdit(null, word);
+                }}
+            />
         </>);
 }
 
