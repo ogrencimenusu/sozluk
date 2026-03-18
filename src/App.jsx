@@ -238,7 +238,7 @@ function App() {
   const [showFiltersCollapse, setShowFiltersCollapse] = useState(false);
   const [showTemplateExampleModal, setShowTemplateExampleModal] = useState(false);
 
-  const [templateType, setTemplateType] = useState('standart');
+  const [templateType, setTemplateType] = useState('sablon2');
 
   const parsedPreview = useMemo(() => {
     if (!termText.trim()) return [];
@@ -520,7 +520,7 @@ function App() {
   };
 
   const handleEdit = (e, word) => {
-    e.stopPropagation();
+    if (e && e.stopPropagation) e.stopPropagation();
     if (isSelectionMode) {
       handleSelectWord(e, word.id);
       return;
@@ -1496,7 +1496,7 @@ function App() {
       </Modal>
 
       {/* TEMPLATE EXAMPLE MODAL */}
-      <Modal show={showTemplateExampleModal} onHide={() => setShowTemplateExampleModal(false)} size="lg" centered contentClassName="bg-body-tertiary border border-opacity-25 rounded-4 shadow-lg">
+      <Modal show={showTemplateExampleModal} onHide={() => setShowTemplateExampleModal(false)} size="lg" centered contentClassName="bg-body-tertiary border border-opacity-25 rounded-4 shadow-lg" style={{ zIndex: 1070 }}>
         <Modal.Header closeButton className="border-bottom border-opacity-10 pb-3">
           <Modal.Title className="fs-4 fw-bold">Şablon Örneği: {templates.find(t => t.id === templateType)?.name}</Modal.Title>
         </Modal.Header>
@@ -1529,7 +1529,7 @@ function App() {
         word={selectedWord}
         onHide={() => setSelectedWord(null)}
         onSpeak={handleSpeak}
-        onEdit={(word) => handleEdit({ stopPropagation: () => {} }, word)}
+        onEdit={(word) => handleEdit(null, word)}
       />
 
       {/* FILTER MODAL */}
