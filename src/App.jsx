@@ -1255,14 +1255,50 @@ function App() {
                           <strong className="small text-body opacity-75 d-block mb-1">Anlamları ve Örnek Cümleler:</strong>
                           {word.meanings.map((meaning, mIdx) => (
                             <div key={mIdx} className="mb-2 ps-2 border-start border-2 border-primary border-opacity-25">
-                              <div className="small fw-medium text-body">
-                                {mIdx + 1}. {meaning.definition} {meaning.context && <span className="text-muted fst-italic">({meaning.context})</span>}
+                              <div className="small fw-medium text-body d-flex align-items-start gap-1">
+                                <Button
+                                  variant="link"
+                                  className="p-0 text-primary opacity-50 hover-opacity-100 transition-all border-0 shadow-none flex-shrink-0"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleSpeak(meaning.definition);
+                                  }}
+                                  title="Sesli Dinle"
+                                >
+                                  <i className="bi bi-volume-up" style={{ fontSize: '14px' }}></i>
+                                </Button>
+                                <span>{mIdx + 1}. {meaning.definition} {meaning.context && <span className="text-muted fst-italic">({meaning.context})</span>}</span>
                               </div>
                               {meaning.examples && meaning.examples.length > 0 && (
                                 <ul className="small text-muted mb-0 ps-3 mt-1">
-                                  {meaning.examples.map((ex, exIdx) => (
-                                    <li key={exIdx} className="fst-italic text-break">"{ex}"</li>
-                                  ))}
+                                  {meaning.examples.map((ex, exIdx) => {
+                                    const match = ex.match(/^(.*?)(\([^)]+\))?$/);
+                                    const engPart = match ? match[1].trim() : ex;
+                                    const trPart = match && match[2] ? match[2].trim() : null;
+                                    
+                                    // If there's no English part (only Turkish translation in parentheses),
+                                    // or it's a very short/placeholder string, skip the speak button
+                                    const hasEng = engPart.length > 0;
+
+                                    return (
+                                      <li key={exIdx} className="fst-italic text-break d-flex align-items-start gap-1">
+                                        {hasEng && (
+                                          <Button
+                                            variant="link"
+                                            className="p-0 text-primary opacity-50 hover-opacity-100 transition-all border-0 shadow-none flex-shrink-0"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleSpeak(engPart);
+                                            }}
+                                            title="Sesli Dinle"
+                                          >
+                                            <i className="bi bi-volume-up" style={{ fontSize: '14px' }}></i>
+                                          </Button>
+                                        )}
+                                        <span>{hasEng ? `"${engPart}" ` : ""}{trPart}</span>
+                                      </li>
+                                    );
+                                  })}
                                 </ul>
                               )}
                             </div>

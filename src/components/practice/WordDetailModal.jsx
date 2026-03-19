@@ -101,6 +101,14 @@ function WordDetailModal({ word, onHide, onSpeak, onEdit }) {
                                     <div key={idx} className="meaning-item bg-body shadow-sm p-3 rounded-4 border border-opacity-10">
                                         <div className="d-flex align-items-center flex-wrap gap-2 mb-2 fw-bold lh-base">
                                             <Badge bg="primary" className="fw-semibold px-2 py-1 me-1 small" style={{ fontSize: '0.75rem' }}>{m.context || `Anlamı ${idx + 1}`}</Badge>
+                                            <Button
+                                                variant="link"
+                                                className="p-0 text-primary opacity-75 hover-opacity-100 transition-all border-0 shadow-none flex-shrink-0"
+                                                onClick={() => onSpeak && onSpeak(m.definition)}
+                                                title="Sesli Dinle"
+                                            >
+                                                <i className="bi bi-volume-up-fill" style={{ fontSize: '1.1rem' }}></i>
+                                            </Button>
                                             <span className="fs-6">{m.definition}</span>
                                         </div>
                                         {m.examples && m.examples.length > 0 && (
@@ -125,7 +133,19 @@ function WordDetailModal({ word, onHide, onSpeak, onEdit }) {
                                                             <div key={exIdx} className={`position-relative pe-3 ps-3 fs-6 ${engPart ? 'mb-2' : 'mb-1'}`}>
                                                                 {engPart && <span className="position-absolute start-0 text-primary fw-bold" style={{ top: '0' }}>•</span>}
                                                                 {label && <div className="fw-bold text-primary extra-small mb-0 opacity-75" style={{ fontSize: '0.7rem' }}>{label}</div>}
-                                                                {engPart && <div className="fst-italic text-body mb-0 lh-sm" style={{ fontSize: '0.95rem' }}>"{engPart}"</div>}
+                                                                {engPart && (
+                                                                    <div className="d-flex align-items-start gap-2 fst-italic text-body mb-0 lh-sm" style={{ fontSize: '0.95rem' }}>
+                                                                        <Button
+                                                                            variant="link"
+                                                                            className="p-0 text-primary opacity-50 hover-opacity-100 transition-all flex-shrink-0"
+                                                                            onClick={() => onSpeak && onSpeak(engPart)}
+                                                                            title="Sesli Dinle"
+                                                                        >
+                                                                            <i className="bi bi-volume-up" style={{ fontSize: '1.1rem' }}></i>
+                                                                        </Button>
+                                                                        <span className="flex-grow-1">"{engPart}"</span>
+                                                                    </div>
+                                                                )}
                                                                 {trPart && <div className={`text-muted fst-italic extra-small ps-2 border-start border-2 border-primary ms-1 ${engPart ? 'mt-0' : ''}`} style={{ fontSize: '0.85rem' }}>{trPart}</div>}
                                                             </div>
                                                         );
@@ -169,7 +189,18 @@ function WordDetailModal({ word, onHide, onSpeak, onEdit }) {
                                     const lines = item.split('\n');
                                     return (
                                         <li key={i} className="fs-6 mb-3">
-                                            <div className="fw-medium text-body">{lines[0]}</div>
+                                            <div className="fw-medium text-body d-flex align-items-start gap-2">
+                                                <Button
+                                                    variant="link"
+                                                    className="p-0 text-primary opacity-50 hover-opacity-100 transition-all border-0 shadow-none flex-shrink-0 mt-0"
+                                                    style={{ paddingTop: '2px' }}
+                                                    onClick={() => onSpeak && onSpeak(lines[0])}
+                                                    title="Sesli Dinle"
+                                                >
+                                                    <i className="bi bi-volume-up" style={{ fontSize: '1rem' }}></i>
+                                                </Button>
+                                                <span className="flex-grow-1">{lines[0]}</span>
+                                            </div>
                                             {lines.slice(1).map((line, li) => (
                                                 <div key={li} className="text-muted fst-italic small ps-2 border-start border-2 border-primary ms-1 mt-1">{line}</div>
                                             ))}
@@ -188,7 +219,18 @@ function WordDetailModal({ word, onHide, onSpeak, onEdit }) {
                                     const lines = item.split('\n');
                                     return (
                                         <li key={i} className="fs-6 mb-3">
-                                            <div className="fw-medium text-body">{lines[0]}</div>
+                                            <div className="fw-medium text-body d-flex align-items-start gap-2">
+                                                <Button
+                                                    variant="link"
+                                                    className="p-0 text-primary opacity-50 hover-opacity-100 transition-all border-0 shadow-none flex-shrink-0 mt-0"
+                                                    style={{ paddingTop: '2px' }}
+                                                    onClick={() => onSpeak && onSpeak(lines[0])}
+                                                    title="Sesli Dinle"
+                                                >
+                                                    <i className="bi bi-volume-up" style={{ fontSize: '1rem' }}></i>
+                                                </Button>
+                                                <span className="flex-grow-1">{lines[0]}</span>
+                                            </div>
                                             {lines.slice(1).map((line, li) => (
                                                 <div key={li} className="text-muted fst-italic small ps-2 border-start border-2 border-primary ms-1 mt-1">{line}</div>
                                             ))}
