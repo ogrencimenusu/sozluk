@@ -213,6 +213,37 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
         }
     };
 
+    const focusNextWrittenQuestion = (idx, direction) => {
+        if (completed) return;
+        let nextIdx = -1;
+        if (direction === 'down') {
+            // Find next unanswered written question (no wrap-around as requested)
+            nextIdx = questions.findIndex((q, i) => i > idx && q.type === 'written' && !answers[i]);
+        } else {
+            // Find previous unanswered written question
+            for (let i = idx - 1; i >= 0; i--) {
+                if (questions[i].type === 'written' && !answers[i]) {
+                    nextIdx = i;
+                    break;
+                }
+            }
+        }
+
+        if (nextIdx !== -1) {
+            scrollToQuestion(nextIdx);
+            setTimeout(() => {
+                const input = document.getElementById(`written-input-${nextIdx}`);
+                if (input) {
+                    input.focus();
+                    // Move cursor to end
+                    const val = input.value;
+                    input.value = '';
+                    input.value = val;
+                }
+            }, 350);
+        }
+    };
+
     const handleClose = async () => {
         const exitFn = onHome || onClose;
         if (!completed && Object.keys(answers).length > 0) {
@@ -735,6 +766,37 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                                 <span className="text-body-secondary fw-semibold">
                                                     {currentQuestion.format === 'definition' ? 'Anlam' : 'Kelime'}
                                                 </span>
+                                                {!completed && currentQuestion.type === 'written' && !answers[idx] && (() => {
+                                                    const hasPrevious = questions.some((q, i) => i < idx && q.type === 'written' && !answers[i]);
+                                                    const hasNext = questions.some((q, i) => i > idx && q.type === 'written' && !answers[i]);
+
+                                                    return (
+                                                        <div className="btn-group ms-1 border border-secondary border-opacity-50 rounded-pill overflow-hidden bg-body-tertiary shadow-sm" role="group">
+                                                            <Button
+                                                                variant="link"
+                                                                size="sm"
+                                                                className="p-0 px-2 text-body-secondary hover-text-primary transition-all border-0 shadow-none d-flex align-items-center justify-content-center border-end border-secondary border-opacity-25 rounded-0"
+                                                                onClick={() => focusNextWrittenQuestion(idx, 'up')}
+                                                                disabled={!hasPrevious}
+                                                                title="Önceki Yazılı Soru"
+                                                                style={{ height: '26px' }}
+                                                            >
+                                                                <i className="bi bi-chevron-up" style={{ fontSize: '0.85rem' }}></i>
+                                                            </Button>
+                                                            <Button
+                                                                variant="link"
+                                                                size="sm"
+                                                                className="p-0 px-2 text-body-secondary hover-text-primary transition-all border-0 shadow-none d-flex align-items-center justify-content-center rounded-0"
+                                                                onClick={() => focusNextWrittenQuestion(idx, 'down')}
+                                                                disabled={!hasNext}
+                                                                title="Sonraki Yazılı Soru"
+                                                                style={{ height: '26px' }}
+                                                            >
+                                                                <i className="bi bi-chevron-down" style={{ fontSize: '0.85rem' }}></i>
+                                                            </Button>
+                                                        </div>
+                                                    );
+                                                })()}
                                             </div>
                                             <div className="d-flex gap-2 align-items-center flex-wrap justify-content-end">
                                                 {(() => {
@@ -841,7 +903,7 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                             </div>
                                         </div>
 
-                                        <div className="mb-5 pb-3">
+                                        <div className="mb-3 pb-3">
                                             <div className="d-flex align-items-center gap-3 flex-wrap">
                                                 <h4 className="text-body fw-medium lh-base m-0">
                                                     {currentQuestion.prompt}
@@ -872,7 +934,8 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                                             <input
                                                                 id={`written-input-${idx}`}
                                                                 type="text"
-                                                                className="form-control bg-transparent text-body border-secondary border-opacity-50 rounded-3"
+                                                                className="form-control form-control-lg bg-transparent text-body border-secondary border-opacity-50 rounded-3"
+                                                                style={{ fontSize: '1.25rem' }}
                                                                 placeholder="Cevabınızı yazın..."
                                                                 value={writtenInputs[idx] || ''}
                                                                 autoCapitalize="none"
@@ -909,7 +972,7 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                                             />
                                                             <Button
                                                                 variant="info"
-                                                                className="rounded-3 px-3 fw-bold text-dark"
+                                                                className="rounded-3 px-4 fw-bold text-dark fs-5"
                                                                 style={{ backgroundColor: '#4fd1c5', border: 'none', whiteSpace: 'nowrap' }}
                                                                 onClick={() => handleWrittenSubmit(idx, currentQuestion.answer)}
                                                                 disabled={!writtenInputs[idx]?.trim()}
