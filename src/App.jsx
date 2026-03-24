@@ -181,6 +181,7 @@ const mockData = [
 function App() {
   const [currentView, setCurrentView] = useState('home');
   const [words, setWords] = useState([]);
+  const [practiceTests, setPracticeTests] = useState([]);
   const [templates, setTemplates] = useState([
     {
       id: 'standart',
@@ -466,6 +467,17 @@ function App() {
       setLoading(false);
     });
 
+    const qTests = query(collection(db, 'practice_tests'), orderBy('updatedAt', 'desc'));
+    const unsubscribeTests = onSnapshot(qTests, (snapshot) => {
+      const testsData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setPracticeTests(testsData);
+    }, (error) => {
+      console.error("Firestore tests error:", error);
+    });
+
     const qStats = query(collection(db, 'daily_stats'));
     const unsubscribeStats = onSnapshot(qStats, (snapshot) => {
       const stats = {};
@@ -480,6 +492,7 @@ function App() {
     return () => {
       unsubscribeWords();
       unsubscribeStats();
+      unsubscribeTests();
     };
   }, []);
 
@@ -516,6 +529,46 @@ function App() {
       } catch (e) {
         console.error('Failed to update daily stats', e);
       }
+    }
+  };
+
+  const handleSaveTest = async (testId, testData) => {
+    if (isConfigMissing) return testId;
+    try {
+      if (testId) {
+        await updateDoc(doc(db, 'practice_tests', testId), { ...testData, updatedAt: new Date() });
+        return testId;
+      } else {
+        const docRef = await addDoc(collection(db, 'practice_tests'), { ...testData, createdAt: new Date(), updatedAt: new Date() });
+        return docRef.id;
+      }
+    } catch (error) {
+      console.error('Failed to save test', error);
+      return null;
+    }
+  };
+
+  const handleDeleteTest = async (testId) => {
+    if (isConfigMissing) return;
+    try {
+      await deleteDoc(doc(db, 'practice_tests', testId));
+    } catch (error) {
+      console.error('Failed to delete test', error);
+    }
+  };
+
+  const handleDeleteAllTests = async () => {
+    if (isConfigMissing) {
+      setPracticeTests([]);
+      return;
+    }
+    try {
+      const q = query(collection(db, 'practice_tests'));
+      const snapshot = await getDocs(q);
+      const deletePromises = snapshot.docs.map(docSnapshot => deleteDoc(doc(db, 'practice_tests', docSnapshot.id)));
+      await Promise.all(deletePromises);
+    } catch (error) {
+      console.error('Failed to delete all tests', error);
     }
   };
 
@@ -898,6 +951,10 @@ function App() {
             onEdit={handleEdit}
             onLogTestResults={handleLogTestResults}
             dailyStats={dailyStats}
+            practiceTests={practiceTests}
+            onSaveTest={handleSaveTest}
+            onDeleteTest={handleDeleteTest}
+            onDeleteAllTests={handleDeleteAllTests}
           />
         ) : (
           <>
@@ -1186,25 +1243,25 @@ function App() {
                               style={{ transform: 'scale(1.2)' }}
                             />
                           )}
-                          <Card.Title
-                            className="m-0 fs-4 fw-bold"
-                            style={{ cursor: !isSelectionMode ? 'pointer' : 'default' }}
-                            onClick={(e) => {
-                              if (!isSelectionMode) {
-                                e.stopPropagation();
-                                setSelectedWord(word);
-                              }
-                            }}
-                          >
-                            {word.term}
-                          </Card.Title>
-                          <i
-                            className={`bi ${word.isStarred ? 'bi-star-fill text-warning' : 'bi-star text-muted'} fs-5`}
-                            style={{ cursor: 'pointer' }}
-                            onClick={(e) => handleToggleStar(e, word)}
-                            title={word.isStarred ? "Yıldızı Kaldır" : "Yıldızla"}
-                          ></i>
-                        </div>
+                            <i
+                              className={`bi ${word.isStarred ? 'bi-star-fill text-warning' : 'bi-star text-muted'} fs-5`}
+                              style={{ cursor: 'pointer', lineHeight: '1' }}
+                              onClick={(e) => handleToggleStar(e, word)}
+                              title={word.isStarred ? "Yıldızı Kaldır" : "Yıldızla"}
+                            ></i>
+                            <Card.Title
+                              className="m-0 fs-4 fw-bold"
+                              style={{ cursor: !isSelectionMode ? 'pointer' : 'default', lineHeight: '1.2' }}
+                              onClick={(e) => {
+                                if (!isSelectionMode) {
+                                  e.stopPropagation();
+                                  setSelectedWord(word);
+                                }
+                              }}
+                            >
+                              {word.term}
+                            </Card.Title>
+                          </div>
                         <div className="d-flex gap-2 align-items-center">
                           {word.learningStatus && (
                             <Badge

@@ -6,17 +6,34 @@ import { levenshteinDistance } from '../../utils/stringUtils';
 import DailyGoalTracker from '../DailyGoalTracker';
 import Swal from 'sweetalert2';
 
-function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpdateStage, onToggleStar, onDelete, onEdit, onRetakeSame, onRetakeNew, onRetakeMissed, onLogTestResults, dailyStats }) {
-    const [answers, setAnswers] = useState({}); // { [questionIdx]: { selected: OptionObj } }
-    const [writtenInputs, setWrittenInputs] = useState({}); // { [questionIdx]: string } for 'written' type
-    const [completed, setCompleted] = useState(false);
+function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpdateStage, onToggleStar, onDelete, onEdit, onRetakeSame, onRetakeNew, onRetakeMissed, onLogTestResults, dailyStats, testId, initialTestState, onSaveTest }) {
+    const [answers, setAnswers] = useState(() => initialTestState?.answers || {}); // { [questionIdx]: { selected: OptionObj } }
+    const [writtenInputs, setWrittenInputs] = useState(() => initialTestState?.writtenInputs || {}); // { [questionIdx]: string } for 'written' type
+    const [completed, setCompleted] = useState(() => initialTestState?.completed || false);
     const [flippedCards, setFlippedCards] = useState({}); // { [questionIdx]: true/false }
-    const [hintsUsed, setHintsUsed] = useState({}); // { [questionIdx]: count }
-    const [hiddenOptions, setHiddenOptions] = useState({}); // { [questionIdx]: [optionIndex, ...] }
-    const [activeQuestionIdx, setActiveQuestionIdx] = useState(0);
+    const [hintsUsed, setHintsUsed] = useState(() => initialTestState?.hintsUsed || {}); // { [questionIdx]: count }
+    const [hiddenOptions, setHiddenOptions] = useState(() => initialTestState?.hiddenOptions || {}); // { [questionIdx]: [optionIndex, ...] }
+    const [activeQuestionIdx, setActiveQuestionIdx] = useState(() => initialTestState?.activeQuestionIdx || 0);
     const [selectedWordForModal, setSelectedWordForModal] = useState(null);
     const [mobileNavExpanded, setMobileNavExpanded] = useState(false);
     const [mobileShowAll, setMobileShowAll] = useState(false);
+
+    // Auto-save progress
+    useEffect(() => {
+        if (!testId || !onSaveTest) return;
+        const timeoutId = setTimeout(() => {
+            onSaveTest(testId, {
+                answers,
+                writtenInputs,
+                completed,
+                hintsUsed,
+                hiddenOptions,
+                activeQuestionIdx,
+                status: completed ? 'completed' : 'ongoing'
+            });
+        }, 1000); // Debounce saves by 1 second to avoid excessive writes
+        return () => clearTimeout(timeoutId);
+    }, [answers, writtenInputs, completed, hintsUsed, hiddenOptions, activeQuestionIdx, testId, onSaveTest]);
 
     // Track active question based on scroll
     useEffect(() => {

@@ -3,11 +3,13 @@ import PracticeTestOptions from './PracticeTestOptions';
 import PracticeTestActive from './PracticeTestActive';
 import Swal from 'sweetalert2';
 
-function PracticeTestContainer({ words, onCancel, savedOptions, onSaveOptions, onUpdateStage, onToggleStar, onDelete, onEdit, initialConfig, onLogTestResults, dailyStats }) {
+function PracticeTestContainer({ words, onCancel, savedOptions, onSaveOptions, onUpdateStage, onToggleStar, onDelete, onEdit, initialConfig, onLogTestResults, dailyStats, practiceTests, onSaveTest, onDeleteTest, onDeleteAllTests }) {
     const [testState, setTestState] = useState('options'); // 'options' | 'running' | 'results'
     const [questions, setQuestions] = useState([]);
     const [lastConfig, setLastConfig] = useState(null);
     const [testKey, setTestKey] = useState(0);
+    const [activeTestId, setActiveTestId] = useState(null);
+    const [initialTestState, setInitialTestState] = useState(null);
 
     // If initialConfig is passed (e.g. from bulk actions), start directly
     useEffect(() => {
@@ -17,7 +19,7 @@ function PracticeTestContainer({ words, onCancel, savedOptions, onSaveOptions, o
     }, [initialConfig]);
 
     // Generate Questions when starting
-    const handleStart = (config) => {
+    const handleStart = async (config) => {
         setLastConfig(config);
         let pool = [...words];
 
@@ -166,13 +168,46 @@ function PracticeTestContainer({ words, onCancel, savedOptions, onSaveOptions, o
             }
         });
 
+        const testData = {
+            status: 'ongoing',
+            config: config,
+            questions: generatedQuestions,
+            answers: {},
+            writtenInputs: {},
+            completed: false,
+            hintsUsed: {},
+            hiddenOptions: {}
+        };
+
+        const newTestId = await onSaveTest(null, testData);
+
         setQuestions(generatedQuestions);
+        setActiveTestId(newTestId);
+        setInitialTestState(testData);
         setTestState('running');
         setTestKey(prev => prev + 1);
     };
 
-    const handleFinish = () => {
+    const handleResumeTest = (testId) => {
+        const test = practiceTests.find(t => t.id === testId);
+        if (test) {
+            setLastConfig(test.config);
+            setQuestions(test.questions);
+            setActiveTestId(testId);
+            setInitialTestState(test);
+            setTestState('running');
+            setTestKey(prev => prev + 1);
+        }
+    };
+
+    const handleCloseTest = () => {
+        setActiveTestId(null);
+        setInitialTestState(null);
         setTestState('options');
+    };
+
+    const handleFinish = () => {
+        handleCloseTest();
         setQuestions([]);
     };
 
@@ -201,6 +236,10 @@ function PracticeTestContainer({ words, onCancel, savedOptions, onSaveOptions, o
                     onCancel={onCancel}
                     savedOptions={savedOptions}
                     onSaveOptions={onSaveOptions}
+                    practiceTests={practiceTests}
+                    onResumeTest={handleResumeTest}
+                    onDeleteTest={onDeleteTest}
+                    onDeleteAllTests={onDeleteAllTests}
                 />
             )}
             {testState === 'running' && (
@@ -208,7 +247,7 @@ function PracticeTestContainer({ words, onCancel, savedOptions, onSaveOptions, o
                     key={testKey}
                     questions={questions}
                     words={words}
-                    onClose={() => setTestState('options')}
+                    onClose={handleCloseTest}
                     onHome={onCancel}
                     onFinish={handleFinish}
                     onUpdateStage={onUpdateStage}
@@ -220,6 +259,9 @@ function PracticeTestContainer({ words, onCancel, savedOptions, onSaveOptions, o
                     onRetakeMissed={handleRetakeMissed}
                     onLogTestResults={onLogTestResults}
                     dailyStats={dailyStats}
+                    testId={activeTestId}
+                    initialTestState={initialTestState}
+                    onSaveTest={onSaveTest}
                 />
             )}
         </div>

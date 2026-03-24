@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Container, Form, Button, FormCheck, Badge } from 'react-bootstrap';
 import Swal from 'sweetalert2';
 
-function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOptions, onSaveOptions }) {
+function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOptions, onSaveOptions, practiceTests, onResumeTest, onDeleteTest, onDeleteAllTests }) {
     const [questionCount, setQuestionCount] = useState(Math.min(10, maxQuestions));
     const [onlyStarred, setOnlyStarred] = useState(false);
     const [questionFormat, setQuestionFormat] = useState('mixed'); // 'definition' or 'term' or 'mixed'
@@ -106,6 +106,109 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
             </div>
 
             <div className="text-body-secondary mx-auto" style={{ maxWidth: '800px' }}>
+                {practiceTests && practiceTests.length > 0 && (
+                    <div className="mb-4 pb-3 border-bottom border-secondary border-opacity-25">
+                        <div className="d-flex justify-content-between align-items-center mb-3">
+                            <h5 className="text-body fw-bold mb-0">Tamamlanmış & Devam Eden Testler</h5>
+                            <Button variant="outline-danger" size="sm" className="rounded-pill px-3 fw-bold" onClick={() => {
+                                Swal.fire({
+                                    title: 'Tümünü Sil',
+                                    text: 'Tüm sınav geçmişini silmek istediğinize emin misiniz? Bu işlem geri alınamaz.',
+                                    icon: 'warning',
+                                    showCancelButton: true,
+                                    confirmButtonText: 'Evet, Sil',
+                                    cancelButtonText: 'İptal',
+                                    confirmButtonColor: '#d33',
+                                }).then(result => {
+                                    if (result.isConfirmed && onDeleteAllTests) {
+                                        onDeleteAllTests();
+                                    }
+                                });
+                            }}>
+                                Tümünü Sil
+                            </Button>
+                        </div>
+                        <div className="d-flex gap-2 pb-2" style={{ overflowX: 'auto', scrollbarWidth: 'thin', whiteSpace: 'nowrap' }}>
+                            {practiceTests.map(test => {
+                                const dateObj = test.updatedAt?.toDate ? test.updatedAt.toDate() : new Date(test.updatedAt || test.createdAt || Date.now());
+                                const date = dateObj.toLocaleDateString('tr-TR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+                                const isCompleted = test.status === 'completed';
+                                
+                                const total = test.questions?.length || 0;
+                                let answeredCount = 0;
+                                let correctCount = 0;
+
+                                if (test.questions) {
+                                    test.questions.forEach((q, idx) => {
+                                        if (test.answers && test.answers[idx]) {
+                                            answeredCount++;
+                                            if (test.answers[idx].selected?.isCorrect) {
+                                                correctCount++;
+                                            }
+                                        } else if (q.type === 'written' && test.writtenInputs && (test.writtenInputs[idx] || '').trim().length > 0) {
+                                            answeredCount++;
+                                        }
+                                    });
+                                }
+                                const unanswered = Math.max(0, total - answeredCount);
+                                const successRate = total > 0 ? Math.round((correctCount / total) * 100) : 0;
+
+                                let borderClass = 'border-secondary border-opacity-25';
+                                let iconColor = 'text-warning'; // Default icon color for ongoing
+                                if (isCompleted) {
+                                    borderClass = 'border-success border-opacity-75';
+                                    iconColor = 'text-success';
+                                } else if (unanswered !== total) {
+                                    borderClass = 'border-danger border-opacity-75';
+                                }
+
+                                return (
+                                    <button
+                                        key={test.id}
+                                        type="button"
+                                        className={`btn bg-body text-body rounded-4 px-3 py-2 fw-medium border text-nowrap d-flex align-items-center gap-3 flex-shrink-0 text-start ${borderClass}`}
+                                        onClick={() => onResumeTest(test.id)}
+                                        style={{ fontSize: '14px', transition: 'all 0.2s', boxShadow: '0 2px 5px rgba(0,0,0,0.05)' }}
+                                    >
+                                        <div className="d-flex flex-column" style={{ lineHeight: '1.4' }}>
+                                            <div className="d-flex align-items-center gap-2">
+                                                {isCompleted ? <i className={`bi bi-check-circle-fill ${iconColor}`}></i> : <i className={`bi bi-play-circle-fill ${iconColor}`}></i>}
+                                                <span>{date}</span>
+                                            </div>
+                                            <small className="opacity-75 fw-normal" style={{ fontSize: '12px' }}>
+                                                {total} Soru {isCompleted ? <span className="text-success fw-semibold"> • %{successRate} Başarı</span> : `• ${unanswered} Boş`}
+                                            </small>
+                                        </div>
+                                        
+                                        <div
+                                            className="ms-1 d-flex align-items-center"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                Swal.fire({
+                                                    title: 'Testi Sil',
+                                                    text: 'Bu testi silmek istediğinize emin misiniz?',
+                                                    icon: 'warning',
+                                                    showCancelButton: true,
+                                                    confirmButtonText: 'Evet, Sil',
+                                                    cancelButtonText: 'İptal',
+                                                    confirmButtonColor: '#d33',
+                                                }).then(result => {
+                                                    if (result.isConfirmed && onDeleteTest) {
+                                                        onDeleteTest(test.id);
+                                                    }
+                                                });
+                                            }}
+                                            title="Sil"
+                                        >
+                                            <i className="bi bi-x-lg text-danger opacity-75 hover-opacity-100 transition-all" style={{ cursor: 'pointer', fontSize: '1.1rem' }}></i>
+                                        </div>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
+
                 <div className="mb-4 pb-3 border-bottom border-secondary border-opacity-25">
                     <h5 className="text-body fw-bold mb-3">Test Uzunluğu</h5>
                     <div className="d-flex justify-content-between align-items-center">
