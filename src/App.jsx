@@ -196,6 +196,7 @@ function App() {
   ]);
   const [dailyStats, setDailyStats] = useState({});
   const [searchQuery, setSearchQuery] = useState('');
+  const [showDuplicates, setShowDuplicates] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedWord, setSelectedWord] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -832,7 +833,67 @@ function App() {
     return new Date(y, m - 1, d);
   };
 
+  const duplicateIds = useMemo(() => {
+    if (!showDuplicates) return new Set();
+    const dups = new Set();
+    
+    // First, map words for easy access
+    const normalizedWords = words.map(w => {
+      let grammarText = (w.grammar || []).join(' ').toLowerCase();
+      // Remove common grammatical terms used in the templates so they don't produce false matches
+      grammarText = grammarText.replace(/\b(yalın|hal|v1|v2|v3|geniş|zaman|tekil|geçmiş|past|participle|şimdiki|sıfat|fiil|isim|zarf|noun|verb|adjective|adverb|hata|doğru|kullanım|ing|ed|s|es|ies)\b/gi, ' ');
+      return {
+        id: w.id,
+        term: w.term.toLowerCase().trim(),
+        grammarText: grammarText
+      };
+    });
+
+    // Create regex for each term
+    const regexCache = {};
+    for (const w of normalizedWords) {
+      if (w.term.length < 3) continue;
+      const escaped = w.term.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+      regexCache[w.id] = new RegExp(`\\b${escaped}\\b`, 'i');
+    }
+
+    // Now O(N^2) comparison
+    for (let i = 0; i < normalizedWords.length; i++) {
+      const w1 = normalizedWords[i];
+      for (let j = i + 1; j < normalizedWords.length; j++) {
+        const w2 = normalizedWords[j];
+        
+        let related = false;
+        // Exact term match (e.g. "agree" and "agree")
+        if (w1.term === w2.term) {
+          related = true;
+        } else {
+          // Substring term match
+          if (w1.term.length >= 4 && w2.term.startsWith(w1.term) && w2.term.length - w1.term.length <= 4) {
+             related = true;
+          } else if (w2.term.length >= 4 && w1.term.startsWith(w2.term) && w1.term.length - w2.term.length <= 4) {
+             related = true;
+          }
+          // Grammar text match
+          else if (w1.term.length >= 3 && regexCache[w1.id] && regexCache[w1.id].test(w2.grammarText)) {
+            related = true;
+          } else if (w2.term.length >= 3 && regexCache[w2.id] && regexCache[w2.id].test(w1.grammarText)) {
+            related = true;
+          }
+        }
+        
+        if (related) {
+          dups.add(w1.id);
+          dups.add(w2.id);
+        }
+      }
+    }
+    return dups;
+  }, [words, showDuplicates]);
+
   let processedWords = words.filter(word => {
+    if (showDuplicates && !duplicateIds.has(word.id)) return false;
+
     const searchMatch = word.term.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (word.shortMeanings && word.shortMeanings.toLowerCase().includes(searchQuery.toLowerCase())) ||
       (word.generalDefinition && word.generalDefinition.toLowerCase().includes(searchQuery.toLowerCase()));
@@ -864,7 +925,15 @@ function App() {
     return true;
   });
 
-  if (sortRules.length > 0) {
+  if (showDuplicates) {
+    processedWords.sort((a, b) => {
+      const aVal = a.term.toLowerCase();
+      const bVal = b.term.toLowerCase();
+      if (aVal < bVal) return -1;
+      if (aVal > bVal) return 1;
+      return 0;
+    });
+  } else if (sortRules.length > 0) {
     processedWords.sort((a, b) => {
       for (const rule of sortRules) {
         let aVal = a[rule.field];
@@ -902,6 +971,8 @@ function App() {
   };
 
   const projectedCount = words.filter(word => {
+    if (showDuplicates && !duplicateIds.has(word.id)) return false;
+
     const searchMatch = word.term.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (word.shortMeanings && word.shortMeanings.toLowerCase().includes(searchQuery.toLowerCase())) ||
       (word.generalDefinition && word.generalDefinition.toLowerCase().includes(searchQuery.toLowerCase()));
@@ -965,8 +1036,14 @@ function App() {
           </Navbar.Brand>
 
           <InputGroup className="w-auto flex-grow-1 mx-2 mx-md-4" style={{ maxWidth: '400px' }}>
-            <InputGroup.Text className="bg-body-secondary border-0 text-muted rounded-start-pill ps-2 ps-md-3">
+            <InputGroup.Text className="bg-body-secondary border-0 text-muted rounded-start-pill ps-2 ps-md-3 d-flex align-items-center gap-2">
               <i className="bi bi-search" style={{ fontSize: '18px' }}></i>
+              <i 
+                className={`bi bi-intersect ${showDuplicates ? 'text-primary' : 'text-muted'}`} 
+                style={{ fontSize: '16px', cursor: 'pointer', transition: 'color 0.2s ease-in-out' }}
+                onClick={(e) => { e.stopPropagation(); setShowDuplicates(!showDuplicates); }}
+                title="Sadece Benzer/Aynı Kelimeleri Göster"
+              ></i>
             </InputGroup.Text>
             <Form.Control
               type="text"

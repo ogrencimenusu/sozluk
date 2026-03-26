@@ -48,7 +48,7 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
             },
             {
                 root: null,
-                rootMargin: '-140px 0px -80% 0px', // Matches scrollMarginTop (120px) + small offset
+                rootMargin: '-91px 0px -80% 0px', // Matches scrollMarginTop (71px) + small offset
                 threshold: 0
             }
         );
@@ -538,7 +538,7 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                     </Col>
 
                     {/* MAIN CONTENT: Questions List */}
-                    <Col md={9} lg={8} className="mx-auto pb-5">
+                    <Col md={9} lg={8} className="mx-auto pb-5" style={{ marginBottom: '700px' }}>
 
                         {/* MOBILE NAVIGATION: Collapsible and Truncated - Sticky on mobile */}
                         <div className="d-md-none mb-4 sticky-top" style={{ top: '80px', zIndex: 1010 }}>
@@ -773,8 +773,8 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
 
                         <div className="d-flex flex-column gap-5">
                             {questions.map((currentQuestion, idx) => (
-                                <div key={idx} ref={el => questionRefs.current[idx] = el} data-index={idx} style={{ scrollMarginTop: '120px' }}>
-                                    <Card className={`bg-body-tertiary border-secondary border-opacity-25 rounded-4 p-4 shadow-none ${completed && !answers[idx]?.selected?.isCorrect ? 'border-opacity-100 border-danger' : ''}`}>
+                                <div key={idx} ref={el => questionRefs.current[idx] = el} data-index={idx} style={{ scrollMarginTop: '71px' }}>
+                                    <Card className={`position-relative bg-body-tertiary border-secondary border-opacity-25 rounded-4 p-4 shadow-none ${completed && !answers[idx]?.selected?.isCorrect ? 'border-opacity-100 border-danger' : ''}`}>
                                         <div className="d-flex justify-content-between align-items-start mb-4">
                                             <div className="d-flex align-items-center gap-2">
                                                 <span className="bg-secondary bg-opacity-25 text-body rounded-circle d-flex align-items-center justify-content-center fw-bold" style={{ width: 28, height: 28, fontSize: '14px' }}>
@@ -783,37 +783,6 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                                 <span className="text-body-secondary fw-semibold">
                                                     {currentQuestion.format === 'definition' ? 'Anlam' : 'Kelime'}
                                                 </span>
-                                                {!completed && currentQuestion.type === 'written' && !answers[idx] && (() => {
-                                                    const hasPrevious = questions.some((q, i) => i < idx && q.type === 'written' && !answers[i]);
-                                                    const hasNext = questions.some((q, i) => i > idx && q.type === 'written' && !answers[i]);
-
-                                                    return (
-                                                        <div className="btn-group ms-1 border border-secondary border-opacity-50 rounded-pill overflow-hidden bg-body-tertiary shadow-sm" role="group">
-                                                            <Button
-                                                                variant="link"
-                                                                size="sm"
-                                                                className="p-0 px-2 text-body-secondary hover-text-primary transition-all border-0 shadow-none d-flex align-items-center justify-content-center border-end border-secondary border-opacity-25 rounded-0"
-                                                                onClick={() => focusNextWrittenQuestion(idx, 'up')}
-                                                                disabled={!hasPrevious}
-                                                                title="Önceki Yazılı Soru"
-                                                                style={{ height: '26px' }}
-                                                            >
-                                                                <i className="bi bi-chevron-up" style={{ fontSize: '0.85rem' }}></i>
-                                                            </Button>
-                                                            <Button
-                                                                variant="link"
-                                                                size="sm"
-                                                                className="p-0 px-2 text-body-secondary hover-text-primary transition-all border-0 shadow-none d-flex align-items-center justify-content-center rounded-0"
-                                                                onClick={() => focusNextWrittenQuestion(idx, 'down')}
-                                                                disabled={!hasNext}
-                                                                title="Sonraki Yazılı Soru"
-                                                                style={{ height: '26px' }}
-                                                            >
-                                                                <i className="bi bi-chevron-down" style={{ fontSize: '0.85rem' }}></i>
-                                                            </Button>
-                                                        </div>
-                                                    );
-                                                })()}
                                             </div>
                                             <div className="d-flex gap-2 align-items-center flex-wrap justify-content-end">
                                                 {(() => {
@@ -942,7 +911,7 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
 
                                         <div>
                                             {currentQuestion.type === 'written' ? (
-                                                <div>
+                                                <div className="mb-3">
                                                     <span className="text-body-secondary fw-semibold d-block mb-3">
                                                         Cevabı yazıp Enter'a bas ya da butona tıkla
                                                     </span>
@@ -1206,6 +1175,41 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                                 })}
                                             </Row>
                                         </div>
+
+                                        {/* Placed at the very bottom center of the card */}
+                                        {!completed && currentQuestion.type === 'written' && !answers[idx] && (() => {
+                                            const hasPrevious = questions.some((q, i) => i < idx && q.type === 'written' && !answers[i]);
+                                            const hasNext = questions.some((q, i) => i > idx && q.type === 'written' && !answers[i]);
+
+                                            return (
+                                                <div className="position-absolute top-100 start-50 translate-middle" style={{ zIndex: 10 }}>
+                                                    <div className="btn-group border border-secondary border-opacity-50 rounded-pill overflow-hidden bg-body shadow-sm" role="group">
+                                                        <Button
+                                                            variant="link"
+                                                            size="sm"
+                                                            className="p-0 px-3 text-body-secondary hover-text-primary transition-all border-0 shadow-none d-flex align-items-center justify-content-center border-end border-secondary border-opacity-25 rounded-0"
+                                                            onClick={() => focusNextWrittenQuestion(idx, 'up')}
+                                                            disabled={!hasPrevious}
+                                                            title="Önceki Yazılı Soru"
+                                                            style={{ height: '32px' }}
+                                                        >
+                                                            <i className="bi bi-chevron-up" style={{ fontSize: '1rem' }}></i>
+                                                        </Button>
+                                                        <Button
+                                                            variant="link"
+                                                            size="sm"
+                                                            className="p-0 px-3 text-body-secondary hover-text-primary transition-all border-0 shadow-none d-flex align-items-center justify-content-center rounded-0"
+                                                            onClick={() => focusNextWrittenQuestion(idx, 'down')}
+                                                            disabled={!hasNext}
+                                                            title="Sonraki Yazılı Soru"
+                                                            style={{ height: '32px' }}
+                                                        >
+                                                            <i className="bi bi-chevron-down" style={{ fontSize: '1rem' }}></i>
+                                                        </Button>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })()}
                                     </Card>
                                 </div>
                             ))}
