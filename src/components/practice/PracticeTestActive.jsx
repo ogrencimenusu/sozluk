@@ -18,6 +18,14 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
     const [mobileNavExpanded, setMobileNavExpanded] = useState(false);
     const [mobileShowAll, setMobileShowAll] = useState(false);
 
+    // New States for Gamified Options
+    const [currentStreak, setCurrentStreak] = useState(0);
+    const [maxStreak, setMaxStreak] = useState(0);
+    const [showStreakAnimation, setShowStreakAnimation] = useState(false);
+    const [timeLeft, setTimeLeft] = useState(() => initialTestState?.config?.advancedOptions?.timeSurvival ? Math.max(10, (questions?.length || 10) * 10) : null);
+    const [addedTimeParams, setAddedTimeParams] = useState({ show: false, val: 0, key: 0 });
+    const [comboTimer, setComboTimer] = useState(() => initialTestState?.config?.advancedOptions?.comboStreak ? 10 : null);
+
     // Auto-save progress
     useEffect(() => {
         if (!testId || !onSaveTest) return;
@@ -34,6 +42,25 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
         }, 1000); // Debounce saves by 1 second to avoid excessive writes
         return () => clearTimeout(timeoutId);
     }, [answers, writtenInputs, completed, hintsUsed, hiddenOptions, activeQuestionIdx, testId, onSaveTest]);
+
+    // Combo Timer countdown
+    useEffect(() => {
+        if (!initialTestState?.config?.advancedOptions?.comboStreak) return;
+        if (completed || comboTimer === null) return;
+        
+        const timer = setInterval(() => {
+            setComboTimer(prev => {
+                if (prev <= 1) {
+                    clearInterval(timer);
+                    if (currentStreak > 0) setCurrentStreak(0);
+                    return 0;
+                }
+                return prev - 1;
+            });
+        }, 1000);
+        
+        return () => clearInterval(timer);
+    }, [completed, comboTimer, currentStreak, initialTestState?.config?.advancedOptions?.comboStreak]);
 
     // Track active question based on scroll
     useEffect(() => {
@@ -86,10 +113,39 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
         return () => window.removeEventListener('beforeunload', handleBeforeUnload);
     }, [answers, writtenInputs, completed, questions]);
 
+    const [streakAnimParams, setStreakAnimParams] = useState({ show: false, key: 0 });
+
     const flipCard = (idx) => setFlippedCards(prev => ({ ...prev, [idx]: !prev[idx] }));
 
     const handleSelectAnswer = (qIdx, optionObj) => {
         if (completed) return; // Prevent changing answers after completion
+
+        // Gamification effects (only trigger on first try)
+        if (!answers[qIdx]) {
+            if (optionObj.isCorrect) {
+                if (initialTestState?.config?.advancedOptions?.comboStreak) {
+                    if (comboTimer > 0) {
+                        setCurrentStreak(s => {
+                            const n = s + 1;
+                            setMaxStreak(m => Math.max(m, n));
+                            return n;
+                        });
+                        setComboTimer(prev => prev + 10);
+                        setStreakAnimParams({ show: true, key: Date.now() });
+                        setTimeout(() => setStreakAnimParams(p => ({ ...p, show: false })), 1000);
+                    } else {
+                        // User answered correct but too slow
+                        setCurrentStreak(1);
+                        setComboTimer(10);
+                    }
+                }
+            } else {
+                if (initialTestState?.config?.advancedOptions?.comboStreak) {
+                    setCurrentStreak(0);
+                    setComboTimer(10);
+                }
+            }
+        }
 
         setAnswers(prev => {
             const currentAnswer = prev[qIdx];
@@ -137,7 +193,37 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
         if (completed || !!answers[qIdx]) return;
         const typed = (writtenInputs[qIdx] || '').trim().toLowerCase();
         const correct = correctAnswer.trim().toLowerCase();
-        const isCorrect = typed === correct;
+        let isCorrect = typed === correct;
+        
+        if (!isCorrect && typed.length > 0) {
+            const distance = levenshteinDistance(typed, correct);
+            if (distance <= 3) isCorrect = true;
+        }
+
+        // Gamification effects
+        if (isCorrect) {
+            if (initialTestState?.config?.advancedOptions?.comboStreak) {
+                if (comboTimer > 0) {
+                    setCurrentStreak(s => {
+                        const n = s + 1;
+                        setMaxStreak(m => Math.max(m, n));
+                        return n;
+                    });
+                    setComboTimer(prev => prev + 10);
+                    setStreakAnimParams({ show: true, key: Date.now() });
+                    setTimeout(() => setStreakAnimParams(p => ({ ...p, show: false })), 1000);
+                } else {
+                    setCurrentStreak(1);
+                    setComboTimer(10);
+                }
+            }
+        } else {
+            if (initialTestState?.config?.advancedOptions?.comboStreak) {
+                setCurrentStreak(0);
+                setComboTimer(10);
+            }
+        }
+
         setAnswers(prev => {
             const newAnswers = { ...prev, [qIdx]: { selected: { text: writtenInputs[qIdx] || '', isCorrect } } };
 
@@ -310,7 +396,8 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
 
     const handleSubmit = async () => {
         const answeredCount = getAnsweredCount();
-        if (answeredCount < questions.length) {
+        // If time is up, we skip the confirmation dialog
+        if (timeLeft !== 0 && answeredCount < questions.length) {
             const result = await Swal.fire({
                 title: 'Emin misiniz?',
                 text: 'Tüm soruları cevaplamadınız. Yine de testi bitirmek istiyor musunuz?',
@@ -424,12 +511,60 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
+    // Time Survival Timer Logic
+    useEffect(() => {
+        if (!initialTestState?.config?.advancedOptions?.timeSurvival) return;
+        if (completed || timeLeft === null || timeLeft <= 0) return;
+
+        const timer = setInterval(() => {
+            setTimeLeft(prev => {
+                if (prev <= 1) {
+                    clearInterval(timer);
+                    return 0;
+                }
+                return prev - 1;
+            });
+        }, 1000);
+
+        return () => clearInterval(timer);
+    }, [completed, timeLeft, initialTestState?.config?.advancedOptions?.timeSurvival]);
+
+    // Submit when time reaches 0
+    useEffect(() => {
+        if (timeLeft === 0 && !completed && initialTestState?.config?.advancedOptions?.timeSurvival) {
+            Swal.fire({
+                icon: 'error',
+                title: 'Süre Bitti!',
+                text: 'Zamanınız doldu, test otomatik olarak tamamlandı.',
+                confirmButtonText: 'Sonuçları Gör'
+            }).then(() => {
+                handleSubmit();
+            });
+        }
+    }, [timeLeft, completed, initialTestState]);
+
     const correctCount = completed ? questions.filter((q, idx) => answers[idx]?.selected?.isCorrect).length : 0;
     const allAnswered = getAnsweredCount() === questions.length;
 
     const skippedCount = completed ? questions.filter((q, idx) => answers[idx]?.selected?.text === 'Boş bırakıldı').length : 0;
     const incorrectCount = completed ? (questions.length - correctCount - skippedCount) : 0;
-    const scorePercent = questions.length > 0 ? Math.round((correctCount / questions.length) * 100) : 0;
+    
+    // Kademeli İpucu: Calculate score percent, deducting points for hints if enabled
+    const scorePercent = React.useMemo(() => {
+        if (!completed || questions.length === 0) return 0;
+        let totalScore = 0;
+        questions.forEach((q, idx) => {
+            if (answers[idx]?.selected?.isCorrect) {
+                let questionScore = 1;
+                // If progressive hint is active, deduct 30% for each hint used on this question
+                if (initialTestState?.config?.advancedOptions?.progressiveHint && hintsUsed[idx] > 0) {
+                    questionScore = Math.max(0.2, 1 - (hintsUsed[idx] * 0.3));
+                }
+                totalScore += questionScore;
+            }
+        });
+        return Math.round((totalScore / questions.length) * 100);
+    }, [completed, questions, answers, hintsUsed, initialTestState]);
     const missedQuestions = completed ? questions.filter((q, idx) => !answers[idx]?.selected?.isCorrect) : [];
 
     // Calculate Stage Metrics based on all words in the dictionary
@@ -476,7 +611,42 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                         <div className="bg-body-tertiary border border-secondary border-opacity-50 rounded-pill px-3 py-1 text-body fw-bold d-flex align-items-center gap-2" title="Soru Sayısı">
                             <i className="bi bi-pencil-fill text-info"></i> {questions.length}
                         </div>
-                        <Button variant="outline-secondary" className="rounded-pill px-3 py-1" onClick={handleOptions}>Seçenekler</Button>
+                        {initialTestState?.config?.advancedOptions?.comboStreak && (
+                            <div className="bg-body-tertiary border border-warning border-opacity-50 rounded-pill px-3 py-1 text-body fw-bold d-flex align-items-center gap-2 position-relative" title="Seri">
+                                <i className="bi bi-fire text-warning"></i> {currentStreak}
+                                <span className="vr mx-1" style={{ width: '2px' }}></span>
+                                <span className={`small ${comboTimer <= 3 && comboTimer > 0 ? 'text-danger' : 'text-body-secondary'}`}>{comboTimer}s</span>
+                                {streakAnimParams.show && (
+                                    <span key={streakAnimParams.key} className="position-absolute translate-middle badge rounded-pill bg-danger text-light pb-1 px-2 pointer-events-none" style={{ top: '-1px', left: '100%', fontSize: '0.65rem', animation: 'bounceUp 1s ease-out forwards', zIndex: 100 }}>
+                                        +10s
+                                    </span>
+                                )}
+                            </div>
+                        )}
+                        {initialTestState?.config?.advancedOptions?.timeSurvival && timeLeft !== null && (
+                            <div className={`bg-body-tertiary border ${timeLeft < 10 && !completed ? 'border-danger text-danger' : 'border-success border-opacity-50'} rounded-pill px-3 py-1 text-body fw-bold d-flex align-items-center gap-2 position-relative`} title="Kalan Süre">
+                                <i className="bi bi-stopwatch-fill"></i> {timeLeft}s
+                                {addedTimeParams.show && (
+                                    <span key={addedTimeParams.key} className="position-absolute translate-middle badge rounded-pill text-success fw-bold pointer-events-none fs-6" style={{ top: '-5px', left: '90%', animation: 'floatUp 1s ease-out forwards', backgroundColor: 'transparent', zIndex: 100 }}>
+                                        +{addedTimeParams.val}s
+                                    </span>
+                                )}
+                            </div>
+                        )}
+                        <style>{`
+                            @keyframes floatUp {
+                                0% { opacity: 1; transform: translateY(0); }
+                                80% { opacity: 1; transform: translateY(-15px); }
+                                100% { opacity: 0; transform: translateY(-20px); }
+                            }
+                            @keyframes bounceUp {
+                                0% { transform: scale(0.5); opacity: 0; }
+                                40% { transform: scale(1.4); opacity: 1; }
+                                80% { transform: scale(0.9); opacity: 1; }
+                                100% { transform: scale(1); opacity: 0; }
+                            }
+                        `}</style>
+                        <Button variant="outline-secondary" className="rounded-pill px-3 py-1 d-none d-md-block" onClick={handleOptions}>Seçenekler</Button>
                         <Button variant="outline-secondary" className="rounded-circle d-flex align-items-center justify-content-center p-0" style={{ width: '36px', height: '36px' }} onClick={handleClose}>
                             <i className="bi bi-x fs-5 text-body"></i>
                         </Button>
@@ -666,6 +836,38 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                                 </div>
                                             </div>
                                         </div>
+                                        {/* Gamification Results Summary */}
+                                        {(initialTestState?.config?.advancedOptions?.comboStreak || initialTestState?.config?.advancedOptions?.timeSurvival || initialTestState?.config?.advancedOptions?.progressiveHint) && (
+                                            <div className="mt-4 pt-3 border-top border-secondary border-opacity-25 d-flex gap-3 flex-wrap">
+                                                 {initialTestState?.config?.advancedOptions?.comboStreak && (
+                                                      <div className="d-flex align-items-center gap-2">
+                                                          <div className="bg-warning bg-opacity-10 text-warning rounded-circle d-flex align-items-center justify-content-center" style={{ width: 36, height: 36 }}><i className="bi bi-fire fs-5"></i></div>
+                                                          <div>
+                                                              <div className="fw-bold text-body" style={{ lineHeight: 1.2 }}>En Yüksek Seri</div>
+                                                              <div className="small text-muted">{maxStreak}x Combo</div>
+                                                          </div>
+                                                      </div>
+                                                 )}
+                                                 {initialTestState?.config?.advancedOptions?.timeSurvival && (
+                                                      <div className="d-flex align-items-center gap-2">
+                                                          <div className="bg-success bg-opacity-10 text-success rounded-circle d-flex align-items-center justify-content-center" style={{ width: 36, height: 36 }}><i className="bi bi-stopwatch-fill fs-5"></i></div>
+                                                          <div>
+                                                              <div className="fw-bold text-body" style={{ lineHeight: 1.2 }}>Kalan Süre</div>
+                                                              <div className="small text-muted">{timeLeft} Saniye</div>
+                                                          </div>
+                                                      </div>
+                                                 )}
+                                                 {initialTestState?.config?.advancedOptions?.progressiveHint && Object.values(hintsUsed).some(v => v > 0) && (
+                                                      <div className="d-flex align-items-center gap-2">
+                                                          <div className="bg-danger bg-opacity-10 text-danger rounded-circle d-flex align-items-center justify-content-center" style={{ width: 36, height: 36 }}><i className="bi bi-graph-down-arrow fs-5"></i></div>
+                                                          <div>
+                                                              <div className="fw-bold text-body" style={{ lineHeight: 1.2 }}>İpucu Bedeli</div>
+                                                              <div className="small text-danger fw-bold">Kesilen Kat: -{Math.round(Object.values(hintsUsed).reduce((acc, curr) => acc + (curr * 0.3), 0) * 100) / 100} Puan</div>
+                                                          </div>
+                                                      </div>
+                                                 )}
+                                            </div>
+                                        )}
                                     </Col>
 
                                     <Col lg={7} className="border-start-lg border-secondary border-opacity-25 ps-lg-4 mt-4 mt-lg-0">
@@ -833,7 +1035,12 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                                     );
 
                                                     return (
-                                                        <div className="d-flex gap-2">
+                                                        <div className="d-flex gap-2 align-items-center position-relative">
+                                                            {initialTestState?.config?.advancedOptions?.progressiveHint && currentHints > 0 && (
+                                                                <Badge bg="danger" className="position-absolute end-100 me-2 top-50 translate-middle-y" style={{ animation: 'shake 0.4s' }} title="Puan Değeri Düştü">
+                                                                    -%{Math.min(100, currentHints * 30)} Puan
+                                                                </Badge>
+                                                            )}
                                                             {maxHints > 0 && (
                                                                 <OverlayTrigger trigger={['hover', 'focus']} placement="top" overlay={popover}>
                                                                     <span className="d-inline-block">
@@ -915,6 +1122,23 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                                     <span className="text-body-secondary fw-semibold d-block mb-3">
                                                         Cevabı yazıp Enter'a bas ya da butona tıkla
                                                     </span>
+                                                    
+                                                    {initialTestState?.config?.advancedOptions?.missingLetters && !answers[idx] && (
+                                                        <div className="mb-3 text-center p-3 rounded-3 border border-info border-opacity-50 bg-info bg-opacity-10">
+                                                            <div className="small text-info fw-bold mb-2">
+                                                                <i className="bi bi-alphabet me-1"></i> Eksik Harfler İpucu
+                                                            </div>
+                                                            <div className="fs-3 font-monospace fw-bold text-body letter-spacing-2" style={{ letterSpacing: '4px' }}>
+                                                                {currentQuestion.answer.split('').map((char, i) => {
+                                                                    if (char === ' ') return <span key={i} className="mx-3"></span>;
+                                                                    // Show first letter, last letter, and roughly every 3rd letter, hide others
+                                                                    const show = i === 0 || i === currentQuestion.answer.length - 1 || i % 3 === 0;
+                                                                    return <span key={i} className={show ? "text-primary" : "text-body-tertiary"}>{show ? char : '_'}</span>;
+                                                                })}
+                                                            </div>
+                                                        </div>
+                                                    )}
+
                                                     {!answers[idx] ? (
                                                         <div className="d-flex gap-2">
                                                             <input

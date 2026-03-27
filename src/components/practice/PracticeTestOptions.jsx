@@ -23,6 +23,16 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
         "written": false   // Written Answer
     });
 
+    // New State for Advanced/Gamified Options
+    const [advancedOptions, setAdvancedOptions] = useState({
+        smartDistractors: false,
+        missingLetters: false,
+        comboStreak: false,
+        matchPairs: false,
+        progressiveHint: false,
+        timeSurvival: false
+    });
+
     // Track if we've already loaded saved options to avoid re-loading on every savedOptions update
     const hasLoaded = React.useRef(false);
 
@@ -36,6 +46,7 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
             if (savedOptions.shuffle !== undefined) setShuffle(savedOptions.shuffle);
             if (savedOptions.learningStatus !== undefined) setLearningStatus(savedOptions.learningStatus);
             if (savedOptions.questionTypes !== undefined) setQuestionTypes(savedOptions.questionTypes);
+            if (savedOptions.advancedOptions !== undefined) setAdvancedOptions(savedOptions.advancedOptions);
         }
     }, [savedOptions]);
 
@@ -48,10 +59,11 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
             questionFormat,
             shuffle,
             learningStatus,
-            questionTypes
+            questionTypes,
+            advancedOptions
         });
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [questionCount, onlyStarred, questionFormat, shuffle, learningStatus, questionTypes]);
+    }, [questionCount, onlyStarred, questionFormat, shuffle, learningStatus, questionTypes, advancedOptions]);
 
     // Calculate available questions based on current filters
     const availableWordsCount = (words || []).filter(w => {
@@ -87,7 +99,8 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
             questionFormat,
             shuffle,
             learningStatus,
-            questionTypes
+            questionTypes,
+            advancedOptions
         });
     };
 
@@ -315,7 +328,7 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
                     </div>
                 </div>
 
-                <div className="mb-3">
+                <div className="mb-4 pb-3 border-bottom border-secondary border-opacity-25">
                     <div className="mb-2 d-flex justify-content-between align-items-center">
                         <span className="fw-bold text-body-secondary">Öğrenme Durumları</span>
                     </div>
@@ -343,7 +356,7 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
                             onChange={(e) => setLearningStatus(prev => ({ ...prev, "Öğreniyor": e.target.checked }))}
                         />
                     </div>
-                    <div className="d-flex justify-content-between align-items-center mb-3 ms-3 border-bottom border-secondary border-opacity-25 pb-3 text-body">
+                    <div className="d-flex justify-content-between align-items-center mb-3 ms-3 pb-3 text-body">
                         <span className="d-flex align-items-center gap-2">
                             <i className="bi bi-circle-fill text-success small" style={{ fontSize: '10px' }}></i> Öğrendi
                             <Badge bg="secondary" className="bg-opacity-25 text-body rounded-pill ms-1" style={{ fontSize: '12px' }}>{counts.ogrendi}</Badge>
@@ -380,6 +393,105 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
                             checked={shuffle}
                             onChange={(e) => setShuffle(e.target.checked)}
                         />
+                    </div>
+                </div>
+
+                <div className="mb-4">
+                    <h5 className="text-body fw-bold mb-3 d-flex align-items-center gap-2">
+                        Ekstra Zorlaştırıcı & Eğlenceli Modlar <i className="bi bi-fire text-danger"></i>
+                    </h5>
+                    
+                    <div className="d-flex flex-column gap-3">
+                        <div className="d-flex justify-content-between align-items-start text-body p-3 border border-secondary border-opacity-25 rounded-3">
+                            <div>
+                                <div className="fw-medium d-flex align-items-center gap-2">
+                                    <i className="bi bi-exclamation-triangle-fill text-warning"></i> Çeldirici Şıklar
+                                </div>
+                                <div className="text-muted small mt-1">Çoktan seçmeli sınavlarda birbirine çok benzeyen ve şaşırtmacalı şıklar gelir.</div>
+                            </div>
+                            <FormCheck
+                                type="switch"
+                                className="custom-switch-lg mt-1"
+                                checked={advancedOptions.smartDistractors}
+                                onChange={(e) => setAdvancedOptions(prev => ({ ...prev, smartDistractors: e.target.checked }))}
+                            />
+                        </div>
+
+                        <div className="d-flex justify-content-between align-items-start text-body p-3 border border-secondary border-opacity-25 rounded-3">
+                            <div>
+                                <div className="fw-medium d-flex align-items-center gap-2">
+                                    <i className="bi bi-alphabet text-info"></i> Eksik Harfler (Cellat Modu)
+                                </div>
+                                <div className="text-muted small mt-1">Yazılı cevaplarda kelimenin sadece bazı harfleri ipucu olarak verilir (Örn: `A_p_l_`).</div>
+                            </div>
+                            <FormCheck
+                                type="switch"
+                                className="custom-switch-lg mt-1"
+                                checked={advancedOptions.missingLetters}
+                                onChange={(e) => setAdvancedOptions(prev => ({ ...prev, missingLetters: e.target.checked }))}
+                            />
+                        </div>
+
+                        <div className="d-flex justify-content-between align-items-start text-body p-3 border border-secondary border-opacity-25 rounded-3">
+                            <div>
+                                <div className="fw-medium d-flex align-items-center gap-2">
+                                    <i className="bi bi-lightning-charge-fill text-primary"></i> Combo / Seri Çarpanı
+                                </div>
+                                <div className="text-muted small mt-1">Arka arkaya doğru cevap verdikçe puan çarpanın artar (x2, x3) ve efektler çıkar.</div>
+                            </div>
+                            <FormCheck
+                                type="switch"
+                                className="custom-switch-lg mt-1"
+                                checked={advancedOptions.comboStreak}
+                                onChange={(e) => setAdvancedOptions(prev => ({ ...prev, comboStreak: e.target.checked }))}
+                            />
+                        </div>
+
+                        <div className="d-flex justify-content-between align-items-start text-body p-3 border border-secondary border-opacity-25 rounded-3">
+                            <div>
+                                <div className="fw-medium d-flex align-items-center gap-2">
+                                    <i className="bi bi-controller text-success"></i> Eşleştirme Kartları
+                                </div>
+                                <div className="text-muted small mt-1">Test ekranında, karmaşık gelen İngilizce ve Türkçe kelimeleri birbiriyle eşleştirme oyunu.</div>
+                            </div>
+                            <FormCheck
+                                type="switch"
+                                className="custom-switch-lg mt-1"
+                                checked={advancedOptions.matchPairs}
+                                onChange={(e) => setAdvancedOptions(prev => ({ ...prev, matchPairs: e.target.checked }))}
+                            />
+                        </div>
+
+                        <div className="d-flex justify-content-between align-items-start text-body p-3 border border-secondary border-opacity-25 rounded-3">
+                            <div>
+                                <div className="fw-medium d-flex align-items-center gap-2">
+                                    <i className="bi bi-lightbulb text-warning"></i> Kademeli İpucu
+                                </div>
+                                <div className="text-muted small mt-1">Zorlandığında "Harf Satın Al" veya ipucu butonları eklenir ancak alacağın puan düşer.</div>
+                            </div>
+                            <FormCheck
+                                type="switch"
+                                className="custom-switch-lg mt-1"
+                                checked={advancedOptions.progressiveHint}
+                                onChange={(e) => setAdvancedOptions(prev => ({ ...prev, progressiveHint: e.target.checked }))}
+                            />
+                        </div>
+
+                        <div className="d-flex justify-content-between align-items-start text-body p-3 border border-secondary border-opacity-25 rounded-3">
+                            <div>
+                                <div className="fw-medium d-flex align-items-center gap-2">
+                                    <i className="bi bi-stopwatch text-danger"></i> Zamana Karşı Hayatta Kalma
+                                </div>
+                                <div className="text-muted small mt-1">Teste ortak bir hız süresiyle başlarsın (Örn: 30sn). Her doğruda +3 sanine kazanırsın.</div>
+                            </div>
+                            <FormCheck
+                                type="switch"
+                                className="custom-switch-lg mt-1"
+                                checked={advancedOptions.timeSurvival}
+                                onChange={(e) => setAdvancedOptions(prev => ({ ...prev, timeSurvival: e.target.checked }))}
+                            />
+                        </div>
+
                     </div>
                 </div>
             </div>

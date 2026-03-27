@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import PracticeTestOptions from './PracticeTestOptions';
 import PracticeTestActive from './PracticeTestActive';
+import PracticeTestMatchPairs from './PracticeTestMatchPairs';
 import Swal from 'sweetalert2';
 
 function PracticeTestContainer({ words, onCancel, savedOptions, onSaveOptions, onUpdateStage, onToggleStar, onDelete, onEdit, initialConfig, onLogTestResults, dailyStats, practiceTests, onSaveTest, onDeleteTest, onDeleteAllTests }) {
@@ -142,8 +143,58 @@ function PracticeTestContainer({ words, onCancel, savedOptions, onSaveOptions, o
                 const exactTargetCount = Math.min(4, pool.length);
 
                 const wrongPool = pool.filter(w => w.id !== targetWord.id);
-                const shuffledWrongPool = wrongPool.sort(() => Math.random() - 0.5);
-                const wrongOptions = shuffledWrongPool.slice(0, exactTargetCount - 1).map(w => {
+                
+                let selectedWrongOptions = [];
+                
+                if (config.advancedOptions?.smartDistractors && isFormatDefinition) {
+                    // Smart Distractors Logic: Find words structurally similar to targetWord 
+                    // (Similar length and same starting letter if possible, or just string distance)
+                    const targetTerm = targetWord.term.toLowerCase();
+                    const scoredPool = wrongPool.map(w => {
+                        const term = w.term.toLowerCase();
+                        let score = 0;
+                        // Score 1: Same starting letter
+                        if (term[0] === targetTerm[0]) score += 3;
+                        // Score 2: Similar length
+                        const lenDiff = Math.abs(term.length - targetTerm.length);
+                        if (lenDiff <= 2) score += 2;
+                        // Score 3: Common substring (very basic check)
+                        if (term.includes(targetTerm.substring(0, 3))) score += 2;
+                        if (term.includes(targetTerm.substring(targetTerm.length - 3))) score += 2;
+                        
+                        // Add some randomness so it's not always the exact same distractors
+                        score += Math.random() * 2; 
+                        
+                        return { word: w, score };
+                    });
+                    
+                    // Sort descending by score
+                    scoredPool.sort((a, b) => b.score - a.score);
+                    
+                    selectedWrongOptions = scoredPool.slice(0, exactTargetCount - 1).map(item => item.word);
+                } else if (config.advancedOptions?.smartDistractors && !isFormatDefinition) {
+                    // Smart Distractors for Turkish meanings: Since Turkish meanings can be long or phrases, 
+                    // we can just pick words with same learning status or similar length of meaning.
+                    // For simplicity, we just add randomness to meanings with similar character lengths.
+                    const targetMeaningText = (targetWord.shortMeanings || targetWord.generalDefinition || '').toLowerCase();
+                    const scoredPool = wrongPool.map(w => {
+                        const meaningText = (w.shortMeanings || w.generalDefinition || '').toLowerCase();
+                        let score = 0;
+                        const lenDiff = Math.abs(meaningText.length - targetMeaningText.length);
+                        if (lenDiff <= 5) score += 3;
+                        if (w.learningStatus === targetWord.learningStatus) score += 2;
+                        score += Math.random() * 2;
+                        return { word: w, score };
+                    });
+                    scoredPool.sort((a, b) => b.score - a.score);
+                    selectedWrongOptions = scoredPool.slice(0, exactTargetCount - 1).map(item => item.word);
+                } else {
+                    // Normal behavior: Random shuffle
+                    const shuffledWrongPool = wrongPool.sort(() => Math.random() - 0.5);
+                    selectedWrongOptions = shuffledWrongPool.slice(0, exactTargetCount - 1);
+                }
+
+                const wrongOptions = selectedWrongOptions.map(w => {
                     return isFormatDefinition
                         ? { text: w.term, pronunciation: w.pronunciation }
                         : { text: (w.shortMeanings || w.generalDefinition || 'Anlam girilmemiş'), pronunciation: w.pronunciation };
@@ -243,26 +294,37 @@ function PracticeTestContainer({ words, onCancel, savedOptions, onSaveOptions, o
                 />
             )}
             {testState === 'running' && (
-                <PracticeTestActive
-                    key={testKey}
-                    questions={questions}
-                    words={words}
-                    onClose={handleCloseTest}
-                    onHome={onCancel}
-                    onFinish={handleFinish}
-                    onUpdateStage={onUpdateStage}
-                    onToggleStar={onToggleStar}
-                    onDelete={onDelete}
-                    onEdit={onEdit}
-                    onRetakeSame={handleRetakeSame}
-                    onRetakeNew={handleRetakeNew}
-                    onRetakeMissed={handleRetakeMissed}
-                    onLogTestResults={onLogTestResults}
-                    dailyStats={dailyStats}
-                    testId={activeTestId}
-                    initialTestState={initialTestState}
-                    onSaveTest={onSaveTest}
-                />
+                initialTestState?.config?.advancedOptions?.matchPairs ? (
+                    <PracticeTestMatchPairs
+                        key={testKey}
+                        questions={questions}
+                        words={words}
+                        onClose={handleCloseTest}
+                        onHome={onCancel}
+                        initialTestState={initialTestState}
+                    />
+                ) : (
+                    <PracticeTestActive
+                        key={testKey}
+                        questions={questions}
+                        words={words}
+                        onClose={handleCloseTest}
+                        onHome={onCancel}
+                        onFinish={handleFinish}
+                        onUpdateStage={onUpdateStage}
+                        onToggleStar={onToggleStar}
+                        onDelete={onDelete}
+                        onEdit={onEdit}
+                        onRetakeSame={handleRetakeSame}
+                        onRetakeNew={handleRetakeNew}
+                        onRetakeMissed={handleRetakeMissed}
+                        onLogTestResults={onLogTestResults}
+                        dailyStats={dailyStats}
+                        testId={activeTestId}
+                        initialTestState={initialTestState}
+                        onSaveTest={onSaveTest}
+                    />
+                )
             )}
         </div>
     );
