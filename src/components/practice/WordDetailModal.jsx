@@ -1,19 +1,158 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Modal, Button, Row, Col, Badge } from 'react-bootstrap';
 
 /**
- * Shared word detail modal — identical content to the App.jsx selectedWord modal.
- * Props:
- *   word        – the word object to display (or null to hide)
- *   onHide      – callback to close the modal
- *   onSpeak     – (text) => void   speech-synthesis helper
- *   onEdit      – (word) => void   callback to edit the word
+ * Splits `text` into segments, wrapping matches from `highlights` in
+ * <mark className="sticky-highlight">.
  */
-function WordDetailModal({ word, onHide, onSpeak, onEdit }) {
+function highlightText(text, highlights) {
+  if (!text || !highlights || highlights.length === 0) return text;
+  const escaped = highlights
+    .filter(h => h && h.length >= 2)
+    .map(h => h.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  if (!escaped.length) return text;
+  const regex = new RegExp(`(${escaped.join('|')})`, 'gi');
+  const parts = text.split(regex);
+  if (parts.length === 1) return text;
+  // Reset lastIndex before each test call
+  return parts.map((part, i) => {
+    regex.lastIndex = 0;
+    return regex.test(part)
+      ? <mark key={i} className="sticky-highlight">{part}</mark>
+      : part;
+  });
+}
+
+/**
+ * Shared word detail modal.
+ * Props:
+ *   word             – the word object to display (or null to hide)
+ *   onHide           – callback to close the modal
+ *   onSpeak          – (text) => void   speech-synthesis helper
+ *   onEdit           – (word) => void   callback to edit the word
+ *   stickyNotes      – array of ALL sticky notes
+ *   onAddNote        – (wordId, wordTerm, text) => void
+ *   onDeleteNote     – (noteId) => void
+ *   onOpenNotesModal  – () => void  open sticky notes list modal on highlight click
+ *   stickyHighlights – string[] of saved note texts for THIS word (for highlighting)
+ */
+function WordDetailModal({ word, onHide, onSpeak, onEdit, stickyNotes = [], onAddNote, onDeleteNote, stickyHighlights = [], onOpenNotesModal }) {
+    const [selectionTooltip, setSelectionTooltip] = useState(null); // { x, y, text }
+    const [savedNoteFlash, setSavedNoteFlash] = useState(false);
+    const modalBodyRef = useRef(null);
+    const tooltipRef = useRef(null);
+
+    // Detect text selection inside modal body
+    const handleMouseUp = useCallback((e) => {
+        // Small timeout to allow selection to settle
+        setTimeout(() => {
+            const selection = window.getSelection();
+            if (!selection || selection.isCollapsed) {
+                setSelectionTooltip(null);
+                return;
+            }
+            const selectedText = selection.toString().trim();
+            if (!selectedText || selectedText.length < 2) {
+                setSelectionTooltip(null);
+                return;
+            }
+
+            // Make sure selection is inside the modal body
+            const range = selection.getRangeAt(0);
+            const modalBody = modalBodyRef.current;
+            if (!modalBody || !modalBody.contains(range.commonAncestorContainer)) {
+                setSelectionTooltip(null);
+                return;
+            }
+
+            // Position tooltip below the selection
+            const rect = range.getBoundingClientRect();
+            setSelectionTooltip({
+                x: rect.left + rect.width / 2,
+                y: rect.bottom + 8,
+                text: selectedText
+            });
+        }, 10);
+    }, []);
+
+    // Clear tooltip on click outside (but not on the tooltip itself)
+    const handleMouseDown = useCallback((e) => {
+        if (tooltipRef.current && tooltipRef.current.contains(e.target)) return;
+        setSelectionTooltip(null);
+    }, []);
+
+    useEffect(() => {
+        if (!word) return;
+        document.addEventListener('mouseup', handleMouseUp);
+        document.addEventListener('mousedown', handleMouseDown);
+        return () => {
+            document.removeEventListener('mouseup', handleMouseUp);
+            document.removeEventListener('mousedown', handleMouseDown);
+        };
+    }, [word, handleMouseUp, handleMouseDown]);
+
+    // Clear tooltip when word changes
+    useEffect(() => {
+        setSelectionTooltip(null);
+    }, [word]);
+
+    const handleSaveNote = () => {
+        if (!selectionTooltip || !word) return;
+        onAddNote && onAddNote(word.id, word.term, selectionTooltip.text);
+        setSelectionTooltip(null);
+        window.getSelection()?.removeAllRanges();
+        setSavedNoteFlash(true);
+        setTimeout(() => setSavedNoteFlash(false), 2000);
+    };
+
+    // Filter notes for current word
+    const wordNotes = stickyNotes.filter(n => n.wordId === word?.id);
+
     if (!word) return null;
 
     return (
         <>
+            {/* Floating sticky note tooltip */}
+            {selectionTooltip && (
+                <div
+                    ref={tooltipRef}
+                    className="sticky-note-tooltip"
+                    style={{
+                        position: 'fixed',
+                        left: `${selectionTooltip.x}px`,
+                        top: `${selectionTooltip.y}px`,
+                        transform: 'translateX(-50%)',
+                        zIndex: 9999,
+                        pointerEvents: 'all',
+                    }}
+                >
+                    <button
+                        className="btn btn-sm sticky-note-save-btn d-flex align-items-center gap-2"
+                        onClick={handleSaveNote}
+                    >
+                        <i className="bi bi-pin-angle-fill"></i>
+                        <span>Sticky Not</span>
+                    </button>
+                    <div className="sticky-note-tooltip-arrow"></div>
+                </div>
+            )}
+
+            {/* Flash feedback */}
+            {savedNoteFlash && (
+                <div
+                    style={{
+                        position: 'fixed',
+                        bottom: '24px',
+                        right: '24px',
+                        zIndex: 9999,
+                    }}
+                    className="sticky-note-flash-toast d-flex align-items-center gap-2"
+                >
+                    <i className="bi bi-check-circle-fill text-success"></i>
+                    <span>Not kaydedildi!</span>
+                </div>
+            )}
+
             <Modal
                 show={!!word}
                 onHide={onHide}
@@ -47,7 +186,7 @@ function WordDetailModal({ word, onHide, onSpeak, onEdit }) {
                     </div>
                 </Modal.Header>
 
-                <Modal.Body className="p-4 p-md-5 custom-scroll">
+                <Modal.Body className="p-4 p-md-5 custom-scroll" ref={modalBodyRef}>
                     <div className="mb-4">
                         {word.pronunciation && (
                             <div
@@ -79,7 +218,9 @@ function WordDetailModal({ word, onHide, onSpeak, onEdit }) {
                             <h6 className="text-uppercase text-success fw-bold small letter-spacing-2 mb-2 d-flex align-items-center gap-2">
                                 <i className="bi bi-list-task"></i> Kısa Anlamları
                             </h6>
-                            <p className="m-0 fs-6 text-body lh-base pe-5" style={{ fontWeight: '500' }}>{word.shortMeanings}</p>
+                            <p className="m-0 fs-6 text-body lh-base pe-5" style={{ fontWeight: '500' }}>
+                                {highlightText(word.shortMeanings, stickyHighlights, onOpenNotesModal)}
+                            </p>
                         </div>
                     )}
 
@@ -89,7 +230,9 @@ function WordDetailModal({ word, onHide, onSpeak, onEdit }) {
                             <h6 className="text-uppercase text-primary fw-bold small letter-spacing-2 mb-2 d-flex align-items-center gap-2">
                                 <i className="bi bi-journal-text"></i> Genel Tanımı
                             </h6>
-                            <p className="m-0 fs-6 text-body lh-base pe-5" style={{ fontWeight: '500' }}>{word.generalDefinition}</p>
+                            <p className="m-0 fs-6 text-body lh-base pe-5" style={{ fontWeight: '500' }}>
+                                {highlightText(word.generalDefinition, stickyHighlights, onOpenNotesModal)}
+                            </p>
                         </div>
                     )}
 
@@ -109,7 +252,7 @@ function WordDetailModal({ word, onHide, onSpeak, onEdit }) {
                                             >
                                                 <i className="bi bi-volume-up-fill" style={{ fontSize: '1.1rem' }}></i>
                                             </Button>
-                                            <span className="fs-6">{m.definition}</span>
+                                            <span className="fs-6">{highlightText(m.definition, stickyHighlights, onOpenNotesModal)}</span>
                                         </div>
                                         {m.examples && m.examples.length > 0 && (
                                             <div className="ms-md-3 ms-2 d-flex flex-column gap-1 mt-2">
@@ -143,10 +286,10 @@ function WordDetailModal({ word, onHide, onSpeak, onEdit }) {
                                                                         >
                                                                             <i className="bi bi-volume-up" style={{ fontSize: '1.1rem' }}></i>
                                                                         </Button>
-                                                                        <span className="flex-grow-1">"{engPart}"</span>
+                                                                        <span className="flex-grow-1">"{highlightText(engPart, stickyHighlights, onOpenNotesModal)}"</span>
                                                                     </div>
                                                                 )}
-                                                                {trPart && <div className={`text-muted fst-italic extra-small ps-2 border-start border-2 border-primary ms-1 ${engPart ? 'mt-0' : ''}`} style={{ fontSize: '0.85rem' }}>{trPart}</div>}
+                                                                {trPart && <div className={`text-muted fst-italic extra-small ps-2 border-start border-2 border-primary ms-1 ${engPart ? 'mt-0' : ''}`} style={{ fontSize: '0.85rem' }}>{highlightText(trPart, stickyHighlights, onOpenNotesModal)}</div>}
                                                             </div>
                                                         );
                                                     })}
@@ -199,10 +342,10 @@ function WordDetailModal({ word, onHide, onSpeak, onEdit }) {
                                                 >
                                                     <i className="bi bi-volume-up" style={{ fontSize: '1rem' }}></i>
                                                 </Button>
-                                                <span className="flex-grow-1">{lines[0]}</span>
+                                                <span className="flex-grow-1">{highlightText(lines[0], stickyHighlights, onOpenNotesModal)}</span>
                                             </div>
                                             {lines.slice(1).map((line, li) => (
-                                                <div key={li} className="text-muted fst-italic small ps-2 border-start border-2 border-primary ms-1 mt-1">{line}</div>
+                                                <div key={li} className="text-muted fst-italic small ps-2 border-start border-2 border-primary ms-1 mt-1">{highlightText(line, stickyHighlights, onOpenNotesModal)}</div>
                                             ))}
                                         </li>
                                     );
@@ -229,10 +372,10 @@ function WordDetailModal({ word, onHide, onSpeak, onEdit }) {
                                                 >
                                                     <i className="bi bi-volume-up" style={{ fontSize: '1rem' }}></i>
                                                 </Button>
-                                                <span className="flex-grow-1">{lines[0]}</span>
+                                                <span className="flex-grow-1">{highlightText(lines[0], stickyHighlights, onOpenNotesModal)}</span>
                                             </div>
                                             {lines.slice(1).map((line, li) => (
-                                                <div key={li} className="text-muted fst-italic small ps-2 border-start border-2 border-primary ms-1 mt-1">{line}</div>
+                                                <div key={li} className="text-muted fst-italic small ps-2 border-start border-2 border-primary ms-1 mt-1">{highlightText(line, stickyHighlights, onOpenNotesModal)}</div>
                                             ))}
                                         </li>
                                     );
@@ -253,8 +396,8 @@ function WordDetailModal({ word, onHide, onSpeak, onEdit }) {
                                         <div key={i} className="d-flex align-items-baseline gap-2 border-bottom border-opacity-10 pb-2 last-child-border-0">
                                             <i className="bi bi-arrow-right-short text-primary"></i>
                                             <div className="flex-grow-1">
-                                                <span className="fw-bold text-body">{parts[0]?.trim()}</span>
-                                                {parts[1] && <span className="text-muted small ms-2 fst-italic">— {parts[1].trim()}</span>}
+                                                <span className="fw-bold text-body">{highlightText(parts[0]?.trim(), stickyHighlights, onOpenNotesModal)}</span>
+                                                {parts[1] && <span className="text-muted small ms-2 fst-italic">— {highlightText(parts[1].trim(), stickyHighlights, onOpenNotesModal)}</span>}
                                             </div>
                                         </div>
                                     );
@@ -328,6 +471,57 @@ function WordDetailModal({ word, onHide, onSpeak, onEdit }) {
                             </div>
                         </div>
                     )}
+
+                    {/* ── STICKY NOTES SECTION ── */}
+                    <div className="sticky-notes-section mt-5">
+                        <h5 className="text-uppercase fw-bold small letter-spacing-2 border-bottom border-opacity-10 pb-2 mb-4 d-flex align-items-center gap-2 sticky-notes-title">
+                            <i className="bi bi-pin-angle-fill text-warning"></i>
+                            Sticky Notlarım
+                            {wordNotes.length > 0 && (
+                                <span className="badge rounded-pill ms-1" style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)', fontSize: '0.7rem' }}>
+                                    {wordNotes.length}
+                                </span>
+                            )}
+                        </h5>
+
+                        {wordNotes.length === 0 ? (
+                            <div className="sticky-notes-empty text-center py-4">
+                                <i className="bi bi-pin-angle text-muted opacity-25" style={{ fontSize: '2.5rem' }}></i>
+                                <p className="text-muted small mt-2 mb-0">
+                                    Herhangi bir metni seçip <strong>Sticky Not</strong> butonuna basarak not ekleyebilirsin.
+                                </p>
+                            </div>
+                        ) : (
+                            <div className="d-flex flex-column gap-3">
+                                {wordNotes.map((note) => {
+                                    const dateStr = note.createdAt
+                                        ? (note.createdAt.toDate
+                                            ? note.createdAt.toDate().toLocaleString('tr-TR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+                                            : new Date(note.createdAt).toLocaleString('tr-TR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }))
+                                        : '';
+                                    return (
+                                        <div key={note.id} className="sticky-note-card position-relative">
+                                            <div className="sticky-note-pin">
+                                                <i className="bi bi-pin-angle-fill"></i>
+                                            </div>
+                                            <p className="sticky-note-text mb-1">"{note.text}"</p>
+                                            <div className="d-flex align-items-center justify-content-between mt-2">
+                                                <span className="sticky-note-date">{dateStr}</span>
+                                                <button
+                                                    className="btn btn-sm sticky-note-delete-btn"
+                                                    onClick={() => onDeleteNote && onDeleteNote(note.id)}
+                                                    title="Notu Sil"
+                                                >
+                                                    <i className="bi bi-trash3"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
+
                 </Modal.Body>
             </Modal>
         </>

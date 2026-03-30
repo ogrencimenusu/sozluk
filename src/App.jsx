@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   collection,
   addDoc,
@@ -178,10 +178,43 @@ const mockData = [
   }
 ];
 
+/**
+ * Splits `text` into segments, wrapping matches from `highlights` in
+ * <mark className="sticky-highlight">. Returns an array of strings/JSX.
+ * Optional `onClick` makes highlights clickable.
+ */
+function highlightText(text, highlights, onClick) {
+  if (!text || !highlights || highlights.length === 0) return text;
+  const escaped = highlights
+    .filter(h => h && h.length >= 2)
+    .map(h => h.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  if (!escaped.length) return text;
+  const regex = new RegExp(`(${escaped.join('|')})`, 'gi');
+  const parts = text.split(regex);
+  if (parts.length === 1) return text;
+  return parts.map((part, i) => {
+    regex.lastIndex = 0;
+    return regex.test(part)
+      ? (
+        <mark
+          key={i}
+          className="sticky-highlight"
+          style={onClick ? { cursor: 'pointer' } : undefined}
+          onClick={onClick ? (e) => { e.stopPropagation(); onClick(); } : undefined}
+          title={onClick ? 'Sticky notları gör' : undefined}
+        >
+          {part}
+        </mark>
+      )
+      : part;
+  });
+}
+
 function App() {
   const [currentView, setCurrentView] = useState('home');
   const [words, setWords] = useState([]);
   const [practiceTests, setPracticeTests] = useState([]);
+  const [stickyNotes, setStickyNotes] = useState([]);
   const [templates, setTemplates] = useState([
     {
       id: 'standart',
@@ -239,6 +272,71 @@ function App() {
   const [showBulkEditModal, setShowBulkEditModal] = useState(false);
   const [showFiltersCollapse, setShowFiltersCollapse] = useState(false);
   const [showTemplateExampleModal, setShowTemplateExampleModal] = useState(false);
+  const [showStickyNotesModal, setShowStickyNotesModal] = useState(false);
+
+  // Global text-selection tooltip for home page
+  const [homeSelectionTooltip, setHomeSelectionTooltip] = useState(null); // { x, y, text, wordId, wordTerm }
+  const homeTooltipRef = useRef(null);
+
+  const handleGlobalMouseUp = useCallback(() => {
+    // Small delay to let selection settle
+    setTimeout(() => {
+      const selection = window.getSelection();
+      if (!selection || selection.isCollapsed) {
+        setHomeSelectionTooltip(null);
+        return;
+      }
+      const selectedText = selection.toString().trim();
+      if (!selectedText || selectedText.length < 2) {
+        setHomeSelectionTooltip(null);
+        return;
+      }
+
+      // Find closest ancestor with data-word-id
+      const range = selection.getRangeAt(0);
+      let node = range.commonAncestorContainer;
+      if (node.nodeType === Node.TEXT_NODE) node = node.parentElement;
+      let wordId = null;
+      let wordTerm = null;
+      while (node && node !== document.body) {
+        if (node.dataset && node.dataset.wordId) {
+          wordId = node.dataset.wordId;
+          wordTerm = node.dataset.wordTerm || null;
+          break;
+        }
+        node = node.parentElement;
+      }
+
+      // Only show tooltip if selection is inside a word card
+      if (!wordId) {
+        setHomeSelectionTooltip(null);
+        return;
+      }
+
+      const rect = range.getBoundingClientRect();
+      setHomeSelectionTooltip({
+        x: rect.left + rect.width / 2,
+        y: rect.bottom + 8,
+        text: selectedText,
+        wordId,
+        wordTerm
+      });
+    }, 10);
+  }, []);
+
+  const handleGlobalMouseDown = useCallback((e) => {
+    if (homeTooltipRef.current && homeTooltipRef.current.contains(e.target)) return;
+    setHomeSelectionTooltip(null);
+  }, []);
+
+  useEffect(() => {
+    document.addEventListener('mouseup', handleGlobalMouseUp);
+    document.addEventListener('mousedown', handleGlobalMouseDown);
+    return () => {
+      document.removeEventListener('mouseup', handleGlobalMouseUp);
+      document.removeEventListener('mousedown', handleGlobalMouseDown);
+    };
+  }, [handleGlobalMouseUp, handleGlobalMouseDown]);
 
   const [templateType, setTemplateType] = useState('sablon2');
 
@@ -490,10 +588,19 @@ function App() {
       console.error("Firestore stats error:", error);
     });
 
+    const qNotes = query(collection(db, 'sticky_notes'), orderBy('createdAt', 'desc'));
+    const unsubscribeNotes = onSnapshot(qNotes, (snapshot) => {
+      const notesData = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      setStickyNotes(notesData);
+    }, (error) => {
+      console.error("Firestore sticky_notes error:", error);
+    });
+
     return () => {
       unsubscribeWords();
       unsubscribeStats();
       unsubscribeTests();
+      unsubscribeNotes();
     };
   }, []);
 
@@ -546,6 +653,37 @@ function App() {
     } catch (error) {
       console.error('Failed to save test', error);
       return null;
+    }
+  };
+
+  const handleAddNote = async (wordId, wordTerm, text) => {
+    if (!wordId || !text) return;
+    try {
+      if (!isConfigMissing) {
+        await addDoc(collection(db, 'sticky_notes'), {
+          wordId,
+          wordTerm,
+          text,
+          createdAt: new Date()
+        });
+      } else {
+        const newNote = { id: Date.now().toString(), wordId, wordTerm, text, createdAt: new Date() };
+        setStickyNotes(prev => [newNote, ...prev]);
+      }
+    } catch (err) {
+      console.error('Sticky not eklenemedi:', err);
+    }
+  };
+
+  const handleDeleteNote = async (noteId) => {
+    try {
+      if (!isConfigMissing) {
+        await deleteDoc(doc(db, 'sticky_notes', noteId));
+      } else {
+        setStickyNotes(prev => prev.filter(n => n.id !== noteId));
+      }
+    } catch (err) {
+      console.error('Sticky not silinemedi:', err);
     }
   };
 
@@ -1004,6 +1142,35 @@ function App() {
 
   return (
     <div className="min-vh-100 py-4">
+    {/* Global sticky note tooltip for homepage text selection */}
+    {homeSelectionTooltip && (
+      <div
+        ref={homeTooltipRef}
+        className="sticky-note-tooltip"
+        style={{
+          position: 'fixed',
+          left: `${homeSelectionTooltip.x}px`,
+          top: `${homeSelectionTooltip.y}px`,
+          transform: 'translateX(-50%)',
+          zIndex: 9999,
+          pointerEvents: 'all',
+        }}
+      >
+        <button
+          className="btn btn-sm sticky-note-save-btn d-flex align-items-center gap-2"
+          onMouseDown={(e) => e.preventDefault()} // prevent losing selection
+          onClick={() => {
+            handleAddNote(homeSelectionTooltip.wordId, homeSelectionTooltip.wordTerm, homeSelectionTooltip.text);
+            setHomeSelectionTooltip(null);
+            window.getSelection()?.removeAllRanges();
+          }}
+        >
+          <i className="bi bi-pin-angle-fill"></i>
+          <span>Sticky Not</span>
+        </button>
+        <div className="sticky-note-tooltip-arrow"></div>
+      </div>
+    )}
     <Container fluid>
         {currentView === 'practice-test' ? (
           <PracticeTestContainer
@@ -1072,6 +1239,27 @@ function App() {
             </Button>
             <Button variant="primary" className="rounded-pill d-flex align-items-center justify-content-center gap-2 px-0 px-md-3 fw-semibold shadow-sm" style={{ minWidth: '40px', height: '40px' }} onClick={() => setIsModalOpen(true)}>
               <i className="bi bi-plus-lg" style={{ fontSize: '20px' }}></i> <span className="d-none d-md-inline">Yeni Kelime</span>
+            </Button>
+            <Button
+              variant="outline-secondary"
+              className="rounded-circle d-flex align-items-center justify-content-center border-0 bg-body-secondary position-relative"
+              style={{ width: '40px', height: '40px', minWidth: '40px' }}
+              onClick={() => setShowStickyNotesModal(true)}
+              title="Sticky Notlarım"
+            >
+              <i className="bi bi-pin-angle-fill" style={{ fontSize: '18px', color: '#f59e0b' }}></i>
+              {stickyNotes.length > 0 && (
+                <span
+                  className="position-absolute top-0 end-0 text-white fw-bold d-flex align-items-center justify-content-center"
+                  style={{
+                    width: '16px', height: '16px', borderRadius: '50%', fontSize: '9px',
+                    background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                    transform: 'translate(2px, -2px)'
+                  }}
+                >
+                  {stickyNotes.length > 99 ? '99+' : stickyNotes.length}
+                </span>
+              )}
             </Button>
             <Button variant="outline-secondary" className="rounded-circle d-flex align-items-center justify-content-center border-0 bg-body-secondary" style={{ width: '40px', height: '40px', minWidth: '40px' }} onClick={toggleTheme} title="Tema Değiştir">
               {theme === 'light' ? <i className="bi bi-moon-fill" style={{ fontSize: '20px' }}></i> : <i className="bi bi-sun-fill" style={{ fontSize: '20px' }}></i>}
@@ -1306,6 +1494,8 @@ function App() {
                     className={`h-100 interactive-card border ${isSelectionMode && selectedWords.includes(word.id) ? 'border-primary border-2 bg-primary bg-opacity-10' : 'border-opacity-25'} bg-body-tertiary shadow-sm`}
                     onClick={(e) => isSelectionMode && handleSelectWord(e, word.id)}
                     style={{ cursor: isSelectionMode ? 'pointer' : 'default' }}
+                    data-word-id={word.id}
+                    data-word-term={word.term}
                   >
                     <Card.Body className="d-flex flex-column">
                       <div className="d-flex justify-content-between align-items-center mb-2">
@@ -1373,70 +1563,75 @@ function App() {
 
                       {word.shortMeanings && (
                         <Card.Text className="text-primary fw-medium mb-2">
-                          {word.shortMeanings}
+                          {highlightText(
+                            word.shortMeanings,
+                            stickyNotes.filter(n => n.wordId === word.id).map(n => n.text),
+                            () => setShowStickyNotesModal(true)
+                          )}
                         </Card.Text>
                       )}
 
                       {(viewMode === 'detailed' || !word.shortMeanings) && word.generalDefinition && (
                         <Card.Text className="text-muted mb-2 small">
                           {viewMode === 'detailed' && <strong className="d-block text-body opacity-75">Genel Tanımı:</strong>}
-                          {word.generalDefinition}
+                          {highlightText(
+                            word.generalDefinition,
+                            stickyNotes.filter(n => n.wordId === word.id).map(n => n.text),
+                            () => setShowStickyNotesModal(true)
+                          )}
                         </Card.Text>
                       )}
 
                       {viewMode === 'detailed' && word.meanings && word.meanings.length > 0 && (
                         <div className="mb-2">
                           <strong className="small text-body opacity-75 d-block mb-1">Anlamları ve Örnek Cümleler:</strong>
-                          {word.meanings.map((meaning, mIdx) => (
-                            <div key={mIdx} className="mb-2 ps-2 border-start border-2 border-primary border-opacity-25">
-                              <div className="small fw-medium text-body d-flex align-items-start gap-1">
-                                <Button
-                                  variant="link"
-                                  className="p-0 text-primary opacity-50 hover-opacity-100 transition-all border-0 shadow-none flex-shrink-0"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleSpeak(meaning.definition);
-                                  }}
-                                  title="Sesli Dinle"
-                                >
-                                  <i className="bi bi-volume-up" style={{ fontSize: '14px' }}></i>
-                                </Button>
-                                <span>{mIdx + 1}. {meaning.definition} {meaning.context && <span className="text-muted fst-italic">({meaning.context})</span>}</span>
+                          {word.meanings.map((meaning, mIdx) => {
+                            const hl = stickyNotes.filter(n => n.wordId === word.id).map(n => n.text);
+                            const openNotes = () => setShowStickyNotesModal(true);
+                            return (
+                              <div key={mIdx} className="mb-2 ps-2 border-start border-2 border-primary border-opacity-25">
+                                <div className="small fw-medium text-body d-flex align-items-start gap-1">
+                                  <Button
+                                    variant="link"
+                                    className="p-0 text-primary opacity-50 hover-opacity-100 transition-all border-0 shadow-none flex-shrink-0"
+                                    onClick={(e) => { e.stopPropagation(); handleSpeak(meaning.definition); }}
+                                    title="Sesli Dinle"
+                                  >
+                                    <i className="bi bi-volume-up" style={{ fontSize: '14px' }}></i>
+                                  </Button>
+                                  <span>{mIdx + 1}. {highlightText(meaning.definition, hl, openNotes)} {meaning.context && <span className="text-muted fst-italic">({highlightText(meaning.context, hl, openNotes)})</span>}</span>
+                                </div>
+                                {meaning.examples && meaning.examples.length > 0 && (
+                                  <ul className="small text-muted mb-0 ps-3 mt-1">
+                                    {meaning.examples.map((ex, exIdx) => {
+                                      const match = ex.match(/^(.*?)(\([^)]+\))?$/);
+                                      const engPart = match ? match[1].trim() : ex;
+                                      const trPart = match && match[2] ? match[2].trim() : null;
+                                      const hasEng = engPart.length > 0;
+                                      return (
+                                        <li key={exIdx} className="fst-italic text-break d-flex align-items-start gap-1">
+                                          {hasEng && (
+                                            <Button
+                                              variant="link"
+                                              className="p-0 text-primary opacity-50 hover-opacity-100 transition-all border-0 shadow-none flex-shrink-0"
+                                              onClick={(e) => { e.stopPropagation(); handleSpeak(engPart); }}
+                                              title="Sesli Dinle"
+                                            >
+                                              <i className="bi bi-volume-up" style={{ fontSize: '14px' }}></i>
+                                            </Button>
+                                          )}
+                                          <span>
+                                            {hasEng ? <>"{highlightText(engPart, hl, openNotes)}" </> : ""}
+                                            {trPart && highlightText(trPart, hl, openNotes)}
+                                          </span>
+                                        </li>
+                                      );
+                                    })}
+                                  </ul>
+                                )}
                               </div>
-                              {meaning.examples && meaning.examples.length > 0 && (
-                                <ul className="small text-muted mb-0 ps-3 mt-1">
-                                  {meaning.examples.map((ex, exIdx) => {
-                                    const match = ex.match(/^(.*?)(\([^)]+\))?$/);
-                                    const engPart = match ? match[1].trim() : ex;
-                                    const trPart = match && match[2] ? match[2].trim() : null;
-                                    
-                                    // If there's no English part (only Turkish translation in parentheses),
-                                    // or it's a very short/placeholder string, skip the speak button
-                                    const hasEng = engPart.length > 0;
-
-                                    return (
-                                      <li key={exIdx} className="fst-italic text-break d-flex align-items-start gap-1">
-                                        {hasEng && (
-                                          <Button
-                                            variant="link"
-                                            className="p-0 text-primary opacity-50 hover-opacity-100 transition-all border-0 shadow-none flex-shrink-0"
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              handleSpeak(engPart);
-                                            }}
-                                            title="Sesli Dinle"
-                                          >
-                                            <i className="bi bi-volume-up" style={{ fontSize: '14px' }}></i>
-                                          </Button>
-                                        )}
-                                        <span>{hasEng ? `"${engPart}" ` : ""}{trPart}</span>
-                                      </li>
-                                    );
-                                  })}
-                                </ul>
-                              )}
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       )}
 
@@ -1445,7 +1640,13 @@ function App() {
                           <strong className="small text-body opacity-75 d-block">Gramer Özellikleri:</strong>
                           <ul className="small text-muted mb-0 ps-3">
                             {word.grammar.map((g, idx) => (
-                              <li key={idx}>{g}</li>
+                              <li key={idx}>
+                                {highlightText(
+                                  g,
+                                  stickyNotes.filter(n => n.wordId === word.id).map(n => n.text),
+                                  () => setShowStickyNotesModal(true)
+                                )}
+                              </li>
                             ))}
                           </ul>
                         </div>
@@ -1700,7 +1901,94 @@ function App() {
         onHide={() => setSelectedWord(null)}
         onSpeak={handleSpeak}
         onEdit={(word) => handleEdit(null, word)}
+        stickyNotes={stickyNotes}
+        onAddNote={handleAddNote}
+        onDeleteNote={handleDeleteNote}
+        stickyHighlights={selectedWord ? stickyNotes.filter(n => n.wordId === selectedWord.id).map(n => n.text) : []}
+        onOpenNotesModal={() => setShowStickyNotesModal(true)}
       />
+
+      {/* STICKY NOTES LIST MODAL */}
+      <Modal
+        show={showStickyNotesModal}
+        onHide={() => setShowStickyNotesModal(false)}
+        size="lg"
+        centered
+        scrollable
+        contentClassName="bg-body-tertiary border border-opacity-25 rounded-4 shadow-lg"
+      >
+        <Modal.Header className="border-bottom border-opacity-10 py-3 px-4 bg-body-tertiary">
+          <Modal.Title className="fs-5 fw-bold d-flex align-items-center gap-2">
+            <i className="bi bi-pin-angle-fill" style={{ color: '#f59e0b' }}></i>
+            Sticky Notlarım
+            {stickyNotes.length > 0 && (
+              <span
+                className="fw-bold text-white d-flex align-items-center justify-content-center"
+                style={{
+                  width: '22px', height: '22px', borderRadius: '50%', fontSize: '10px',
+                  background: 'linear-gradient(135deg, #f59e0b, #d97706)'
+                }}
+              >
+                {stickyNotes.length}
+              </span>
+            )}
+          </Modal.Title>
+          <Button
+            variant="link"
+            className="p-1 ms-auto text-body-secondary text-decoration-none"
+            onClick={() => setShowStickyNotesModal(false)}
+          >
+            <i className="bi bi-x-lg fs-5"></i>
+          </Button>
+        </Modal.Header>
+        <Modal.Body className="p-4 custom-scroll">
+          {stickyNotes.length === 0 ? (
+            <div className="text-center py-5">
+              <i className="bi bi-pin-angle text-muted opacity-25" style={{ fontSize: '3.5rem' }}></i>
+              <p className="text-muted mt-3 mb-0">
+                Henüz sticky not eklemediniz.<br/>
+                <span className="small opacity-75">Kelime detayında bir metni seçip <strong>Sticky Not</strong> butonuna bas.</span>
+              </p>
+            </div>
+          ) : (
+            <div className="d-flex flex-column gap-3">
+              {stickyNotes.map((note) => {
+                const dateStr = note.createdAt
+                  ? (note.createdAt.toDate
+                    ? note.createdAt.toDate().toLocaleString('tr-TR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+                    : new Date(note.createdAt).toLocaleString('tr-TR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }))
+                  : '';
+                return (
+                  <div key={note.id} className="sticky-note-list-item d-flex align-items-start gap-3">
+                    {/* Left: pin icon */}
+                    <div className="sticky-note-list-pin flex-shrink-0">
+                      <i className="bi bi-pin-angle-fill"></i>
+                    </div>
+                    {/* Center: content */}
+                    <div className="flex-grow-1 min-w-0">
+                      <div className="sticky-note-list-word-tag mb-1">
+                        <i className="bi bi-journal-text me-1 opacity-50" style={{ fontSize: '0.7rem' }}></i>
+                        {note.wordTerm || '—'}
+                      </div>
+                      <p className="sticky-note-list-text mb-1">"{note.text}"</p>
+                      <span className="sticky-note-list-date">{dateStr}</span>
+                    </div>
+                    {/* Right: delete button */}
+                    <Button
+                      variant="link"
+                      className="sticky-note-list-delete p-1 flex-shrink-0"
+                      onClick={() => handleDeleteNote(note.id)}
+                      title="Notu Sil"
+                    >
+                      <i className="bi bi-trash3"></i>
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </Modal.Body>
+      </Modal>
 
       {/* FILTER MODAL */}
       <Modal show={showFilterModal} onHide={() => setShowFilterModal(false)} centered>

@@ -115,6 +115,41 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
 
     const [streakAnimParams, setStreakAnimParams] = useState({ show: false, key: 0 });
 
+    // Keyboard shortcuts: press 1-4 to answer the active question
+    useEffect(() => {
+        if (completed) return;
+
+        const handleKeyDown = (e) => {
+            // Don't trigger if user is typing in an input/textarea
+            const tag = document.activeElement?.tagName?.toLowerCase();
+            if (tag === 'input' || tag === 'textarea') return;
+
+            const num = parseInt(e.key);
+            if (isNaN(num) || num < 1) return;
+
+            const q = questions[activeQuestionIdx];
+            if (!q) return;
+
+            if (q.type === 'flashcard') {
+                // 1 = Bildim, 2 = Bilmedim
+                if (num === 1) handleSelectAnswer(activeQuestionIdx, { text: 'Bildim', isCorrect: true });
+                else if (num === 2) handleSelectAnswer(activeQuestionIdx, { text: 'Bilmedim', isCorrect: false });
+                return;
+            }
+
+            if (q.type === 'tf' || (q.options && q.options.length > 0)) {
+                const opts = q.options || [];
+                const visibleOpts = opts.filter((_, i) => !(hiddenOptions[activeQuestionIdx] || []).includes(i));
+                const chosen = visibleOpts[num - 1];
+                if (chosen) handleSelectAnswer(activeQuestionIdx, chosen);
+                return;
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [completed, activeQuestionIdx, questions, answers, hiddenOptions]);
+
     const flipCard = (idx) => setFlippedCards(prev => ({ ...prev, [idx]: !prev[idx] }));
 
     const handleSelectAnswer = (qIdx, optionObj) => {
@@ -976,7 +1011,16 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                         <div className="d-flex flex-column gap-5">
                             {questions.map((currentQuestion, idx) => (
                                 <div key={idx} ref={el => questionRefs.current[idx] = el} data-index={idx} style={{ scrollMarginTop: '71px' }}>
-                                    <Card className={`position-relative bg-body-tertiary border-secondary border-opacity-25 rounded-4 p-4 shadow-none ${completed && !answers[idx]?.selected?.isCorrect ? 'border-opacity-100 border-danger' : ''}`}>
+                                    <div
+                                        style={
+                                            !completed && activeQuestionIdx === idx
+                                                ? { borderRadius: '1rem', border: '2px solid #6f42c1', boxShadow: '0 0 0 5px rgba(111,66,193,0.2)', transition: 'border-color 0.2s ease, box-shadow 0.2s ease', overflow: 'hidden' }
+                                                : completed && !answers[idx]?.selected?.isCorrect
+                                                    ? { borderRadius: '1rem', border: '2px solid #dc3545', overflow: 'hidden' }
+                                                    : { borderRadius: '1rem', border: '2px solid transparent', overflow: 'hidden', transition: 'border-color 0.2s ease, box-shadow 0.2s ease' }
+                                        }
+                                    >
+                                    <Card className="position-relative bg-body-tertiary border-0 rounded-4 p-4 shadow-none">
                                         <div className="d-flex justify-content-between align-items-start mb-4">
                                             <div className="d-flex align-items-center gap-2">
                                                 <span className="bg-secondary bg-opacity-25 text-body rounded-circle d-flex align-items-center justify-content-center fw-bold" style={{ width: 28, height: 28, fontSize: '14px' }}>
@@ -1266,18 +1310,20 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                                     {!completed && (
                                                         <div className="d-flex gap-3 justify-content-center">
                                                             <Button
-                                                                variant={answers[idx]?.selected?.isCorrect === false ? 'danger' : 'outline-danger'}
-                                                                className="rounded-pill px-4 fw-semibold"
-                                                                onClick={() => handleSelectAnswer(idx, { text: 'Bilmedim', isCorrect: false })}
-                                                            >
-                                                                <i className="bi bi-x-circle me-2"></i>Bilmedim
-                                                            </Button>
-                                                            <Button
                                                                 variant={answers[idx]?.selected?.isCorrect === true ? 'success' : 'outline-success'}
-                                                                className="rounded-pill px-4 fw-semibold"
+                                                                className="rounded-pill px-4 fw-semibold d-flex align-items-center gap-2"
                                                                 onClick={() => handleSelectAnswer(idx, { text: 'Bildim', isCorrect: true })}
                                                             >
-                                                                <i className="bi bi-check-circle me-2"></i>Bildim
+                                                                <span className="badge bg-success bg-opacity-25 text-success border border-success border-opacity-50 rounded-circle d-flex align-items-center justify-content-center fw-bold" style={{ width: '20px', height: '20px', fontSize: '11px', padding: 0 }}>1</span>
+                                                                <i className="bi bi-check-circle"></i>Bildim
+                                                            </Button>
+                                                            <Button
+                                                                variant={answers[idx]?.selected?.isCorrect === false ? 'danger' : 'outline-danger'}
+                                                                className="rounded-pill px-4 fw-semibold d-flex align-items-center gap-2"
+                                                                onClick={() => handleSelectAnswer(idx, { text: 'Bilmedim', isCorrect: false })}
+                                                            >
+                                                                <span className="badge bg-danger bg-opacity-25 text-danger border border-danger border-opacity-50 rounded-circle d-flex align-items-center justify-content-center fw-bold" style={{ width: '20px', height: '20px', fontSize: '11px', padding: 0 }}>2</span>
+                                                                <i className="bi bi-x-circle"></i>Bilmedim
                                                             </Button>
                                                         </div>
                                                     )}
@@ -1435,6 +1481,7 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                             );
                                         })()}
                                     </Card>
+                                    </div>
                                 </div>
                             ))}
                         </div>

@@ -204,3 +204,228 @@ body {
     margin: 0.5rem auto;
   }
 }
+
+/* ─── Sticky Text Highlight ─── */
+mark.sticky-highlight {
+  background: rgba(245, 158, 11, 0.28);
+  color: inherit;
+  border-radius: 3px;
+  padding: 0 2px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  transition: background 0.2s ease;
+}
+mark.sticky-highlight:hover {
+  background: rgba(245, 158, 11, 0.45);
+}
+[data-bs-theme="dark"] mark.sticky-highlight {
+  background: rgba(251, 191, 36, 0.25);
+}
+[data-bs-theme="dark"] mark.sticky-highlight:hover {
+  background: rgba(251, 191, 36, 0.4);
+}
+
+/* ─── Sticky Note Tooltip ─── */
+.sticky-note-tooltip {
+  animation: stickyTooltipIn 0.15s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes stickyTooltipIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(-6px) scale(0.9); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0)   scale(1); }
+}
+
+.sticky-note-save-btn {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  color: #fff;
+  border: none;
+  border-radius: 20px;
+  padding: 6px 14px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: 0 4px 14px rgba(245, 158, 11, 0.4);
+  letter-spacing: 0.3px;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.sticky-note-save-btn:hover {
+  background: linear-gradient(135deg, #fbbf24, #f59e0b);
+  transform: scale(1.05);
+  box-shadow: 0 6px 18px rgba(245, 158, 11, 0.55);
+  color: #fff;
+}
+.sticky-note-save-btn:active {
+  transform: scale(0.97);
+}
+
+.sticky-note-tooltip-arrow {
+  width: 0;
+  height: 0;
+  border-left: 7px solid transparent;
+  border-right: 7px solid transparent;
+  border-bottom: 7px solid #d97706;
+  position: absolute;
+  top: -7px;
+  left: 50%;
+  transform: translateX(-50%);
+  /* Arrow points up (tooltip is below selection) */
+}
+
+/* ─── Sticky Note Card ─── */
+.sticky-note-card {
+  background: linear-gradient(135deg, #fef9c3 0%, #fef08a 100%);
+  border-radius: 12px;
+  padding: 14px 16px 10px;
+  border: 1px solid rgba(234, 179, 8, 0.3);
+  box-shadow: 2px 4px 12px rgba(234, 179, 8, 0.15), inset 0 1px 0 rgba(255,255,255,0.6);
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+  position: relative;
+}
+.sticky-note-card:hover {
+  box-shadow: 3px 6px 18px rgba(234, 179, 8, 0.25);
+  transform: translateY(-1px);
+}
+
+[data-bs-theme="dark"] .sticky-note-card {
+  background: linear-gradient(135deg, #3d3000 0%, #4a3900 100%);
+  border-color: rgba(234, 179, 8, 0.25);
+  box-shadow: 2px 4px 12px rgba(0,0,0,0.3);
+}
+
+.sticky-note-pin {
+  position: absolute;
+  top: -10px;
+  left: 18px;
+  font-size: 1.2rem;
+  color: #d97706;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.2));
+  transform: rotate(-20deg);
+}
+[data-bs-theme="dark"] .sticky-note-pin {
+  color: #fbbf24;
+}
+
+.sticky-note-text {
+  font-size: 0.93rem;
+  color: #78350f;
+  line-height: 1.55;
+  font-style: italic;
+  font-weight: 500;
+}
+[data-bs-theme="dark"] .sticky-note-text {
+  color: #fde68a;
+}
+
+.sticky-note-date {
+  font-size: 0.72rem;
+  color: #a16207;
+  opacity: 0.7;
+}
+[data-bs-theme="dark"] .sticky-note-date {
+  color: #ca8a04;
+}
+
+.sticky-note-delete-btn {
+  background: none;
+  border: none;
+  color: #dc2626;
+  opacity: 0;
+  padding: 2px 6px;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  transition: opacity 0.2s ease, background 0.2s ease;
+}
+.sticky-note-card:hover .sticky-note-delete-btn {
+  opacity: 0.7;
+}
+.sticky-note-delete-btn:hover {
+  opacity: 1 !important;
+  background: rgba(220, 38, 38, 0.1);
+}
+
+/* ─── Sticky Notes Section Title ─── */
+.sticky-notes-title {
+  color: var(--bs-body-color);
+}
+
+/* ─── Flash Toast ─── */
+.sticky-note-flash-toast {
+  background: var(--bs-body-bg);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  border-radius: 12px;
+  padding: 10px 16px;
+  font-size: 0.88rem;
+  font-weight: 500;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+  animation: toastSlideIn 0.3s ease, toastFadeOut 0.4s ease 1.6s forwards;
+}
+
+@keyframes toastSlideIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes toastFadeOut {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+
+/* ─── Sticky Notes List Modal Items ─── */
+.sticky-note-list-item {
+  background: var(--bs-body-secondary-bg, var(--bs-body-bg));
+  border: 1px solid rgba(234, 179, 8, 0.2);
+  border-left: 4px solid #f59e0b;
+  border-radius: 10px;
+  padding: 12px 14px;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+.sticky-note-list-item:hover {
+  box-shadow: 0 2px 10px rgba(245, 158, 11, 0.12);
+  background: rgba(245, 158, 11, 0.04);
+}
+
+.sticky-note-list-pin {
+  font-size: 1.1rem;
+  color: #f59e0b;
+  margin-top: 2px;
+  transform: rotate(-15deg);
+}
+
+.sticky-note-list-word-tag {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #d97706;
+  opacity: 0.8;
+}
+[data-bs-theme="dark"] .sticky-note-list-word-tag {
+  color: #fbbf24;
+}
+
+.sticky-note-list-text {
+  font-size: 0.92rem;
+  font-style: italic;
+  color: var(--bs-body-color);
+  line-height: 1.55;
+  word-break: break-word;
+}
+
+.sticky-note-list-date {
+  font-size: 0.7rem;
+  color: var(--bs-secondary-color);
+  opacity: 0.65;
+}
+
+.sticky-note-list-delete {
+  color: var(--bs-danger);
+  opacity: 0.35;
+  transition: opacity 0.15s ease;
+  text-decoration: none;
+}
+.sticky-note-list-item:hover .sticky-note-list-delete {
+  opacity: 0.7;
+}
+.sticky-note-list-delete:hover {
+  opacity: 1 !important;
+  color: var(--bs-danger) !important;
+}
