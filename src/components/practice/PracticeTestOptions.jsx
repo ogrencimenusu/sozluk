@@ -30,7 +30,8 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
         comboStreak: false,
         matchPairs: false,
         progressiveHint: false,
-        timeSurvival: false
+        timeSurvival: false,
+        singleMeaning: false
     });
 
     // Track if we've already loaded saved options to avoid re-loading on every savedOptions update
@@ -429,6 +430,21 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
                                 className="custom-switch-lg mt-1"
                                 checked={advancedOptions.missingLetters}
                                 onChange={(e) => setAdvancedOptions(prev => ({ ...prev, missingLetters: e.target.checked }))}
+                            />
+                        </div>
+
+                        <div className="d-flex justify-content-between align-items-start text-body p-3 border border-secondary border-opacity-25 rounded-3">
+                            <div>
+                                <div className="fw-medium d-flex align-items-center gap-2">
+                                    <i className="bi bi-mask text-dark"></i> Gizli Anlamlar (Tek Anlam)
+                                </div>
+                                <div className="text-muted small mt-1">Birden fazla anlamı olan kelimelerde sadece rastgele 1 anlamı gösterilir. Tıkanınca "Diğer Anlam" butonuyla değiştirebilirsiniz.</div>
+                            </div>
+                            <FormCheck
+                                type="switch"
+                                className="custom-switch-lg mt-1"
+                                checked={advancedOptions.singleMeaning}
+                                onChange={(e) => setAdvancedOptions(prev => ({ ...prev, singleMeaning: e.target.checked }))}
                             />
                         </div>
 

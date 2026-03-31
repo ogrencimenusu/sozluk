@@ -65,11 +65,11 @@ function WordDetailModal({ word, onHide, onSpeak, onEdit, stickyNotes = [], onAd
                 return;
             }
 
-            // Position tooltip below the selection
+            // Position tooltip above the selection
             const rect = range.getBoundingClientRect();
             setSelectionTooltip({
                 x: rect.left + rect.width / 2,
-                y: rect.bottom + 8,
+                y: Math.max(0, rect.top - 8),
                 text: selectedText
             });
         }, 10);
@@ -83,11 +83,26 @@ function WordDetailModal({ word, onHide, onSpeak, onEdit, stickyNotes = [], onAd
 
     useEffect(() => {
         if (!word) return;
+        let timeoutId;
+        const handleSelectionChange = () => {
+            clearTimeout(timeoutId);
+            timeoutId = setTimeout(() => {
+                handleMouseUp();
+            }, 300);
+        };
+
         document.addEventListener('mouseup', handleMouseUp);
+        document.addEventListener('touchend', handleMouseUp);
+        document.addEventListener('selectionchange', handleSelectionChange);
         document.addEventListener('mousedown', handleMouseDown);
+        document.addEventListener('touchstart', handleMouseDown, { passive: true });
         return () => {
+            clearTimeout(timeoutId);
             document.removeEventListener('mouseup', handleMouseUp);
+            document.removeEventListener('touchend', handleMouseUp);
+            document.removeEventListener('selectionchange', handleSelectionChange);
             document.removeEventListener('mousedown', handleMouseDown);
+            document.removeEventListener('touchstart', handleMouseDown);
         };
     }, [word, handleMouseUp, handleMouseDown]);
 
@@ -121,7 +136,7 @@ function WordDetailModal({ word, onHide, onSpeak, onEdit, stickyNotes = [], onAd
                         position: 'fixed',
                         left: `${selectionTooltip.x}px`,
                         top: `${selectionTooltip.y}px`,
-                        transform: 'translateX(-50%)',
+                        transform: 'translate(-50%, -100%)',
                         zIndex: 9999,
                         pointerEvents: 'all',
                     }}

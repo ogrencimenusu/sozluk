@@ -26,6 +26,88 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
     const [addedTimeParams, setAddedTimeParams] = useState({ show: false, val: 0, key: 0 });
     const [comboTimer, setComboTimer] = useState(() => initialTestState?.config?.advancedOptions?.comboStreak ? 10 : null);
 
+    const [activeMeanings, setActiveMeanings] = useState(() => {
+        const initial = {};
+        if (initialTestState?.config?.advancedOptions?.singleMeaning) {
+            questions?.forEach((q, idx) => {
+                initial[idx] = [Math.floor(Math.random() * 10)];
+            });
+        }
+        return initial;
+    });
+
+    const getParsedMeaningsWithNumbers = (text) => {
+        if (typeof text !== 'string') return [{number: 1, text: text}];
+        const regex = /(?:^|\s)(\d+)\.\s+/g;
+        let match;
+        const result = [];
+        let lastIndex = 0;
+        let currentNumber = null;
+        
+        while ((match = regex.exec(text)) !== null) {
+            if (currentNumber !== null) {
+                result.push({ number: currentNumber, text: text.substring(lastIndex, match.index).trim() });
+            }
+            currentNumber = parseInt(match[1], 10);
+            lastIndex = match.index + match[0].length;
+        }
+        if (currentNumber !== null) {
+            result.push({ number: currentNumber, text: text.substring(lastIndex).trim() });
+        }
+        
+        if (result.length === 0) {
+            return [{ number: 1, text: text.trim() }];
+        }
+        return result;
+    };
+
+    const displayMeaning = (text, qIdx) => {
+        if (!initialTestState?.config?.advancedOptions?.singleMeaning) return text;
+        const parts = getParsedMeaningsWithNumbers(text);
+        if (parts.length <= 1) return text;
+        
+        const revealedSeeds = activeMeanings[qIdx] || [0];
+        const revealedIndicesArray = Array.from(new Set(revealedSeeds.map(s => s % parts.length)));
+        revealedIndicesArray.sort((a,b) => a - b);
+        
+        return revealedIndicesArray.map(i => `${parts[i].number}. ${parts[i].text}`).join(" ");
+    };
+
+    const hasMultipleMeanings = (qIdx) => {
+        if (!initialTestState?.config?.advancedOptions?.singleMeaning) return false;
+        const q = questions[qIdx];
+        if (!q) return false;
+        let textToCheck = q.format === 'definition' ? q.prompt : q.answer;
+        if (q.type === 'tf' && q.format === 'term') textToCheck = q.displayedAnswerText;
+        return getParsedMeaningsWithNumbers(textToCheck).length > 1;
+    };
+
+    const canRevealMoreMeanings = (qIdx) => {
+        if (!initialTestState?.config?.advancedOptions?.singleMeaning) return false;
+        const q = questions[qIdx];
+        if (!q) return false;
+        let textToCheck = q.format === 'definition' ? q.prompt : q.answer;
+        if (q.type === 'tf' && q.format === 'term') textToCheck = q.displayedAnswerText;
+        const parts = getParsedMeaningsWithNumbers(textToCheck);
+        if (parts.length <= 1) return false;
+        
+        const revealedSeeds = activeMeanings[qIdx] || [0];
+        const revealedIndices = new Set(revealedSeeds.map(s => s % parts.length));
+        return revealedIndices.size < parts.length;
+    };
+
+    const handleNextMeaning = (qIdx) => {
+        if (completed) return;
+        setActiveMeanings(prev => {
+            const currentSeeds = prev[qIdx] || [0];
+            const nextSeed = currentSeeds[currentSeeds.length - 1] + 1;
+            return {
+                ...prev,
+                [qIdx]: [...currentSeeds, nextSeed]
+            };
+        });
+    };
+
     // Auto-save progress
     useEffect(() => {
         if (!testId || !onSaveTest) return;
@@ -47,7 +129,7 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
     useEffect(() => {
         if (!initialTestState?.config?.advancedOptions?.comboStreak) return;
         if (completed || comboTimer === null) return;
-        
+
         const timer = setInterval(() => {
             setComboTimer(prev => {
                 if (prev <= 1) {
@@ -58,7 +140,7 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                 return prev - 1;
             });
         }, 1000);
-        
+
         return () => clearInterval(timer);
     }, [completed, comboTimer, currentStreak, initialTestState?.config?.advancedOptions?.comboStreak]);
 
@@ -229,7 +311,7 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
         const typed = (writtenInputs[qIdx] || '').trim().toLowerCase();
         const correct = correctAnswer.trim().toLowerCase();
         let isCorrect = typed === correct;
-        
+
         if (!isCorrect && typed.length > 0) {
             const distance = levenshteinDistance(typed, correct);
             if (distance <= 3) isCorrect = true;
@@ -583,7 +665,7 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
 
     const skippedCount = completed ? questions.filter((q, idx) => answers[idx]?.selected?.text === 'Boş bırakıldı').length : 0;
     const incorrectCount = completed ? (questions.length - correctCount - skippedCount) : 0;
-    
+
     // Kademeli İpucu: Calculate score percent, deducting points for hints if enabled
     const scorePercent = React.useMemo(() => {
         if (!completed || questions.length === 0) return 0;
@@ -874,33 +956,33 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                         {/* Gamification Results Summary */}
                                         {(initialTestState?.config?.advancedOptions?.comboStreak || initialTestState?.config?.advancedOptions?.timeSurvival || initialTestState?.config?.advancedOptions?.progressiveHint) && (
                                             <div className="mt-4 pt-3 border-top border-secondary border-opacity-25 d-flex gap-3 flex-wrap">
-                                                 {initialTestState?.config?.advancedOptions?.comboStreak && (
-                                                      <div className="d-flex align-items-center gap-2">
-                                                          <div className="bg-warning bg-opacity-10 text-warning rounded-circle d-flex align-items-center justify-content-center" style={{ width: 36, height: 36 }}><i className="bi bi-fire fs-5"></i></div>
-                                                          <div>
-                                                              <div className="fw-bold text-body" style={{ lineHeight: 1.2 }}>En Yüksek Seri</div>
-                                                              <div className="small text-muted">{maxStreak}x Combo</div>
-                                                          </div>
-                                                      </div>
-                                                 )}
-                                                 {initialTestState?.config?.advancedOptions?.timeSurvival && (
-                                                      <div className="d-flex align-items-center gap-2">
-                                                          <div className="bg-success bg-opacity-10 text-success rounded-circle d-flex align-items-center justify-content-center" style={{ width: 36, height: 36 }}><i className="bi bi-stopwatch-fill fs-5"></i></div>
-                                                          <div>
-                                                              <div className="fw-bold text-body" style={{ lineHeight: 1.2 }}>Kalan Süre</div>
-                                                              <div className="small text-muted">{timeLeft} Saniye</div>
-                                                          </div>
-                                                      </div>
-                                                 )}
-                                                 {initialTestState?.config?.advancedOptions?.progressiveHint && Object.values(hintsUsed).some(v => v > 0) && (
-                                                      <div className="d-flex align-items-center gap-2">
-                                                          <div className="bg-danger bg-opacity-10 text-danger rounded-circle d-flex align-items-center justify-content-center" style={{ width: 36, height: 36 }}><i className="bi bi-graph-down-arrow fs-5"></i></div>
-                                                          <div>
-                                                              <div className="fw-bold text-body" style={{ lineHeight: 1.2 }}>İpucu Bedeli</div>
-                                                              <div className="small text-danger fw-bold">Kesilen Kat: -{Math.round(Object.values(hintsUsed).reduce((acc, curr) => acc + (curr * 0.3), 0) * 100) / 100} Puan</div>
-                                                          </div>
-                                                      </div>
-                                                 )}
+                                                {initialTestState?.config?.advancedOptions?.comboStreak && (
+                                                    <div className="d-flex align-items-center gap-2">
+                                                        <div className="bg-warning bg-opacity-10 text-warning rounded-circle d-flex align-items-center justify-content-center" style={{ width: 36, height: 36 }}><i className="bi bi-fire fs-5"></i></div>
+                                                        <div>
+                                                            <div className="fw-bold text-body" style={{ lineHeight: 1.2 }}>En Yüksek Seri</div>
+                                                            <div className="small text-muted">{maxStreak}x Combo</div>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                                {initialTestState?.config?.advancedOptions?.timeSurvival && (
+                                                    <div className="d-flex align-items-center gap-2">
+                                                        <div className="bg-success bg-opacity-10 text-success rounded-circle d-flex align-items-center justify-content-center" style={{ width: 36, height: 36 }}><i className="bi bi-stopwatch-fill fs-5"></i></div>
+                                                        <div>
+                                                            <div className="fw-bold text-body" style={{ lineHeight: 1.2 }}>Kalan Süre</div>
+                                                            <div className="small text-muted">{timeLeft} Saniye</div>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                                {initialTestState?.config?.advancedOptions?.progressiveHint && Object.values(hintsUsed).some(v => v > 0) && (
+                                                    <div className="d-flex align-items-center gap-2">
+                                                        <div className="bg-danger bg-opacity-10 text-danger rounded-circle d-flex align-items-center justify-content-center" style={{ width: 36, height: 36 }}><i className="bi bi-graph-down-arrow fs-5"></i></div>
+                                                        <div>
+                                                            <div className="fw-bold text-body" style={{ lineHeight: 1.2 }}>İpucu Bedeli</div>
+                                                            <div className="small text-danger fw-bold">Kesilen Kat: -{Math.round(Object.values(hintsUsed).reduce((acc, curr) => acc + (curr * 0.3), 0) * 100) / 100} Puan</div>
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </div>
                                         )}
                                     </Col>
@@ -1014,473 +1096,486 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                     <div
                                         style={
                                             !completed && activeQuestionIdx === idx
-                                                ? { borderRadius: '1rem', border: '2px solid #6f42c1', boxShadow: '0 0 0 5px rgba(111,66,193,0.2)', transition: 'border-color 0.2s ease, box-shadow 0.2s ease', overflow: 'hidden' }
+                                                ? { borderRadius: '1rem', border: '2px solid #6f42c1', boxShadow: '0 0 0 5px rgba(111,66,193,0.2)', transition: 'border-color 0.2s ease, box-shadow 0.2s ease' }
                                                 : completed && !answers[idx]?.selected?.isCorrect
-                                                    ? { borderRadius: '1rem', border: '2px solid #dc3545', overflow: 'hidden' }
-                                                    : { borderRadius: '1rem', border: '2px solid transparent', overflow: 'hidden', transition: 'border-color 0.2s ease, box-shadow 0.2s ease' }
+                                                    ? { borderRadius: '1rem', border: '2px solid #dc3545' }
+                                                    : { borderRadius: '1rem', border: '2px solid transparent', transition: 'border-color 0.2s ease, box-shadow 0.2s ease' }
                                         }
                                     >
-                                    <Card className="position-relative bg-body-tertiary border-0 rounded-4 p-4 shadow-none">
-                                        <div className="d-flex justify-content-between align-items-start mb-4">
-                                            <div className="d-flex align-items-center gap-2">
-                                                <span className="bg-secondary bg-opacity-25 text-body rounded-circle d-flex align-items-center justify-content-center fw-bold" style={{ width: 28, height: 28, fontSize: '14px' }}>
-                                                    {idx + 1}
-                                                </span>
-                                                <span className="text-body-secondary fw-semibold">
-                                                    {currentQuestion.format === 'definition' ? 'Anlam' : 'Kelime'}
-                                                </span>
-                                            </div>
-                                            <div className="d-flex gap-2 align-items-center flex-wrap justify-content-end">
-                                                {(() => {
-                                                    const wordObj = (words || []).find(w => w.id === currentQuestion.wordId);
-                                                    const stage = wordObj?.learningStage ?? 0;
-                                                    return (
-                                                        <div className="d-flex align-items-center gap-2" style={{ minWidth: '110px' }}>
-                                                            {wordObj && onToggleStar && (
-                                                                <button
-                                                                    className="btn btn-link p-0 border-0 text-decoration-none"
-                                                                    onClick={(e) => onToggleStar(e, wordObj)}
-                                                                    title={wordObj.isStarred ? "Yıldızı Kaldır" : "Yıldız Ekle"}
-                                                                >
-                                                                    <i className={`fs-5 bi ${wordObj.isStarred ? 'bi-star-fill text-warning' : 'bi-star text-secondary'}`}></i>
-                                                                </button>
-                                                            )}
-                                                            <div className="flex-grow-1">
-                                                                <LearningStageBar stage={stage} showLabel />
-                                                            </div>
-                                                        </div>
-                                                    );
-                                                })()}
-                                                {(() => {
-                                                    const wordObj = (words || []).find(w => w.id === currentQuestion.wordId);
-
-                                                    const isMcq = currentQuestion.type !== 'tf' && currentQuestion.type !== 'written' && currentQuestion.type !== 'flashcard' && currentQuestion.options;
-                                                    const maxHints = isMcq ? Math.max(0, (currentQuestion.options?.filter(o => !o.isCorrect).length || 0) - 1) : (currentQuestion.type === 'tf' ? 0 : 3);
-                                                    const currentHints = hintsUsed[idx] || 0;
-                                                    const canHint = !completed && !answers[idx] && currentHints < maxHints;
-
-                                                    const popover = (
-                                                        <Popover id={`popover-hint-${idx}`}>
-                                                            <Popover.Header as="h3">İpucu <i className="bi bi-lightbulb text-warning"></i></Popover.Header>
-                                                            <Popover.Body>
-                                                                {currentHints === 0 ? (
-                                                                    canHint ? "İpucu almak için butona tıklayın." : "İpucu kalmadı."
-                                                                ) : isMcq ? (
-                                                                    `${currentHints} yanlış şık elendi!`
-                                                                ) : (
-                                                                    <ul className="mb-0 ps-3">
-                                                                        {currentHints >= 1 && currentQuestion.answer?.length > 0 && <li>İlk harf: <strong className="text-primary">{currentQuestion.answer[0].toUpperCase()}</strong></li>}
-                                                                        {currentHints >= 2 && currentQuestion.answer?.length > 1 && <li>Son harf: <strong className="text-primary">{currentQuestion.answer[currentQuestion.answer.length - 1].toUpperCase()}</strong></li>}
-                                                                        {currentHints >= 3 && currentQuestion.answer?.length > 0 && <li>Harf sayısı: <strong className="text-primary">{currentQuestion.answer?.length}</strong></li>}
-                                                                    </ul>
-                                                                )}
-                                                            </Popover.Body>
-                                                        </Popover>
-                                                    );
-
-                                                    return (
-                                                        <div className="d-flex gap-2 align-items-center position-relative">
-                                                            {initialTestState?.config?.advancedOptions?.progressiveHint && currentHints > 0 && (
-                                                                <Badge bg="danger" className="position-absolute end-100 me-2 top-50 translate-middle-y" style={{ animation: 'shake 0.4s' }} title="Puan Değeri Düştü">
-                                                                    -%{Math.min(100, currentHints * 30)} Puan
-                                                                </Badge>
-                                                            )}
-                                                            {maxHints > 0 && (
-                                                                <OverlayTrigger trigger={['hover', 'focus']} placement="top" overlay={popover}>
-                                                                    <span className="d-inline-block">
-                                                                        <Button
-                                                                            variant="outline-warning"
-                                                                            size="sm"
-                                                                            className="rounded-pill px-3 py-1 d-flex align-items-center gap-1 border-opacity-75"
-                                                                            onClick={() => canHint && handleHintClick(idx, currentQuestion)}
-                                                                            disabled={!canHint}
-                                                                            title="İpucu Al"
-                                                                            style={{ pointerEvents: canHint ? 'auto' : 'none' }}
-                                                                        >
-                                                                            <i className="bi bi-lightbulb-fill"></i>
-                                                                            <span className="d-none d-sm-inline small">İpucu {currentHints}/{maxHints}</span>
-                                                                        </Button>
-                                                                    </span>
-                                                                </OverlayTrigger>
-                                                            )}
-                                                            {wordObj ? (
-                                                                <>
-                                                                    <Button
-                                                                        variant="outline-secondary"
-                                                                        size="sm"
-                                                                        className="rounded-pill px-3 py-1 d-flex align-items-center gap-1"
-                                                                        onClick={() => setSelectedWordForModal(wordObj)}
-                                                                        title="Kelime Detayı"
+                                        <Card className="position-relative bg-body-tertiary border-0 rounded-4 p-4 shadow-none">
+                                            <div className="d-flex justify-content-between align-items-start mb-4">
+                                                <div className="d-flex align-items-center gap-2">
+                                                    <span className="bg-secondary bg-opacity-25 text-body rounded-circle d-flex align-items-center justify-content-center fw-bold" style={{ width: 28, height: 28, fontSize: '14px' }}>
+                                                        {idx + 1}
+                                                    </span>
+                                                    <span className="text-body-secondary fw-semibold">
+                                                        {currentQuestion.format === 'definition' ? 'Anlam' : 'Kelime'}
+                                                    </span>
+                                                </div>
+                                                <div className="d-flex gap-2 align-items-center flex-wrap justify-content-end">
+                                                    {(() => {
+                                                        const wordObj = (words || []).find(w => w.id === currentQuestion.wordId);
+                                                        const stage = wordObj?.learningStage ?? 0;
+                                                        return (
+                                                            <div className="d-flex align-items-center gap-2" style={{ minWidth: '110px' }}>
+                                                                {wordObj && onToggleStar && (
+                                                                    <button
+                                                                        className="btn btn-link p-0 border-0 text-decoration-none"
+                                                                        onClick={(e) => onToggleStar(e, wordObj)}
+                                                                        title={wordObj.isStarred ? "Yıldızı Kaldır" : "Yıldız Ekle"}
                                                                     >
-                                                                        <i className="bi bi-info-circle"></i>
-                                                                        <span className="d-none d-sm-inline small">Detay</span>
+                                                                        <i className={`fs-5 bi ${wordObj.isStarred ? 'bi-star-fill text-warning' : 'bi-star text-secondary'}`}></i>
+                                                                    </button>
+                                                                )}
+                                                                <div className="flex-grow-1">
+                                                                    <LearningStageBar stage={stage} showLabel />
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })()}
+                                                    {(() => {
+                                                        const wordObj = (words || []).find(w => w.id === currentQuestion.wordId);
+
+                                                        const isMcq = currentQuestion.type !== 'tf' && currentQuestion.type !== 'written' && currentQuestion.type !== 'flashcard' && currentQuestion.options;
+                                                        const maxHints = isMcq ? Math.max(0, (currentQuestion.options?.filter(o => !o.isCorrect).length || 0) - 1) : (currentQuestion.type === 'tf' ? 0 : 3);
+                                                        const currentHints = hintsUsed[idx] || 0;
+                                                        const canHint = !completed && !answers[idx] && currentHints < maxHints;
+
+                                                        const popover = (
+                                                            <Popover id={`popover-hint-${idx}`}>
+                                                                <Popover.Header as="h3">İpucu <i className="bi bi-lightbulb text-warning"></i></Popover.Header>
+                                                                <Popover.Body>
+                                                                    {currentHints === 0 ? (
+                                                                        canHint ? "İpucu almak için butona tıklayın." : "İpucu kalmadı."
+                                                                    ) : isMcq ? (
+                                                                        `${currentHints} yanlış şık elendi!`
+                                                                    ) : (
+                                                                        <ul className="mb-0 ps-3">
+                                                                            {currentHints >= 1 && currentQuestion.answer?.length > 0 && <li>İlk harf: <strong className="text-primary">{currentQuestion.answer[0].toUpperCase()}</strong></li>}
+                                                                            {currentHints >= 2 && currentQuestion.answer?.length > 1 && <li>Son harf: <strong className="text-primary">{currentQuestion.answer[currentQuestion.answer.length - 1].toUpperCase()}</strong></li>}
+                                                                            {currentHints >= 3 && currentQuestion.answer?.length > 0 && <li>Harf sayısı: <strong className="text-primary">{currentQuestion.answer?.length}</strong></li>}
+                                                                        </ul>
+                                                                    )}
+                                                                </Popover.Body>
+                                                            </Popover>
+                                                        );
+
+                                                        return (
+                                                            <div className="d-flex gap-2 align-items-center position-relative">
+                                                                {initialTestState?.config?.advancedOptions?.progressiveHint && currentHints > 0 && (
+                                                                    <Badge bg="danger" className="position-absolute end-100 me-2 top-50 translate-middle-y" style={{ animation: 'shake 0.4s' }} title="Puan Değeri Düştü">
+                                                                        -%{Math.min(100, currentHints * 30)} Puan
+                                                                    </Badge>
+                                                                )}
+                                                                {maxHints > 0 && (
+                                                                    <OverlayTrigger trigger={['hover', 'focus']} placement="top" overlay={popover}>
+                                                                        <span className="d-inline-block">
+                                                                            <Button
+                                                                                variant="outline-warning"
+                                                                                size="sm"
+                                                                                className="rounded-pill px-3 py-1 d-flex align-items-center gap-1 border-opacity-75"
+                                                                                onClick={() => canHint && handleHintClick(idx, currentQuestion)}
+                                                                                disabled={!canHint}
+                                                                                title="İpucu Al"
+                                                                                style={{ pointerEvents: canHint ? 'auto' : 'none' }}
+                                                                            >
+                                                                                <i className="bi bi-lightbulb-fill"></i>
+                                                                                <span className="d-none d-sm-inline small">İpucu {currentHints}/{maxHints}</span>
+                                                                            </Button>
+                                                                        </span>
+                                                                    </OverlayTrigger>
+                                                                )}
+                                                                {hasMultipleMeanings(idx) && (
+                                                                    <Button
+                                                                        variant="outline-primary"
+                                                                        size="sm"
+                                                                        className="rounded-pill px-3 py-1 d-flex align-items-center gap-1 border-opacity-75"
+                                                                        onClick={() => handleNextMeaning(idx)}
+                                                                        title={canRevealMoreMeanings(idx) ? "Diğer Anlamı Göster" : "Tüm Anlamlar Gösterildi"}
+                                                                        disabled={completed || !!answers[idx] || !canRevealMoreMeanings(idx)}
+                                                                    >
+                                                                        <i className="bi bi-plus-circle"></i>
+                                                                        <span className="d-none d-sm-inline small">Diğer Anlam</span>
                                                                     </Button>
-                                                                    {onDelete && (
+                                                                )}
+                                                                {wordObj ? (
+                                                                    <>
                                                                         <Button
-                                                                            variant="outline-danger"
+                                                                            variant="outline-secondary"
                                                                             size="sm"
                                                                             className="rounded-pill px-3 py-1 d-flex align-items-center gap-1"
-                                                                            onClick={(e) => onDelete(e, wordObj.id, wordObj.term)}
-                                                                            title="Kelimeyi Sil"
+                                                                            onClick={() => setSelectedWordForModal(wordObj)}
+                                                                            title="Kelime Detayı"
                                                                         >
-                                                                            <i className="bi bi-trash"></i>
-                                                                            <span className="d-none d-sm-inline small">Sil</span>
+                                                                            <i className="bi bi-info-circle"></i>
+                                                                            <span className="d-none d-sm-inline small">Detay</span>
                                                                         </Button>
-                                                                    )}
-                                                                </>
-                                                            ) : null}
-                                                        </div>
-                                                    );
-                                                })()}
-                                                {completed && (
-                                                    <Badge bg={answers[idx]?.selected?.isCorrect ? 'success' : 'danger'} className="rounded-pill px-2 py-1">
-                                                        {answers[idx]?.selected?.isCorrect ? 'Doğru' : 'Yanlış'}
-                                                    </Badge>
-                                                )}
-                                            </div>
-                                        </div>
-
-                                        <div className="mb-3 pb-3">
-                                            <div className="d-flex align-items-center gap-3 flex-wrap">
-                                                <h4 className="text-body fw-medium lh-base m-0">
-                                                    {currentQuestion.prompt}
-                                                </h4>
-                                                {/* Show pronunciation + speech button next to the prompt — only when prompt is English (format=term) */}
-                                                {currentQuestion.format === 'term' && currentQuestion.pronunciation && (
-                                                    <div
-                                                        className="d-flex align-items-center gap-1 text-primary bg-primary bg-opacity-10 px-2 py-1 rounded-pill"
-                                                        onClick={() => handleSpeak(currentQuestion.prompt)}
-                                                        title="Sesli Okunuş"
-                                                        style={{ cursor: 'pointer' }}
-                                                    >
-                                                        <i className="bi bi-volume-up-fill fs-5"></i>
-                                                        <span className="small fw-semibold mx-1">/{currentQuestion.pronunciation}/</span>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </div>
-
-                                        <div>
-                                            {currentQuestion.type === 'written' ? (
-                                                <div className="mb-3">
-                                                    <span className="text-body-secondary fw-semibold d-block mb-3">
-                                                        Cevabı yazıp Enter'a bas ya da butona tıkla
-                                                    </span>
-                                                    
-                                                    {initialTestState?.config?.advancedOptions?.missingLetters && !answers[idx] && (
-                                                        <div className="mb-3 text-center p-3 rounded-3 border border-info border-opacity-50 bg-info bg-opacity-10">
-                                                            <div className="small text-info fw-bold mb-2">
-                                                                <i className="bi bi-alphabet me-1"></i> Eksik Harfler İpucu
+                                                                        {onDelete && (
+                                                                            <Button
+                                                                                variant="outline-danger"
+                                                                                size="sm"
+                                                                                className="rounded-pill px-3 py-1 d-flex align-items-center gap-1"
+                                                                                onClick={(e) => onDelete(e, wordObj.id, wordObj.term)}
+                                                                                title="Kelimeyi Sil"
+                                                                            >
+                                                                                <i className="bi bi-trash"></i>
+                                                                                <span className="d-none d-sm-inline small">Sil</span>
+                                                                            </Button>
+                                                                        )}
+                                                                    </>
+                                                                ) : null}
                                                             </div>
-                                                            <div className="fs-3 font-monospace fw-bold text-body letter-spacing-2" style={{ letterSpacing: '4px' }}>
-                                                                {currentQuestion.answer.split('').map((char, i) => {
-                                                                    if (char === ' ') return <span key={i} className="mx-3"></span>;
-                                                                    // Show first letter, last letter, and roughly every 3rd letter, hide others
-                                                                    const show = i === 0 || i === currentQuestion.answer.length - 1 || i % 3 === 0;
-                                                                    return <span key={i} className={show ? "text-primary" : "text-body-tertiary"}>{show ? char : '_'}</span>;
-                                                                })}
-                                                            </div>
+                                                        );
+                                                    })()}
+                                                    {completed && (
+                                                        <Badge bg={answers[idx]?.selected?.isCorrect ? 'success' : 'danger'} className="rounded-pill px-2 py-1">
+                                                            {answers[idx]?.selected?.isCorrect ? 'Doğru' : 'Yanlış'}
+                                                        </Badge>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            <div className="mb-3 pb-3">
+                                                <div className="d-flex align-items-center gap-3 flex-wrap">
+                                                    <h4 className="text-body fw-medium lh-base m-0">
+                                                        {currentQuestion.format === 'definition' ? displayMeaning(currentQuestion.prompt, idx) : currentQuestion.prompt}
+                                                    </h4>
+                                                    {/* Show pronunciation + speech button next to the prompt — only when prompt is English (format=term) */}
+                                                    {currentQuestion.format === 'term' && currentQuestion.pronunciation && (
+                                                        <div
+                                                            className="d-flex align-items-center gap-1 text-primary bg-primary bg-opacity-10 px-2 py-1 rounded-pill"
+                                                            onClick={() => handleSpeak(currentQuestion.prompt)}
+                                                            title="Sesli Okunuş"
+                                                            style={{ cursor: 'pointer' }}
+                                                        >
+                                                            <i className="bi bi-volume-up-fill fs-5"></i>
+                                                            <span className="small fw-semibold mx-1">/{currentQuestion.pronunciation}/</span>
                                                         </div>
                                                     )}
+                                                </div>
+                                            </div>
 
-                                                    {!answers[idx] ? (
-                                                        <div className="d-flex gap-2">
-                                                            <input
-                                                                id={`written-input-${idx}`}
-                                                                type="text"
-                                                                className="form-control form-control-lg bg-transparent text-body border-secondary border-opacity-50 rounded-3"
-                                                                style={{ fontSize: '1.25rem' }}
-                                                                placeholder="Cevabınızı yazın..."
-                                                                value={writtenInputs[idx] || ''}
-                                                                autoCapitalize="none"
-                                                                onChange={e => setWrittenInputs(prev => ({ ...prev, [idx]: e.target.value.toLowerCase() }))}
-                                                                onKeyDown={e => {
-                                                                    if (e.key === 'Enter') {
-                                                                        e.preventDefault();
+                                            <div>
+                                                {currentQuestion.type === 'written' ? (
+                                                    <div className="mb-3">
+                                                        <span className="text-body-secondary fw-semibold d-block mb-3">
+                                                            Cevabı yazıp Enter'a bas ya da butona tıkla
+                                                        </span>
 
-                                                                        let nextUnansweredIdx = questions.findIndex((q, i) => i > idx && !answers[i] && !(q.type === 'written' && (writtenInputs[i] || '').trim().length > 0));
+                                                        {initialTestState?.config?.advancedOptions?.missingLetters && !answers[idx] && (
+                                                            <div className="mb-3 text-center p-3 rounded-3 border border-info border-opacity-50 bg-info bg-opacity-10">
+                                                                <div className="small text-info fw-bold mb-2">
+                                                                    <i className="bi bi-alphabet me-1"></i> Eksik Harfler İpucu
+                                                                </div>
+                                                                <div className="fs-3 font-monospace fw-bold text-body letter-spacing-2" style={{ letterSpacing: '4px' }}>
+                                                                    {currentQuestion.answer.split('').map((char, i) => {
+                                                                        if (char === ' ') return <span key={i} className="mx-3"></span>;
+                                                                        // Show first letter, last letter, and roughly every 3rd letter, hide others
+                                                                        const show = i === 0 || i === currentQuestion.answer.length - 1 || i % 3 === 0;
+                                                                        return <span key={i} className={show ? "text-primary" : "text-body-tertiary"}>{show ? char : '_'}</span>;
+                                                                    })}
+                                                                </div>
+                                                            </div>
+                                                        )}
 
-                                                                        if (nextUnansweredIdx === -1) {
-                                                                            nextUnansweredIdx = questions.findIndex((q, i) => !answers[i] && !(q.type === 'written' && (writtenInputs[i] || '').trim().length > 0));
-                                                                        }
+                                                        {!answers[idx] ? (
+                                                            <div className="d-flex gap-2">
+                                                                <input
+                                                                    id={`written-input-${idx}`}
+                                                                    type="text"
+                                                                    className="form-control form-control-lg bg-transparent text-body border-secondary border-opacity-50 rounded-3"
+                                                                    style={{ fontSize: '1.25rem' }}
+                                                                    placeholder="Cevabınızı yazın..."
+                                                                    value={writtenInputs[idx] || ''}
+                                                                    autoCapitalize="none"
+                                                                    onChange={e => setWrittenInputs(prev => ({ ...prev, [idx]: e.target.value.toLowerCase() }))}
+                                                                    onKeyDown={e => {
+                                                                        if (e.key === 'Enter') {
+                                                                            e.preventDefault();
 
-                                                                        if (nextUnansweredIdx !== -1) {
-                                                                            scrollToQuestion(nextUnansweredIdx);
+                                                                            let nextUnansweredIdx = questions.findIndex((q, i) => i > idx && !answers[i] && !(q.type === 'written' && (writtenInputs[i] || '').trim().length > 0));
 
-                                                                            if (questions[nextUnansweredIdx].type === 'written') {
-                                                                                setTimeout(() => {
-                                                                                    const nextInput = document.getElementById(`written-input-${nextUnansweredIdx}`);
-                                                                                    if (nextInput) nextInput.focus();
-                                                                                }, 100);
+                                                                            if (nextUnansweredIdx === -1) {
+                                                                                nextUnansweredIdx = questions.findIndex((q, i) => !answers[i] && !(q.type === 'written' && (writtenInputs[i] || '').trim().length > 0));
                                                                             }
-                                                                        } else {
-                                                                            // All answered! Scroll to submit.
-                                                                            if (submitBtnRef.current) {
-                                                                                submitBtnRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+                                                                            if (nextUnansweredIdx !== -1) {
+                                                                                scrollToQuestion(nextUnansweredIdx);
+
+                                                                                if (questions[nextUnansweredIdx].type === 'written') {
+                                                                                    setTimeout(() => {
+                                                                                        const nextInput = document.getElementById(`written-input-${nextUnansweredIdx}`);
+                                                                                        if (nextInput) nextInput.focus();
+                                                                                    }, 100);
+                                                                                }
+                                                                            } else {
+                                                                                // All answered! Scroll to submit.
+                                                                                if (submitBtnRef.current) {
+                                                                                    submitBtnRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                                                                }
                                                                             }
                                                                         }
-                                                                    }
-                                                                }}
-                                                                disabled={completed}
-                                                                autoComplete="off"
-                                                            />
-                                                            <Button
-                                                                variant="info"
-                                                                className="rounded-3 px-4 fw-bold text-dark fs-5"
-                                                                style={{ backgroundColor: '#4fd1c5', border: 'none', whiteSpace: 'nowrap' }}
-                                                                onClick={() => handleWrittenSubmit(idx, currentQuestion.answer)}
-                                                                disabled={!writtenInputs[idx]?.trim()}
-                                                            >
-                                                                <i className="bi bi-check-lg"></i> Kontrol
-                                                            </Button>
-                                                        </div>
-                                                    ) : (
-                                                        <div className={`rounded-3 p-3 border d-flex align-items-start gap-3 ${answers[idx]?.selected?.isCorrect
-                                                            ? answers[idx]?.selected?.hasTypo ? 'border-warning bg-warning bg-opacity-10' : 'border-success bg-success bg-opacity-10'
-                                                            : 'border-danger bg-danger bg-opacity-10'
-                                                            }`}>
-                                                            <i className={`bi ${answers[idx]?.selected?.isCorrect
-                                                                ? answers[idx]?.selected?.hasTypo ? 'bi-exclamation-circle-fill text-warning' : 'bi-check-circle-fill text-success'
-                                                                : 'bi-x-circle-fill text-danger'
-                                                                } fs-6 `}></i>
-                                                            <div className="flex-grow-1">
-                                                                <div className={`fw-bold justify-content-between d-flex ${answers[idx]?.selected?.isCorrect ? (answers[idx]?.selected?.hasTypo ? 'text-warning' : 'text-success') : 'text-danger'}`}>
-                                                                    Cevabınız: "{answers[idx]?.selected?.text}"
-                                                                    {answers[idx]?.selected?.hasTypo && (
-                                                                        <div className="text-warning small mt-1 fw-medium">
-                                                                            <i className="bi bi-info-circle me-1"></i> Ufak harf hatalarıyla doğru kabul edildi.
+                                                                    }}
+                                                                    disabled={completed}
+                                                                    autoComplete="off"
+                                                                />
+                                                                <Button
+                                                                    variant="info"
+                                                                    className="rounded-3 px-4 fw-bold text-dark fs-5"
+                                                                    style={{ backgroundColor: '#4fd1c5', border: 'none', whiteSpace: 'nowrap' }}
+                                                                    onClick={() => handleWrittenSubmit(idx, currentQuestion.answer)}
+                                                                    disabled={!writtenInputs[idx]?.trim()}
+                                                                >
+                                                                    <i className="bi bi-check-lg"></i> Kontrol
+                                                                </Button>
+                                                            </div>
+                                                        ) : (
+                                                            <div className={`rounded-3 p-3 border d-flex align-items-start gap-3 ${answers[idx]?.selected?.isCorrect
+                                                                ? answers[idx]?.selected?.hasTypo ? 'border-warning bg-warning bg-opacity-10' : 'border-success bg-success bg-opacity-10'
+                                                                : 'border-danger bg-danger bg-opacity-10'
+                                                                }`}>
+                                                                <i className={`bi ${answers[idx]?.selected?.isCorrect
+                                                                    ? answers[idx]?.selected?.hasTypo ? 'bi-exclamation-circle-fill text-warning' : 'bi-check-circle-fill text-success'
+                                                                    : 'bi-x-circle-fill text-danger'
+                                                                    } fs-6 `}></i>
+                                                                <div className="flex-grow-1">
+                                                                    <div className={`fw-bold justify-content-between d-flex ${answers[idx]?.selected?.isCorrect ? (answers[idx]?.selected?.hasTypo ? 'text-warning' : 'text-success') : 'text-danger'}`}>
+                                                                        Cevabınız: "{answers[idx]?.selected?.text}"
+                                                                        {answers[idx]?.selected?.hasTypo && (
+                                                                            <div className="text-warning small mt-1 fw-medium">
+                                                                                <i className="bi bi-info-circle me-1"></i> Ufak harf hatalarıyla doğru kabul edildi.
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+
+                                                                    {/* Always show the correct answer with pronunciation + speak button */}
+                                                                    <div className="d-flex align-items-center gap-2 flex-wrap mt-2">
+                                                                        <span className="text-body-secondary small">Doğru cevap:</span>
+                                                                        <span className={`fw-bold fs-6 ${answers[idx]?.selected?.isCorrect && !answers[idx]?.selected?.hasTypo ? 'text-success' : 'text-body'}`}>{currentQuestion.format === 'term' ? displayMeaning(currentQuestion.answer, idx) : currentQuestion.answer}</span>
+                                                                        {currentQuestion.format === 'definition' && currentQuestion.pronunciation && (
+                                                                            <>
+                                                                                <span className="small font-monospace text-muted">/{currentQuestion.pronunciation}/</span>
+                                                                                <Button
+                                                                                    variant="link"
+                                                                                    className="p-0 text-primary opacity-75 text-decoration-none"
+                                                                                    onClick={() => handleSpeak(currentQuestion.answer)}
+                                                                                    title="Sesli Dinle"
+                                                                                    onMouseEnter={e => e.currentTarget.classList.replace('opacity-75', 'opacity-100')}
+                                                                                    onMouseLeave={e => e.currentTarget.classList.replace('opacity-100', 'opacity-75')}
+                                                                                >
+                                                                                    <i className="bi bi-volume-up-fill fs-5"></i>
+                                                                                </Button>
+                                                                            </>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                ) : currentQuestion.type === 'flashcard' ? (
+                                                    <div>
+                                                        {/* Front of card: prompt */}
+                                                        <div
+                                                            className={`rounded-4 border p-4 mb-3 text-center transition-all ${flippedCards[idx] ? 'border-info bg-info bg-opacity-10' : 'border-secondary border-opacity-25 bg-body-secondary'}`}
+                                                            onClick={() => !completed && flipCard(idx)}
+                                                            style={{ cursor: completed ? 'default' : 'pointer', minHeight: '90px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                                                        >
+                                                            {!flippedCards[idx] ? (
+                                                                <span className="text-body-secondary fw-medium"><i className="bi bi-eye me-2"></i>Görmek için tıkla</span>
+                                                            ) : (
+                                                                <>
+                                                                    <span className="text-body-secondary small mb-1">Cevap:</span>
+                                                                    <h4 className="text-info fw-bold m-0">{currentQuestion.format === 'term' ? displayMeaning(currentQuestion.answer, idx) : currentQuestion.answer}</h4>
+                                                                    {currentQuestion.format === 'definition' && currentQuestion.pronunciation && (
+                                                                        <div
+                                                                            className="d-flex align-items-center gap-1 text-primary bg-primary bg-opacity-10 px-2 py-1 rounded-pill mt-2"
+                                                                            onClick={(e) => { e.stopPropagation(); handleSpeak(currentQuestion.answer); }}
+                                                                            style={{ cursor: 'pointer' }}
+                                                                            title="Sesli Okunüş"
+                                                                        >
+                                                                            <i className="bi bi-volume-up-fill"></i>
+                                                                            <span className="small fw-semibold mx-1">/{currentQuestion.pronunciation}/</span>
                                                                         </div>
                                                                     )}
-                                                                </div>
+                                                                </>
+                                                            )}
+                                                        </div>
 
-                                                                {/* Always show the correct answer with pronunciation + speak button */}
-                                                                <div className="d-flex align-items-center gap-2 flex-wrap mt-2">
-                                                                    <span className="text-body-secondary small">Doğru cevap:</span>
-                                                                    <span className={`fw-bold fs-6 ${answers[idx]?.selected?.isCorrect && !answers[idx]?.selected?.hasTypo ? 'text-success' : 'text-body'}`}>{currentQuestion.answer}</span>
-                                                                    {currentQuestion.format === 'definition' && currentQuestion.pronunciation && (
-                                                                        <>
-                                                                            <span className="small font-monospace text-muted">/{currentQuestion.pronunciation}/</span>
-                                                                            <Button
-                                                                                variant="link"
-                                                                                className="p-0 text-primary opacity-75 text-decoration-none"
-                                                                                onClick={() => handleSpeak(currentQuestion.answer)}
-                                                                                title="Sesli Dinle"
-                                                                                onMouseEnter={e => e.currentTarget.classList.replace('opacity-75', 'opacity-100')}
-                                                                                onMouseLeave={e => e.currentTarget.classList.replace('opacity-100', 'opacity-75')}
-                                                                            >
-                                                                                <i className="bi bi-volume-up-fill fs-5"></i>
-                                                                            </Button>
-                                                                        </>
+                                                        {/* Self-grading buttons — only after revealing */}
+                                                        {!completed && (
+                                                            <div className="d-flex gap-3 justify-content-center">
+                                                                <Button
+                                                                    variant={answers[idx]?.selected?.isCorrect === true ? 'success' : 'outline-success'}
+                                                                    className="rounded-pill px-4 fw-semibold d-flex align-items-center gap-2"
+                                                                    onClick={() => handleSelectAnswer(idx, { text: 'Bildim', isCorrect: true })}
+                                                                >
+                                                                    <span className="badge bg-success bg-opacity-25 text-success border border-success border-opacity-50 rounded-circle d-flex align-items-center justify-content-center fw-bold" style={{ width: '20px', height: '20px', fontSize: '11px', padding: 0 }}>1</span>
+                                                                    <i className="bi bi-check-circle"></i>Bildim
+                                                                </Button>
+                                                                <Button
+                                                                    variant={answers[idx]?.selected?.isCorrect === false ? 'danger' : 'outline-danger'}
+                                                                    className="rounded-pill px-4 fw-semibold d-flex align-items-center gap-2"
+                                                                    onClick={() => handleSelectAnswer(idx, { text: 'Bilmedim', isCorrect: false })}
+                                                                >
+                                                                    <span className="badge bg-danger bg-opacity-25 text-danger border border-danger border-opacity-50 rounded-circle d-flex align-items-center justify-content-center fw-bold" style={{ width: '20px', height: '20px', fontSize: '11px', padding: 0 }}>2</span>
+                                                                    <i className="bi bi-x-circle"></i>Bilmedim
+                                                                </Button>
+                                                            </div>
+                                                        )}
+
+                                                        {/* After test completed, show result inline */}
+                                                        {completed && (
+                                                            <div className="text-center">
+                                                                <span className={`fw-bold fs-5 ${answers[idx]?.selected?.isCorrect ? 'text-success' : 'text-danger'}`}>
+                                                                    {answers[idx]?.selected?.isCorrect ? <><i className="bi bi-check-circle-fill me-2"></i>Bildin!</> : <><i className="bi bi-x-circle-fill me-2"></i>Bilmedin</>}
+                                                                </span>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                ) : currentQuestion.type === 'tf' ? (
+                                                    <div className="mb-4 pb-3 border-bottom border-secondary border-opacity-25 ">
+                                                        <span className="text-body-secondary fw-semibold d-block mb-2">
+                                                            Eşleşen {currentQuestion.format === 'definition' ? 'kelime' : 'anlam'} bu mu?
+                                                        </span>
+                                                        <div className="d-flex  gap-3 flex-wrap">
+                                                            <h3 className="text-info fw-bold m-0">{currentQuestion.format === 'term' ? displayMeaning(currentQuestion.displayedAnswerText, idx) : currentQuestion.displayedAnswerText}</h3>
+                                                            {/* Pronunciation next to the displayed word (for format=definition, displayed word is a term) */}
+                                                            {currentQuestion.format === 'definition' && currentQuestion.pronunciation && (
+                                                                <div
+                                                                    className="d-flex align-items-center gap-1 text-primary bg-primary bg-opacity-10 px-2 py-1 rounded-pill"
+                                                                    onClick={() => handleSpeak(currentQuestion.displayedAnswerText)}
+                                                                    title="Sesli Okunuş"
+                                                                    style={{ cursor: 'pointer' }}
+                                                                >
+                                                                    <i className="bi bi-volume-up-fill fs-5"></i>
+                                                                    <span className="small fw-semibold mx-1">/{currentQuestion.pronunciation}/</span>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <span className="text-body-secondary fw-semibold d-block mb-3">
+                                                        Eşleşen {currentQuestion.format === 'definition' ? 'kelimeyi' : 'anlamı'} seçiniz
+                                                    </span>
+                                                )}
+                                                <Row className="g-3 align-items-stretch">
+                                                    {(currentQuestion.options || []).map((opt, i) => {
+                                                        const isSelected = answers[idx]?.selected?.text === opt.text;
+                                                        const isAnswered = !!answers[idx];
+                                                        const isHidden = (hiddenOptions[idx] || []).includes(i);
+
+                                                        if (isHidden && !completed && !isSelected) {
+                                                            return (
+                                                                <Col md={6} key={i} className="d-flex" style={{ visibility: 'hidden' }}>
+                                                                    <div className="border rounded-3 p-3 w-100"></div>
+                                                                </Col>
+                                                            );
+                                                        }
+
+                                                        let btnStateClass = "border-secondary border-opacity-50 text-body-secondary";
+                                                        let numberBadgeClass = "bg-secondary bg-opacity-25 text-body";
+
+                                                        if (completed) {
+                                                            // TEST BITTI: Doğru/Yanlış gösterimi
+                                                            if (opt.isCorrect) {
+                                                                btnStateClass = "border-success text-success bg-success bg-opacity-10 shadow-sm";
+                                                                numberBadgeClass = "bg-success text-white";
+                                                            } else if (isSelected && !opt.isCorrect) {
+                                                                btnStateClass = "border-danger text-danger bg-danger bg-opacity-10";
+                                                                numberBadgeClass = "bg-danger text-white";
+                                                            } else {
+                                                                btnStateClass += " opacity-50"; // diğer şıkları soluklaştır
+                                                            }
+                                                        } else {
+                                                            // TEST DEVAM EDIYOR: Sadece seçimi göster
+                                                            if (isSelected) {
+                                                                btnStateClass = "border-info text-info bg-info bg-opacity-10 shadow-sm";
+                                                                numberBadgeClass = "bg-info text-dark";
+                                                            } else if (!isAnswered) {
+                                                                btnStateClass += " hover-bg-secondary";
+                                                            }
+                                                        }
+
+                                                        return (
+                                                            <Col md={6} key={i} className="d-flex">
+                                                                <div
+                                                                    className={`border rounded-3 p-3 d-flex align-items-center gap-3 transition-all w-100 ${btnStateClass}`}
+                                                                    onClick={() => handleSelectAnswer(idx, opt)}
+                                                                    style={{ cursor: completed ? 'default' : 'pointer' }}
+                                                                >
+                                                                    <div className={`rounded-circle d-flex align-items-center justify-content-center fw-bold transition-all flex-shrink-0 ${numberBadgeClass}`} style={{ width: '28px', height: '28px', minWidth: '28px', fontSize: '13px' }}>
+                                                                        {i + 1}
+                                                                    </div>
+                                                                    <span className={
+                                                                        completed && opt.isCorrect ? 'text-success fw-bold' :
+                                                                            (completed && isSelected && !opt.isCorrect ? 'text-danger text-decoration-line-through' :
+                                                                                (isSelected ? 'text-info fw-bold' : 'text-body fw-medium'))
+                                                                    }>
+                                                                        {currentQuestion.format === 'term' ? displayMeaning(opt.text, idx) : opt.text}
+                                                                    </span>
+
+                                                                    {/* For definition-format questions: options are terms (english words) — show each option's pronunciation */}
+                                                                    {currentQuestion.format === 'definition' && opt.pronunciation && (
+                                                                        <span className="ms-1 small font-monospace text-muted">/{opt.pronunciation}/</span>
+                                                                    )}
+
+                                                                    {currentQuestion.format === 'definition' && currentQuestion.type !== 'tf' && (
+                                                                        <Button
+                                                                            variant="link"
+                                                                            className="p-0 ms-auto text-primary opacity-50 text-decoration-none"
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                handleSpeak(opt.text);
+                                                                            }}
+                                                                            title="Sesli Dinle"
+                                                                            onMouseEnter={e => e.currentTarget.classList.replace('opacity-50', 'opacity-100')}
+                                                                            onMouseLeave={e => e.currentTarget.classList.replace('opacity-100', 'opacity-50')}
+                                                                        >
+                                                                            <i className="bi bi-volume-up-fill fs-5"></i>
+                                                                        </Button>
                                                                     )}
                                                                 </div>
-                                                            </div>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            ) : currentQuestion.type === 'flashcard' ? (
-                                                <div>
-                                                    {/* Front of card: prompt */}
-                                                    <div
-                                                        className={`rounded-4 border p-4 mb-3 text-center transition-all ${flippedCards[idx] ? 'border-info bg-info bg-opacity-10' : 'border-secondary border-opacity-25 bg-body-secondary'}`}
-                                                        onClick={() => !completed && flipCard(idx)}
-                                                        style={{ cursor: completed ? 'default' : 'pointer', minHeight: '90px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
-                                                    >
-                                                        {!flippedCards[idx] ? (
-                                                            <span className="text-body-secondary fw-medium"><i className="bi bi-eye me-2"></i>Görmek için tıkla</span>
-                                                        ) : (
-                                                            <>
-                                                                <span className="text-body-secondary small mb-1">Cevap:</span>
-                                                                <h4 className="text-info fw-bold m-0">{currentQuestion.answer}</h4>
-                                                                {currentQuestion.format === 'definition' && currentQuestion.pronunciation && (
-                                                                    <div
-                                                                        className="d-flex align-items-center gap-1 text-primary bg-primary bg-opacity-10 px-2 py-1 rounded-pill mt-2"
-                                                                        onClick={(e) => { e.stopPropagation(); handleSpeak(currentQuestion.answer); }}
-                                                                        style={{ cursor: 'pointer' }}
-                                                                        title="Sesli Okunüş"
-                                                                    >
-                                                                        <i className="bi bi-volume-up-fill"></i>
-                                                                        <span className="small fw-semibold mx-1">/{currentQuestion.pronunciation}/</span>
-                                                                    </div>
-                                                                )}
-                                                            </>
-                                                        )}
-                                                    </div>
-
-                                                    {/* Self-grading buttons — only after revealing */}
-                                                    {!completed && (
-                                                        <div className="d-flex gap-3 justify-content-center">
-                                                            <Button
-                                                                variant={answers[idx]?.selected?.isCorrect === true ? 'success' : 'outline-success'}
-                                                                className="rounded-pill px-4 fw-semibold d-flex align-items-center gap-2"
-                                                                onClick={() => handleSelectAnswer(idx, { text: 'Bildim', isCorrect: true })}
-                                                            >
-                                                                <span className="badge bg-success bg-opacity-25 text-success border border-success border-opacity-50 rounded-circle d-flex align-items-center justify-content-center fw-bold" style={{ width: '20px', height: '20px', fontSize: '11px', padding: 0 }}>1</span>
-                                                                <i className="bi bi-check-circle"></i>Bildim
-                                                            </Button>
-                                                            <Button
-                                                                variant={answers[idx]?.selected?.isCorrect === false ? 'danger' : 'outline-danger'}
-                                                                className="rounded-pill px-4 fw-semibold d-flex align-items-center gap-2"
-                                                                onClick={() => handleSelectAnswer(idx, { text: 'Bilmedim', isCorrect: false })}
-                                                            >
-                                                                <span className="badge bg-danger bg-opacity-25 text-danger border border-danger border-opacity-50 rounded-circle d-flex align-items-center justify-content-center fw-bold" style={{ width: '20px', height: '20px', fontSize: '11px', padding: 0 }}>2</span>
-                                                                <i className="bi bi-x-circle"></i>Bilmedim
-                                                            </Button>
-                                                        </div>
-                                                    )}
-
-                                                    {/* After test completed, show result inline */}
-                                                    {completed && (
-                                                        <div className="text-center">
-                                                            <span className={`fw-bold fs-5 ${answers[idx]?.selected?.isCorrect ? 'text-success' : 'text-danger'}`}>
-                                                                {answers[idx]?.selected?.isCorrect ? <><i className="bi bi-check-circle-fill me-2"></i>Bildin!</> : <><i className="bi bi-x-circle-fill me-2"></i>Bilmedin</>}
-                                                            </span>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            ) : currentQuestion.type === 'tf' ? (
-                                                <div className="mb-4 pb-3 border-bottom border-secondary border-opacity-25 ">
-                                                    <span className="text-body-secondary fw-semibold d-block mb-2">
-                                                        Eşleşen {currentQuestion.format === 'definition' ? 'kelime' : 'anlam'} bu mu?
-                                                    </span>
-                                                    <div className="d-flex  gap-3 flex-wrap">
-                                                        <h3 className="text-info fw-bold m-0">{currentQuestion.displayedAnswerText}</h3>
-                                                        {/* Pronunciation next to the displayed word (for format=definition, displayed word is a term) */}
-                                                        {currentQuestion.format === 'definition' && currentQuestion.pronunciation && (
-                                                            <div
-                                                                className="d-flex align-items-center gap-1 text-primary bg-primary bg-opacity-10 px-2 py-1 rounded-pill"
-                                                                onClick={() => handleSpeak(currentQuestion.displayedAnswerText)}
-                                                                title="Sesli Okunuş"
-                                                                style={{ cursor: 'pointer' }}
-                                                            >
-                                                                <i className="bi bi-volume-up-fill fs-5"></i>
-                                                                <span className="small fw-semibold mx-1">/{currentQuestion.pronunciation}/</span>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            ) : (
-                                                <span className="text-body-secondary fw-semibold d-block mb-3">
-                                                    Eşleşen {currentQuestion.format === 'definition' ? 'kelimeyi' : 'anlamı'} seçiniz
-                                                </span>
-                                            )}
-                                            <Row className="g-3 align-items-stretch">
-                                                {(currentQuestion.options || []).map((opt, i) => {
-                                                    const isSelected = answers[idx]?.selected?.text === opt.text;
-                                                    const isAnswered = !!answers[idx];
-                                                    const isHidden = (hiddenOptions[idx] || []).includes(i);
-
-                                                    if (isHidden && !completed && !isSelected) {
-                                                        return (
-                                                            <Col md={6} key={i} className="d-flex" style={{ visibility: 'hidden' }}>
-                                                                <div className="border rounded-3 p-3 w-100"></div>
                                                             </Col>
-                                                        );
-                                                    }
+                                                        )
+                                                    })}
+                                                </Row>
+                                            </div>
 
-                                                    let btnStateClass = "border-secondary border-opacity-50 text-body-secondary";
-                                                    let numberBadgeClass = "bg-secondary bg-opacity-25 text-body";
+                                            {/* Placed at the very bottom center of the card */}
+                                            {!completed && currentQuestion.type === 'written' && !answers[idx] && (() => {
+                                                const hasPrevious = questions.some((q, i) => i < idx && q.type === 'written' && !answers[i]);
+                                                const hasNext = questions.some((q, i) => i > idx && q.type === 'written' && !answers[i]);
 
-                                                    if (completed) {
-                                                        // TEST BITTI: Doğru/Yanlış gösterimi
-                                                        if (opt.isCorrect) {
-                                                            btnStateClass = "border-success text-success bg-success bg-opacity-10 shadow-sm";
-                                                            numberBadgeClass = "bg-success text-white";
-                                                        } else if (isSelected && !opt.isCorrect) {
-                                                            btnStateClass = "border-danger text-danger bg-danger bg-opacity-10";
-                                                            numberBadgeClass = "bg-danger text-white";
-                                                        } else {
-                                                            btnStateClass += " opacity-50"; // diğer şıkları soluklaştır
-                                                        }
-                                                    } else {
-                                                        // TEST DEVAM EDIYOR: Sadece seçimi göster
-                                                        if (isSelected) {
-                                                            btnStateClass = "border-info text-info bg-info bg-opacity-10 shadow-sm";
-                                                            numberBadgeClass = "bg-info text-dark";
-                                                        } else if (!isAnswered) {
-                                                            btnStateClass += " hover-bg-secondary";
-                                                        }
-                                                    }
-
-                                                    return (
-                                                        <Col md={6} key={i} className="d-flex">
-                                                            <div
-                                                                className={`border rounded-3 p-3 d-flex align-items-center gap-3 transition-all w-100 ${btnStateClass}`}
-                                                                onClick={() => handleSelectAnswer(idx, opt)}
-                                                                style={{ cursor: completed ? 'default' : 'pointer' }}
+                                                return (
+                                                    <div className="position-absolute top-100 start-50 translate-middle" style={{ zIndex: 10 }}>
+                                                        <div className="btn-group border border-secondary border-opacity-50 rounded-pill overflow-hidden bg-body shadow-sm" role="group">
+                                                            <Button
+                                                                variant="link"
+                                                                size="sm"
+                                                                className="p-0 px-3 text-body-secondary hover-text-primary transition-all border-0 shadow-none d-flex align-items-center justify-content-center border-end border-secondary border-opacity-25 rounded-0"
+                                                                onClick={() => focusNextWrittenQuestion(idx, 'up')}
+                                                                disabled={!hasPrevious}
+                                                                title="Önceki Yazılı Soru"
+                                                                style={{ height: '32px' }}
                                                             >
-                                                                <div className={`rounded-circle d-flex align-items-center justify-content-center fw-bold transition-all flex-shrink-0 ${numberBadgeClass}`} style={{ width: '28px', height: '28px', minWidth: '28px', fontSize: '13px' }}>
-                                                                    {i + 1}
-                                                                </div>
-                                                                <span className={
-                                                                    completed && opt.isCorrect ? 'text-success fw-bold' :
-                                                                        (completed && isSelected && !opt.isCorrect ? 'text-danger text-decoration-line-through' :
-                                                                            (isSelected ? 'text-info fw-bold' : 'text-body fw-medium'))
-                                                                }>
-                                                                    {opt.text}
-                                                                </span>
-
-                                                                {/* For definition-format questions: options are terms (english words) — show each option's pronunciation */}
-                                                                {currentQuestion.format === 'definition' && opt.pronunciation && (
-                                                                    <span className="ms-1 small font-monospace text-muted">/{opt.pronunciation}/</span>
-                                                                )}
-
-                                                                {currentQuestion.format === 'definition' && currentQuestion.type !== 'tf' && (
-                                                                    <Button
-                                                                        variant="link"
-                                                                        className="p-0 ms-auto text-primary opacity-50 text-decoration-none"
-                                                                        onClick={(e) => {
-                                                                            e.stopPropagation();
-                                                                            handleSpeak(opt.text);
-                                                                        }}
-                                                                        title="Sesli Dinle"
-                                                                        onMouseEnter={e => e.currentTarget.classList.replace('opacity-50', 'opacity-100')}
-                                                                        onMouseLeave={e => e.currentTarget.classList.replace('opacity-100', 'opacity-50')}
-                                                                    >
-                                                                        <i className="bi bi-volume-up-fill fs-5"></i>
-                                                                    </Button>
-                                                                )}
-                                                            </div>
-                                                        </Col>
-                                                    )
-                                                })}
-                                            </Row>
-                                        </div>
-
-                                        {/* Placed at the very bottom center of the card */}
-                                        {!completed && currentQuestion.type === 'written' && !answers[idx] && (() => {
-                                            const hasPrevious = questions.some((q, i) => i < idx && q.type === 'written' && !answers[i]);
-                                            const hasNext = questions.some((q, i) => i > idx && q.type === 'written' && !answers[i]);
-
-                                            return (
-                                                <div className="position-absolute top-100 start-50 translate-middle" style={{ zIndex: 10 }}>
-                                                    <div className="btn-group border border-secondary border-opacity-50 rounded-pill overflow-hidden bg-body shadow-sm" role="group">
-                                                        <Button
-                                                            variant="link"
-                                                            size="sm"
-                                                            className="p-0 px-3 text-body-secondary hover-text-primary transition-all border-0 shadow-none d-flex align-items-center justify-content-center border-end border-secondary border-opacity-25 rounded-0"
-                                                            onClick={() => focusNextWrittenQuestion(idx, 'up')}
-                                                            disabled={!hasPrevious}
-                                                            title="Önceki Yazılı Soru"
-                                                            style={{ height: '32px' }}
-                                                        >
-                                                            <i className="bi bi-chevron-up" style={{ fontSize: '1rem' }}></i>
-                                                        </Button>
-                                                        <Button
-                                                            variant="link"
-                                                            size="sm"
-                                                            className="p-0 px-3 text-body-secondary hover-text-primary transition-all border-0 shadow-none d-flex align-items-center justify-content-center rounded-0"
-                                                            onClick={() => focusNextWrittenQuestion(idx, 'down')}
-                                                            disabled={!hasNext}
-                                                            title="Sonraki Yazılı Soru"
-                                                            style={{ height: '32px' }}
-                                                        >
-                                                            <i className="bi bi-chevron-down" style={{ fontSize: '1rem' }}></i>
-                                                        </Button>
+                                                                <i className="bi bi-chevron-up" style={{ fontSize: '1rem' }}></i>
+                                                            </Button>
+                                                            <Button
+                                                                variant="link"
+                                                                size="sm"
+                                                                className="p-0 px-3 text-body-secondary hover-text-primary transition-all border-0 shadow-none d-flex align-items-center justify-content-center rounded-0"
+                                                                onClick={() => focusNextWrittenQuestion(idx, 'down')}
+                                                                disabled={!hasNext}
+                                                                title="Sonraki Yazılı Soru"
+                                                                style={{ height: '32px' }}
+                                                            >
+                                                                <i className="bi bi-chevron-down" style={{ fontSize: '1rem' }}></i>
+                                                            </Button>
+                                                        </div>
                                                     </div>
-                                                </div>
-                                            );
-                                        })()}
-                                    </Card>
+                                                );
+                                            })()}
+                                        </Card>
                                     </div>
                                 </div>
                             ))}

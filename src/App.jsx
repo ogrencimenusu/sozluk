@@ -316,7 +316,7 @@ function App() {
       const rect = range.getBoundingClientRect();
       setHomeSelectionTooltip({
         x: rect.left + rect.width / 2,
-        y: rect.bottom + 8,
+        y: Math.max(0, rect.top - 8),
         text: selectedText,
         wordId,
         wordTerm
@@ -330,11 +330,26 @@ function App() {
   }, []);
 
   useEffect(() => {
+    let timeoutId;
+    const handleSelectionChange = () => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        handleGlobalMouseUp();
+      }, 300);
+    };
+
     document.addEventListener('mouseup', handleGlobalMouseUp);
+    document.addEventListener('touchend', handleGlobalMouseUp);
+    document.addEventListener('selectionchange', handleSelectionChange);
     document.addEventListener('mousedown', handleGlobalMouseDown);
+    document.addEventListener('touchstart', handleGlobalMouseDown, { passive: true });
     return () => {
+      clearTimeout(timeoutId);
       document.removeEventListener('mouseup', handleGlobalMouseUp);
+      document.removeEventListener('touchend', handleGlobalMouseUp);
+      document.removeEventListener('selectionchange', handleSelectionChange);
       document.removeEventListener('mousedown', handleGlobalMouseDown);
+      document.removeEventListener('touchstart', handleGlobalMouseDown);
     };
   }, [handleGlobalMouseUp, handleGlobalMouseDown]);
 
@@ -1151,7 +1166,7 @@ function App() {
           position: 'fixed',
           left: `${homeSelectionTooltip.x}px`,
           top: `${homeSelectionTooltip.y}px`,
-          transform: 'translateX(-50%)',
+          transform: 'translate(-50%, -100%)',
           zIndex: 9999,
           pointerEvents: 'all',
         }}
@@ -1639,15 +1654,122 @@ function App() {
                         <div className="mb-2">
                           <strong className="small text-body opacity-75 d-block">Gramer Özellikleri:</strong>
                           <ul className="small text-muted mb-0 ps-3">
-                            {word.grammar.map((g, idx) => (
-                              <li key={idx}>
-                                {highlightText(
-                                  g,
-                                  stickyNotes.filter(n => n.wordId === word.id).map(n => n.text),
-                                  () => setShowStickyNotesModal(true)
-                                )}
-                              </li>
-                            ))}
+                            {word.grammar.map((g, idx) => {
+                              const cIdx = g.indexOf(':');
+                              const speakText = cIdx !== -1 ? g.substring(cIdx + 1).replace(/\s*[([].*$/, '').trim() : '';
+                              return (
+                                <li key={idx} className="d-flex align-items-start gap-1 mb-1">
+                                  {speakText && (
+                                    <Button
+                                      variant="link"
+                                      className="p-0 text-primary opacity-50 hover-opacity-100 transition-all border-0 shadow-none flex-shrink-0"
+                                      onClick={(e) => { e.stopPropagation(); handleSpeak(speakText); }}
+                                      title="Sesli Dinle"
+                                    >
+                                      <i className="bi bi-volume-up" style={{ fontSize: '14px' }}></i>
+                                    </Button>
+                                  )}
+                                  <span className="flex-grow-1">
+                                    {highlightText(
+                                      g,
+                                      stickyNotes.filter(n => n.wordId === word.id).map(n => n.text),
+                                      () => setShowStickyNotesModal(true)
+                                    )}
+                                  </span>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        </div>
+                      )}
+
+                      {viewMode === 'detailed' && word.wordFamily && word.wordFamily.length > 0 && (
+                        <div className="mb-2">
+                          <strong className="small text-body opacity-75 d-block">Kelime Ailesi (Word Family):</strong>
+                          <ul className="small text-muted mb-0 ps-3">
+                            {word.wordFamily.map((wf, idx) => {
+                              const parts = wf.split('–');
+                              const speakText = parts[0] ? parts[0].replace(/\s*[([].*$/, '').trim() : '';
+                              return (
+                                <li key={idx} className="d-flex align-items-start gap-1 mb-1">
+                                  {speakText && (
+                                    <Button
+                                      variant="link"
+                                      className="p-0 text-primary opacity-50 hover-opacity-100 transition-all border-0 shadow-none flex-shrink-0"
+                                      onClick={(e) => { e.stopPropagation(); handleSpeak(speakText); }}
+                                      title="Sesli Dinle"
+                                    >
+                                      <i className="bi bi-volume-up" style={{ fontSize: '14px' }}></i>
+                                    </Button>
+                                  )}
+                                  <div className="flex-grow-1">
+                                    <span className="text-body fw-medium">
+                                      {highlightText(
+                                        parts[0]?.trim(),
+                                        stickyNotes.filter(n => n.wordId === word.id).map(n => n.text),
+                                        () => setShowStickyNotesModal(true)
+                                      )}
+                                    </span>
+                                    {parts[1] && (
+                                      <span className="ms-1 fst-italic">— {highlightText(
+                                        parts[1].trim(),
+                                        stickyNotes.filter(n => n.wordId === word.id).map(n => n.text),
+                                        () => setShowStickyNotesModal(true)
+                                      )}</span>
+                                    )}
+                                  </div>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        </div>
+                      )}
+
+                      {viewMode === 'detailed' && word.cefrLevel && (
+                        <div className="mb-2">
+                          <strong className="small text-body opacity-75 d-block">Zorluk Seviyesi (CEFR):</strong>
+                          <div className="small text-muted ps-3">
+                            <span className="fw-bold text-info-emphasis me-1">{word.cefrLevel.split(/[(\/\s]/)[0]}</span>
+                            <span>{word.cefrLevel.includes(' ') || word.cefrLevel.includes('(') ? word.cefrLevel.substring(word.cefrLevel.split(/[(\/\s]/)[0].length) : ''}</span>
+                          </div>
+                        </div>
+                      )}
+
+                      {viewMode === 'detailed' && word.tips && word.tips.length > 0 && (
+                        <div className="mb-2">
+                          <strong className="small text-body opacity-75 d-block">Sık Yapılan Hatalar ve Açıklamalar:</strong>
+                          <ul className="small text-muted mb-0 ps-3">
+                            {word.tips.map((t, idx) => {
+                              const lower = t.toLowerCase().replace(/^[-*•\s]+/, '');
+                              let speakText = '';
+                              if (lower.startsWith('yanlış kullanım:') || lower.startsWith('doğru kullanım:') || lower.startsWith('doğru:') || lower.startsWith('yanlış:')) {
+                                const cIdx = t.indexOf(':');
+                                if (cIdx !== -1) {
+                                  speakText = t.substring(cIdx + 1).replace(/\s*[([].*$/, '').replace(/[*"]/g, '').trim();
+                                }
+                              }
+                              return (
+                                <li key={idx} className="d-flex align-items-start gap-1 mb-1">
+                                  {speakText && (
+                                    <Button
+                                      variant="link"
+                                      className="p-0 text-primary opacity-50 hover-opacity-100 transition-all border-0 shadow-none flex-shrink-0"
+                                      onClick={(e) => { e.stopPropagation(); handleSpeak(speakText); }}
+                                      title="Sesli Dinle"
+                                    >
+                                      <i className="bi bi-volume-up" style={{ fontSize: '14px' }}></i>
+                                    </Button>
+                                  )}
+                                  <span className="flex-grow-1">
+                                    {highlightText(
+                                      t,
+                                      stickyNotes.filter(n => n.wordId === word.id).map(n => n.text),
+                                      () => setShowStickyNotesModal(true)
+                                    )}
+                                  </span>
+                                </li>
+                              );
+                            })}
                           </ul>
                         </div>
                       )}

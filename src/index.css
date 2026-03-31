@@ -231,8 +231,8 @@ mark.sticky-highlight:hover {
 }
 
 @keyframes stickyTooltipIn {
-  from { opacity: 0; transform: translateX(-50%) translateY(-6px) scale(0.9); }
-  to   { opacity: 1; transform: translateX(-50%) translateY(0)   scale(1); }
+  from { opacity: 0; transform: translate(-50%, calc(-100% + 6px)) scale(0.9); }
+  to   { opacity: 1; transform: translate(-50%, -100%) scale(1); }
 }
 
 .sticky-note-save-btn {
@@ -263,12 +263,12 @@ mark.sticky-highlight:hover {
   height: 0;
   border-left: 7px solid transparent;
   border-right: 7px solid transparent;
-  border-bottom: 7px solid #d97706;
+  border-top: 7px solid #d97706;
   position: absolute;
-  top: -7px;
+  bottom: -7px;
   left: 50%;
   transform: translateX(-50%);
-  /* Arrow points up (tooltip is below selection) */
+  /* Arrow points down (tooltip is above selection) */
 }
 
 /* ─── Sticky Note Card ─── */
