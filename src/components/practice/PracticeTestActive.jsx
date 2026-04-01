@@ -12,6 +12,7 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
     const [completed, setCompleted] = useState(() => initialTestState?.completed || false);
     const [flippedCards, setFlippedCards] = useState({}); // { [questionIdx]: true/false }
     const [hintsUsed, setHintsUsed] = useState(() => initialTestState?.hintsUsed || {}); // { [questionIdx]: count }
+    const [revealedHintIndices, setRevealedHintIndices] = useState(() => initialTestState?.revealedHintIndices || {}); // { [questionIdx]: number[] }
     const [hiddenOptions, setHiddenOptions] = useState(() => initialTestState?.hiddenOptions || {}); // { [questionIdx]: [optionIndex, ...] }
     const [activeQuestionIdx, setActiveQuestionIdx] = useState(() => initialTestState?.activeQuestionIdx || 0);
     const [selectedWordForModal, setSelectedWordForModal] = useState(null);
@@ -37,13 +38,13 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
     });
 
     const getParsedMeaningsWithNumbers = (text) => {
-        if (typeof text !== 'string') return [{number: 1, text: text}];
+        if (typeof text !== 'string') return [{ number: 1, text: text }];
         const regex = /(?:^|\s)(\d+)\.\s+/g;
         let match;
         const result = [];
         let lastIndex = 0;
         let currentNumber = null;
-        
+
         while ((match = regex.exec(text)) !== null) {
             if (currentNumber !== null) {
                 result.push({ number: currentNumber, text: text.substring(lastIndex, match.index).trim() });
@@ -54,7 +55,7 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
         if (currentNumber !== null) {
             result.push({ number: currentNumber, text: text.substring(lastIndex).trim() });
         }
-        
+
         if (result.length === 0) {
             return [{ number: 1, text: text.trim() }];
         }
@@ -65,11 +66,11 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
         if (!initialTestState?.config?.advancedOptions?.singleMeaning) return text;
         const parts = getParsedMeaningsWithNumbers(text);
         if (parts.length <= 1) return text;
-        
+
         const revealedSeeds = activeMeanings[qIdx] || [0];
         const revealedIndicesArray = Array.from(new Set(revealedSeeds.map(s => s % parts.length)));
-        revealedIndicesArray.sort((a,b) => a - b);
-        
+        revealedIndicesArray.sort((a, b) => a - b);
+
         return revealedIndicesArray.map(i => `${parts[i].number}. ${parts[i].text}`).join(" ");
     };
 
@@ -90,7 +91,7 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
         if (q.type === 'tf' && q.format === 'term') textToCheck = q.displayedAnswerText;
         const parts = getParsedMeaningsWithNumbers(textToCheck);
         if (parts.length <= 1) return false;
-        
+
         const revealedSeeds = activeMeanings[qIdx] || [0];
         const revealedIndices = new Set(revealedSeeds.map(s => s % parts.length));
         return revealedIndices.size < parts.length;
@@ -388,6 +389,44 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                     setHiddenOptions(prev => ({ ...prev, [idx]: [...hiddenForQ, toHide] }));
                     setHintsUsed(prev => ({ ...prev, [idx]: currentHints + 1 }));
                 }
+            }
+        } else if (q.type === 'written') {
+            const answerStr = (q.answer || '').trim();
+            const len = answerStr.length;
+            if (len === 0) return;
+            
+            if (currentHints < len) {
+                setRevealedHintIndices(prev => {
+                    const revealedList = prev[idx] || [];
+                    let newlyRevealed = null;
+                    if (currentHints === 0) {
+                        newlyRevealed = 0;
+                    } else if (currentHints === 1 && len > 1) {
+                        newlyRevealed = len - 1;
+                    } else {
+                        const unrevealed = [];
+                        for(let i=0; i<len; i++) {
+                            if (!revealedList.includes(i) && answerStr[i] !== ' ' && i !== 0 && i !== len - 1) {
+                                unrevealed.push(i);
+                            }
+                        }
+                        if (unrevealed.length > 0) {
+                            newlyRevealed = unrevealed[Math.floor(Math.random() * unrevealed.length)];
+                        } else {
+                            for(let i=0; i<len; i++) {
+                                if (!revealedList.includes(i)) unrevealed.push(i);
+                            }
+                            if (unrevealed.length > 0) {
+                                newlyRevealed = unrevealed[Math.floor(Math.random() * unrevealed.length)];
+                            }
+                        }
+                    }
+                    if (newlyRevealed !== null && !revealedList.includes(newlyRevealed)) {
+                        return { ...prev, [idx]: [...revealedList, newlyRevealed] };
+                    }
+                    return prev;
+                });
+                setHintsUsed(prev => ({ ...prev, [idx]: currentHints + 1 }));
             }
         } else {
             if (currentHints < 3) {
@@ -825,7 +864,7 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                     </Col>
 
                     {/* MAIN CONTENT: Questions List */}
-                    <Col md={9} lg={8} className="mx-auto pb-5" style={{ marginBottom: '700px' }}>
+                    <Col md={9} lg={8} className="mx-auto pb-5" >
 
                         {/* MOBILE NAVIGATION: Collapsible and Truncated - Sticky on mobile */}
                         <div className="d-md-none mb-4 sticky-top" style={{ top: '80px', zIndex: 1010 }}>
@@ -1137,7 +1176,8 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                                         const wordObj = (words || []).find(w => w.id === currentQuestion.wordId);
 
                                                         const isMcq = currentQuestion.type !== 'tf' && currentQuestion.type !== 'written' && currentQuestion.type !== 'flashcard' && currentQuestion.options;
-                                                        const maxHints = isMcq ? Math.max(0, (currentQuestion.options?.filter(o => !o.isCorrect).length || 0) - 1) : (currentQuestion.type === 'tf' ? 0 : 3);
+                                                        const isWritten = currentQuestion.type === 'written';
+                                                        const maxHints = isMcq ? Math.max(0, (currentQuestion.options?.filter(o => !o.isCorrect).length || 0) - 1) : (isWritten ? (currentQuestion.answer || '').trim().length : (currentQuestion.type === 'tf' ? 0 : 3));
                                                         const currentHints = hintsUsed[idx] || 0;
                                                         const canHint = !completed && !answers[idx] && currentHints < maxHints;
 
@@ -1149,6 +1189,28 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                                                         canHint ? "İpucu almak için butona tıklayın." : "İpucu kalmadı."
                                                                     ) : isMcq ? (
                                                                         `${currentHints} yanlış şık elendi!`
+                                                                    ) : isWritten ? (
+                                                                        (() => {
+                                                                            const ans = (currentQuestion.answer || '').trim();
+                                                                            const revealed = revealedHintIndices[idx] || [];
+                                                                            let displayArr = [];
+                                                                            for(let i=0; i<ans.length; i++) {
+                                                                                if (ans[i] === ' ') {
+                                                                                    displayArr.push('\u00A0\u00A0');
+                                                                                } else if (revealed.includes(i)) {
+                                                                                    displayArr.push(ans[i]);
+                                                                                } else {
+                                                                                    displayArr.push('_');
+                                                                                }
+                                                                            }
+                                                                            return (
+                                                                                <div className="text-center">
+                                                                                    <div className="fw-bold font-monospace px-2 py-1 bg-body-tertiary rounded text-body text-nowrap" style={{ fontSize: '1.1rem' }}>
+                                                                                        {displayArr.join(' ')}
+                                                                                    </div>
+                                                                                </div>
+                                                                            );
+                                                                        })()
                                                                     ) : (
                                                                         <ul className="mb-0 ps-3">
                                                                             {currentHints >= 1 && currentQuestion.answer?.length > 0 && <li>İlk harf: <strong className="text-primary">{currentQuestion.answer[0].toUpperCase()}</strong></li>}
@@ -1547,8 +1609,8 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                                 const hasNext = questions.some((q, i) => i > idx && q.type === 'written' && !answers[i]);
 
                                                 return (
-                                                    <div className="position-absolute top-100 start-50 translate-middle" style={{ zIndex: 10 }}>
-                                                        <div className="btn-group border border-secondary border-opacity-50 rounded-pill overflow-hidden bg-body shadow-sm" role="group">
+                                                    <div className="position-absolute top-100 start-0 translate-middle-y ms-4" style={{ zIndex: 10 }}>
+                                                        <div className="btn-group border border-secondary border-opacity-50  overflow-hidden bg-body shadow-sm" role="group">
                                                             <Button
                                                                 variant="link"
                                                                 size="sm"
@@ -1559,6 +1621,21 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                                                 style={{ height: '32px' }}
                                                             >
                                                                 <i className="bi bi-chevron-up" style={{ fontSize: '1rem' }}></i>
+                                                            </Button>
+                                                            <Button
+                                                                variant="link"
+                                                                size="sm"
+                                                                className="p-0 px-3 text-body-secondary hover-text-danger transition-all border-0 shadow-none d-flex align-items-center justify-content-center border-end border-secondary border-opacity-25 rounded-0"
+                                                                onClick={() => {
+                                                                    setWrittenInputs(prev => ({ ...prev, [idx]: '' }));
+                                                                    const input = document.getElementById(`written-input-${idx}`);
+                                                                    if (input) input.focus();
+                                                                }}
+                                                                disabled={!writtenInputs[idx]}
+                                                                title="Cevabı Temizle"
+                                                                style={{ height: '32px' }}
+                                                            >
+                                                                <i className="bi bi-x-lg" style={{ fontSize: '0.9rem' }}></i>
                                                             </Button>
                                                             <Button
                                                                 variant="link"
