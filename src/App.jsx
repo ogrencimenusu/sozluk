@@ -273,6 +273,8 @@ function App() {
   const [showFiltersCollapse, setShowFiltersCollapse] = useState(false);
   const [showTemplateExampleModal, setShowTemplateExampleModal] = useState(false);
   const [showStickyNotesModal, setShowStickyNotesModal] = useState(false);
+  const [manualNoteText, setManualNoteText] = useState('');
+  const [editingNoteId, setEditingNoteId] = useState(null);
 
   // Global text-selection tooltip for home page
   const [homeSelectionTooltip, setHomeSelectionTooltip] = useState(null); // { x, y, text, wordId, wordTerm }
@@ -672,21 +674,36 @@ function App() {
   };
 
   const handleAddNote = async (wordId, wordTerm, text) => {
-    if (!wordId || !text) return;
+    if (!text || !text.trim()) return;
     try {
       if (!isConfigMissing) {
         await addDoc(collection(db, 'sticky_notes'), {
-          wordId,
-          wordTerm,
+          wordId: wordId || null,
+          wordTerm: wordTerm || 'Manuel Not',
           text,
           createdAt: new Date()
         });
       } else {
-        const newNote = { id: Date.now().toString(), wordId, wordTerm, text, createdAt: new Date() };
+        const newNote = { id: Date.now().toString(), wordId: wordId || null, wordTerm: wordTerm || 'Manuel Not', text, createdAt: new Date() };
         setStickyNotes(prev => [newNote, ...prev]);
       }
     } catch (err) {
       console.error('Sticky not eklenemedi:', err);
+    }
+  };
+
+  const handleUpdateNote = async (noteId, text) => {
+    if (!text || !text.trim()) return;
+    try {
+      if (!isConfigMissing) {
+        await updateDoc(doc(db, 'sticky_notes', noteId), {
+          text
+        });
+      } else {
+        setStickyNotes(prev => prev.map(n => n.id === noteId ? { ...n, text } : n));
+      }
+    } catch (err) {
+      console.error('Sticky not güncellenemedi:', err);
     }
   };
 
@@ -699,6 +716,42 @@ function App() {
       }
     } catch (err) {
       console.error('Sticky not silinemedi:', err);
+    }
+  };
+
+  const handleDeleteAllNotes = async () => {
+    if (stickyNotes.length === 0) return;
+    
+    const result = await Swal.fire({
+      title: 'Emin misiniz?',
+      text: "Tüm sticky notlarınızı silmek istediğinize emin misiniz? Bu işlem geri alınamaz.",
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#d33',
+      cancelButtonColor: '#3085d6',
+      confirmButtonText: 'Evet, Hepsini Sil!',
+      cancelButtonText: 'İptal'
+    });
+
+    if (result.isConfirmed) {
+      try {
+        if (!isConfigMissing) {
+          const deletePromises = stickyNotes.map(note => deleteDoc(doc(db, 'sticky_notes', note.id)));
+          await Promise.all(deletePromises);
+        } else {
+          setStickyNotes([]);
+        }
+        Swal.fire({
+            title: 'Silindi!',
+            text: 'Tüm sticky notlarınız başarıyla silindi.',
+            icon: 'success',
+            timer: 1500,
+            showConfirmButton: false
+        });
+      } catch (err) {
+        console.error('Tüm notlar silinirken hata:', err);
+        Swal.fire('Hata', 'Notlar silinirken bir hata oluştu.', 'error');
+      }
     }
   };
 
@@ -1158,7 +1211,9 @@ function App() {
   return (
     <div className="min-vh-100 py-4">
     {/* Global sticky note tooltip for homepage text selection */}
-    {homeSelectionTooltip && (
+    {homeSelectionTooltip && (() => {
+      const existingNoteHome = stickyNotes.find(note => note.wordId === homeSelectionTooltip.wordId && note.text === homeSelectionTooltip.text);
+      return (
       <div
         ref={homeTooltipRef}
         className="sticky-note-tooltip"
@@ -1171,21 +1226,38 @@ function App() {
           pointerEvents: 'all',
         }}
       >
-        <button
-          className="btn btn-sm sticky-note-save-btn d-flex align-items-center gap-2"
-          onMouseDown={(e) => e.preventDefault()} // prevent losing selection
-          onClick={() => {
-            handleAddNote(homeSelectionTooltip.wordId, homeSelectionTooltip.wordTerm, homeSelectionTooltip.text);
-            setHomeSelectionTooltip(null);
-            window.getSelection()?.removeAllRanges();
-          }}
-        >
-          <i className="bi bi-pin-angle-fill"></i>
-          <span>Sticky Not</span>
-        </button>
+        {existingNoteHome ? (
+          <button
+            className="btn btn-sm d-flex align-items-center gap-2"
+            style={{ backgroundColor: '#ef4444', color: 'white', border: 'none', borderRadius: '6px', padding: '6px 12px', fontSize: '13px', fontWeight: '500', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => {
+              handleDeleteNote(existingNoteHome.id);
+              setHomeSelectionTooltip(null);
+              window.getSelection()?.removeAllRanges();
+            }}
+          >
+            <i className="bi bi-trash3-fill"></i>
+            <span>Notu Sil</span>
+          </button>
+        ) : (
+          <button
+            className="btn btn-sm sticky-note-save-btn d-flex align-items-center gap-2"
+            onMouseDown={(e) => e.preventDefault()} // prevent losing selection
+            onClick={() => {
+              handleAddNote(homeSelectionTooltip.wordId, homeSelectionTooltip.wordTerm, homeSelectionTooltip.text);
+              setHomeSelectionTooltip(null);
+              window.getSelection()?.removeAllRanges();
+            }}
+          >
+            <i className="bi bi-pin-angle-fill"></i>
+            <span>Sticky Not</span>
+          </button>
+        )}
         <div className="sticky-note-tooltip-arrow"></div>
       </div>
-    )}
+      );
+    })()}
     <Container fluid>
         {currentView === 'practice-test' ? (
           <PracticeTestContainer
@@ -2055,21 +2127,75 @@ function App() {
               </span>
             )}
           </Modal.Title>
-          <Button
-            variant="link"
-            className="p-1 ms-auto text-body-secondary text-decoration-none"
-            onClick={() => setShowStickyNotesModal(false)}
-          >
-            <i className="bi bi-x-lg fs-5"></i>
-          </Button>
+          <div className="ms-auto d-flex align-items-center gap-3">
+            {stickyNotes.length > 0 && (
+              <Button
+                variant="outline-danger"
+                size="sm"
+                className="rounded-pill px-3 py-1 d-flex align-items-center gap-1 shadow-sm"
+                onClick={handleDeleteAllNotes}
+              >
+                <i className="bi bi-trash3"></i>
+                <span className="d-none d-sm-inline fw-semibold" style={{ fontSize: '13px' }}>Tümünü Sil</span>
+              </Button>
+            )}
+            <Button
+              variant="link"
+              className="p-1 text-body-secondary text-decoration-none"
+              onClick={() => setShowStickyNotesModal(false)}
+            >
+              <i className="bi bi-x-lg fs-5"></i>
+            </Button>
+          </div>
         </Modal.Header>
         <Modal.Body className="p-4 custom-scroll">
+          {/* Manuel Not Ekleme Alanı */}
+          <div className="mb-4 p-3 rounded-3 border border-opacity-25" style={{ background: 'rgba(245, 158, 11, 0.06)', borderColor: '#f59e0b' }}>
+            <label className="fw-semibold small text-body opacity-75 mb-2 d-block">
+              <i className="bi bi-pencil-fill me-1" style={{ color: '#f59e0b' }}></i>
+              {editingNoteId ? 'Notu Düzenle' : 'Yeni Not Ekle'}
+            </label>
+            <Form.Control
+              as="textarea"
+              rows={3}
+              placeholder="Notunuzu buraya yazın..."
+              value={manualNoteText}
+              onChange={(e) => setManualNoteText(e.target.value)}
+              className="border-0 shadow-none bg-body-secondary mb-2 rounded-2"
+              style={{ resize: 'none', fontSize: '14px' }}
+            />
+            <div className="d-flex justify-content-end gap-2">
+              {editingNoteId && (
+                <Button variant="outline-secondary" size="sm" className="rounded-pill px-3 fw-semibold" onClick={() => { setEditingNoteId(null); setManualNoteText(''); }}>İptal</Button>
+              )}
+              <Button
+                size="sm"
+                className="rounded-pill px-3 fw-semibold d-flex align-items-center gap-2"
+                style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)', border: 'none', color: '#fff' }}
+                disabled={!manualNoteText.trim()}
+                onClick={() => {
+                  if (editingNoteId) {
+                    handleUpdateNote(editingNoteId, manualNoteText.trim());
+                    setEditingNoteId(null);
+                  } else {
+                    handleAddNote(null, null, manualNoteText.trim());
+                  }
+                  setManualNoteText('');
+                }}
+              >
+                <i className="bi bi-pin-angle-fill"></i>
+                {editingNoteId ? 'Güncelle' : 'Kaydet'}
+              </Button>
+            </div>
+          </div>
+
+          {/* Not Listesi */}
           {stickyNotes.length === 0 ? (
-            <div className="text-center py-5">
+            <div className="text-center py-4">
               <i className="bi bi-pin-angle text-muted opacity-25" style={{ fontSize: '3.5rem' }}></i>
               <p className="text-muted mt-3 mb-0">
                 Henüz sticky not eklemediniz.<br/>
-                <span className="small opacity-75">Kelime detayında bir metni seçip <strong>Sticky Not</strong> butonuna bas.</span>
+                <span className="small opacity-75">Kelime detayında bir metni seçip <strong>Sticky Not</strong> butonuna bas veya yukarıdan manuel ekle.</span>
               </p>
             </div>
           ) : (
@@ -2092,18 +2218,34 @@ function App() {
                         <i className="bi bi-journal-text me-1 opacity-50" style={{ fontSize: '0.7rem' }}></i>
                         {note.wordTerm || '—'}
                       </div>
-                      <p className="sticky-note-list-text mb-1">"{note.text}"</p>
+                      <p className="sticky-note-list-text mb-1" style={{ whiteSpace: 'pre-wrap' }}>"{note.text}"</p>
                       <span className="sticky-note-list-date">{dateStr}</span>
                     </div>
-                    {/* Right: delete button */}
-                    <Button
-                      variant="link"
-                      className="sticky-note-list-delete p-1 flex-shrink-0"
-                      onClick={() => handleDeleteNote(note.id)}
-                      title="Notu Sil"
-                    >
-                      <i className="bi bi-trash3"></i>
-                    </Button>
+                    {/* Right: action buttons */}
+                    <div className="flex-shrink-0 d-flex flex-column gap-1">
+                      {note.wordId === null && (
+                        <Button
+                          variant="link"
+                          className="sticky-note-list-delete p-1"
+                          style={{ color: '#3b82f6' }}
+                          onClick={() => {
+                            setEditingNoteId(note.id);
+                            setManualNoteText(note.text);
+                          }}
+                          title="Notu Düzenle"
+                        >
+                          <i className="bi bi-pencil-square"></i>
+                        </Button>
+                      )}
+                      <Button
+                        variant="link"
+                        className="sticky-note-list-delete p-1"
+                        onClick={() => handleDeleteNote(note.id)}
+                        title="Notu Sil"
+                      >
+                        <i className="bi bi-trash3"></i>
+                      </Button>
+                    </div>
                   </div>
                 );
               })}

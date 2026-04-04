@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Container, Button, Row, Col, Card, Badge, OverlayTrigger, Popover, Collapse } from 'react-bootstrap';
+import { Container, Button, Row, Col, Card, Badge, OverlayTrigger, Popover, Collapse, Modal } from 'react-bootstrap';
 import WordDetailModal from './WordDetailModal';
 import LearningStageBar from '../LearningStageBar';
 import { levenshteinDistance } from '../../utils/stringUtils';
@@ -18,6 +18,7 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
     const [selectedWordForModal, setSelectedWordForModal] = useState(null);
     const [mobileNavExpanded, setMobileNavExpanded] = useState(false);
     const [mobileShowAll, setMobileShowAll] = useState(false);
+    const [showAnswersSummary, setShowAnswersSummary] = useState(false);
 
     // New States for Gamified Options
     const [currentStreak, setCurrentStreak] = useState(0);
@@ -814,52 +815,94 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                     <Col md={3} lg={2} className="mb-4 mb-md-0 d-none d-md-block" style={{ position: 'sticky', top: '100px', height: 'fit-content' }}>
                         <Card className="bg-body-tertiary border-secondary border-opacity-25 rounded-4 p-3 shadow-none text-body" style={{ maxHeight: 'calc(100vh - 160px)', overflowY: 'auto', scrollbarWidth: 'thin' }}>
                             <div className="d-flex justify-content-between align-items-center mb-4">
-                                <span className="fw-bold">Sorular</span>
-                                <Button variant="link" className="p-0 text-body-secondary"><i className="bi bi-chevron-double-left"></i></Button>
+                                <span className="fw-bold">{showAnswersSummary ? 'Cevaplarım' : 'Sorular'}</span>
+                                <Button
+                                    variant={showAnswersSummary ? "primary" : "outline-primary"}
+                                    size="sm"
+                                    className="rounded-pill d-flex align-items-center gap-1"
+                                    onClick={() => setShowAnswersSummary(!showAnswersSummary)}
+                                >
+                                    <i className={`bi ${showAnswersSummary ? 'bi-grid-3x3-gap-fill' : 'bi-list-check'}`}></i>
+                                    <span className="d-none d-xl-inline">{showAnswersSummary ? 'Sorular' : 'Cevaplarım'}</span>
+                                </Button>
                             </div>
-                            <div className="d-flex flex-wrap gap-2 justify-content-start pb-4">
-                                {questions.map((q, idx) => {
-                                    const isAnswered = !!answers[idx] || (q.type === 'written' && (writtenInputs[idx] || '').trim().length > 0);
-                                    const isActive = activeQuestionIdx === idx;
+                            
+                            {!showAnswersSummary ? (
+                                <div className="d-flex flex-wrap gap-2 justify-content-start pb-4">
+                                    {questions.map((q, idx) => {
+                                        const isAnswered = !!answers[idx] || (q.type === 'written' && (writtenInputs[idx] || '').trim().length > 0);
+                                        const isActive = activeQuestionIdx === idx;
 
-                                    let btnClass = "btn btn-sm rounded-circle fw-bold border-secondary border-opacity-50 transition-all ";
-                                    let btnStyle = { width: '36px', height: '36px', padding: 0 };
+                                        let btnClass = "btn btn-sm rounded-circle fw-bold border-secondary border-opacity-50 transition-all ";
+                                        let btnStyle = { width: '36px', height: '36px', padding: 0 };
 
-                                    if (completed) {
-                                        // Show correct/incorrect in navigation map if completed
-                                        const ans = answers[idx]?.selected;
-                                        const isCorrect = ans?.isCorrect;
-                                        const hasTypo = ans?.hasTypo;
+                                        if (completed) {
+                                            // Show correct/incorrect in navigation map if completed
+                                            const ans = answers[idx]?.selected;
+                                            const isCorrect = ans?.isCorrect;
+                                            const hasTypo = ans?.hasTypo;
 
-                                        if (isCorrect) {
-                                            btnClass += hasTypo ? "bg-warning text-dark border-warning" : "bg-success text-white border-success";
+                                            if (isCorrect) {
+                                                btnClass += hasTypo ? "bg-warning text-dark border-warning" : "bg-success text-white border-success";
+                                            } else {
+                                                btnClass += isAnswered ? "bg-danger text-white border-danger" : "bg-transparent text-body-secondary";
+                                            }
                                         } else {
-                                            btnClass += isAnswered ? "bg-danger text-white border-danger" : "bg-transparent text-body-secondary";
+                                            if (isActive) {
+                                                btnClass += "text-white border-purple shadow-sm";
+                                                btnStyle.backgroundColor = '#6f42c1';
+                                                btnStyle.borderColor = '#6f42c1';
+                                            } else {
+                                                // Just show answered state
+                                                btnClass += isAnswered ? "bg-info text-dark border-info" : "bg-transparent text-body-secondary";
+                                            }
                                         }
-                                    } else {
-                                        if (isActive) {
-                                            btnClass += "text-white border-purple shadow-sm";
-                                            btnStyle.backgroundColor = '#6f42c1';
-                                            btnStyle.borderColor = '#6f42c1';
-                                        } else {
-                                            // Just show answered state
-                                            btnClass += isAnswered ? "bg-info text-dark border-info" : "bg-transparent text-body-secondary";
-                                        }
-                                    }
 
-                                    return (
-                                        <button
-                                            key={idx}
-                                            className={btnClass}
-                                            style={btnStyle}
-                                            onClick={() => scrollToQuestion(idx)}
-                                            title={`Soru ${idx + 1}`}
-                                        >
-                                            {idx + 1}
-                                        </button>
-                                    );
-                                })}
-                            </div>
+                                        return (
+                                            <button
+                                                key={idx}
+                                                className={btnClass}
+                                                style={btnStyle}
+                                                onClick={() => scrollToQuestion(idx)}
+                                                title={`Soru ${idx + 1}`}
+                                            >
+                                                {idx + 1}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            ) : (
+                                <div className="d-flex flex-column gap-2 pb-4">
+                                    {questions.map((q, idx) => {
+                                        const isAnswered = !!answers[idx] || (q.type === 'written' && (writtenInputs[idx] || '').trim().length > 0);
+                                        let answeredText = 'Boş bırakıldı';
+                                        if (answers[idx]) {
+                                            answeredText = answers[idx].selected.text;
+                                        } else if (q.type === 'written' && (writtenInputs[idx] || '').trim().length > 0) {
+                                            answeredText = writtenInputs[idx];
+                                        }
+
+                                        return (
+                                            <div
+                                                key={`sidebar-ans-${idx}`}
+                                                className={`p-2 rounded-3 border ${isAnswered ? (completed ? (answers[idx]?.selected?.isCorrect ? 'border-success bg-success bg-opacity-10' : 'border-danger bg-danger bg-opacity-10') : 'border-primary bg-primary bg-opacity-10') : 'border-secondary bg-body-tertiary'} border-opacity-25 transition-all cursor-pointer`}
+                                                onClick={() => { setShowAnswersSummary(false); scrollToQuestion(idx); }}
+                                                style={{ cursor: 'pointer' }}
+                                            >
+                                                <div className="d-flex justify-content-between align-items-center mb-1">
+                                                    <Badge bg="secondary" className="rounded-pill px-2" style={{ fontSize: '0.7rem' }}>S. {idx + 1}</Badge>
+                                                    {completed && isAnswered && (
+                                                        <i className={`bi ${answers[idx]?.selected?.isCorrect ? 'bi-check-circle-fill text-success' : 'bi-x-circle-fill text-danger'} small`}></i>
+                                                    )}
+                                                </div>
+                                                <div className="fw-bold text-body small text-truncate" style={{ whiteSpace: 'normal', display: '-webkit-box', WebkitLineClamp: '2', WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                                                    {answeredText}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
                         </Card>
                     </Col>
 
@@ -869,89 +912,138 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                         {/* MOBILE NAVIGATION: Collapsible and Truncated - Sticky on mobile */}
                         <div className="d-md-none mb-4 sticky-top" style={{ top: '80px', zIndex: 1010 }}>
                             <Card className="bg-body-tertiary border-secondary border-opacity-25 rounded-4 overflow-hidden shadow-none text-body">
-                                <div
-                                    className="p-3 d-flex justify-content-between align-items-center cursor-pointer"
-                                    onClick={() => setMobileNavExpanded(!mobileNavExpanded)}
-                                    style={{ cursor: 'pointer' }}
-                                >
-                                    <div className="d-flex align-items-center gap-2">
+                                <div className="p-3 d-flex justify-content-between align-items-center" style={{ cursor: 'pointer' }}>
+                                    <div
+                                        className="d-flex align-items-center gap-2 flex-grow-1"
+                                        onClick={() => setMobileNavExpanded(!mobileNavExpanded)}
+                                    >
                                         <i className="bi bi-grid-3x3-gap-fill text-primary"></i>
-                                        <span className="fw-bold">Soru Navigasyonu</span>
+                                        <span className="fw-bold">{showAnswersSummary ? 'Cevaplarım' : 'Soru Navigasyonu'}</span>
                                         <Badge bg="primary" className="rounded-pill bg-opacity-10 text-primary border border-primary border-opacity-25 ms-1">
                                             {getAnsweredCount()}/{questions.length}
                                         </Badge>
                                     </div>
-                                    <i className={`bi bi-chevron-${mobileNavExpanded ? 'up' : 'down'} text-body-secondary`}></i>
+                                    <div className="d-flex align-items-center gap-2">
+                                        <Button
+                                            variant={showAnswersSummary ? "primary" : "outline-primary"}
+                                            size="sm"
+                                            className="rounded-pill d-flex align-items-center px-2 py-1"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setShowAnswersSummary(!showAnswersSummary);
+                                                if (!mobileNavExpanded) setMobileNavExpanded(true);
+                                            }}
+                                            title={showAnswersSummary ? 'Soruları Göster' : 'Cevaplarımı Göster'}
+                                        >
+                                            <i className={`bi ${showAnswersSummary ? 'bi-grid-3x3-gap-fill' : 'bi-list-check'}`}></i>
+                                        </Button>
+                                        <i 
+                                            className={`bi bi-chevron-${mobileNavExpanded ? 'up' : 'down'} text-body-secondary ms-1 fs-5`}
+                                            onClick={() => setMobileNavExpanded(!mobileNavExpanded)}
+                                        ></i>
+                                    </div>
                                 </div>
 
                                 <Collapse in={mobileNavExpanded}>
                                     <div>
                                         <div className="px-3 pb-3 border-top border-secondary border-opacity-10 pt-3">
-                                            <div className="d-flex flex-wrap gap-2 justify-content-start">
-                                                {questions.slice(0, mobileShowAll ? questions.length : 6).map((q, idx) => {
-                                                    const isAnswered = !!answers[idx] || (q.type === 'written' && (writtenInputs[idx] || '').trim().length > 0);
-                                                    const isActive = activeQuestionIdx === idx;
+                                            {!showAnswersSummary ? (
+                                                <div className="d-flex flex-wrap gap-2 justify-content-start">
+                                                    {questions.slice(0, mobileShowAll ? questions.length : 6).map((q, idx) => {
+                                                        const isAnswered = !!answers[idx] || (q.type === 'written' && (writtenInputs[idx] || '').trim().length > 0);
+                                                        const isActive = activeQuestionIdx === idx;
 
-                                                    let btnClass = "btn btn-sm rounded-circle fw-bold border-secondary border-opacity-50 transition-all ";
-                                                    let btnStyle = { width: '36px', height: '36px', padding: 0 };
+                                                        let btnClass = "btn btn-sm rounded-circle fw-bold border-secondary border-opacity-50 transition-all ";
+                                                        let btnStyle = { width: '36px', height: '36px', padding: 0 };
 
-                                                    if (completed) {
-                                                        const ans = answers[idx]?.selected;
-                                                        if (ans?.isCorrect) {
-                                                            btnClass += ans.hasTypo ? "bg-warning text-dark border-warning" : "bg-success text-white border-success";
+                                                        if (completed) {
+                                                            const ans = answers[idx]?.selected;
+                                                            if (ans?.isCorrect) {
+                                                                btnClass += ans.hasTypo ? "bg-warning text-dark border-warning" : "bg-success text-white border-success";
+                                                            } else {
+                                                                btnClass += isAnswered ? "bg-danger text-white border-danger" : "bg-transparent text-body-secondary";
+                                                            }
                                                         } else {
-                                                            btnClass += isAnswered ? "bg-danger text-white border-danger" : "bg-transparent text-body-secondary";
+                                                            if (isActive) {
+                                                                btnClass += "text-white border-purple shadow-sm";
+                                                                btnStyle.backgroundColor = '#6f42c1';
+                                                                btnStyle.borderColor = '#6f42c1';
+                                                            } else {
+                                                                btnClass += isAnswered ? "bg-info text-dark border-info" : "bg-transparent text-body-secondary";
+                                                            }
                                                         }
-                                                    } else {
-                                                        if (isActive) {
-                                                            btnClass += "text-white border-purple shadow-sm";
-                                                            btnStyle.backgroundColor = '#6f42c1';
-                                                            btnStyle.borderColor = '#6f42c1';
-                                                        } else {
-                                                            btnClass += isAnswered ? "bg-info text-dark border-info" : "bg-transparent text-body-secondary";
-                                                        }
-                                                    }
 
-                                                    return (
-                                                        <button
-                                                            key={idx}
-                                                            className={btnClass}
-                                                            style={btnStyle}
-                                                            onClick={() => {
-                                                                scrollToQuestion(idx);
-                                                                setMobileNavExpanded(false);
-                                                            }}
+                                                        return (
+                                                            <button
+                                                                key={idx}
+                                                                className={btnClass}
+                                                                style={btnStyle}
+                                                                onClick={() => {
+                                                                    scrollToQuestion(idx);
+                                                                    setMobileNavExpanded(false);
+                                                                }}
+                                                            >
+                                                                {idx + 1}
+                                                            </button>
+                                                        );
+                                                    })}
+
+                                                    {questions.length > 6 && !mobileShowAll && (
+                                                        <Button
+                                                            variant="outline-primary"
+                                                            size="sm"
+                                                            className="rounded-circle fw-bold"
+                                                            style={{ width: '36px', height: '36px', padding: 0 }}
+                                                            onClick={() => setMobileShowAll(true)}
+                                                            title="Daha Fazla Göster"
                                                         >
-                                                            {idx + 1}
-                                                        </button>
-                                                    );
-                                                })}
+                                                            <i className="bi bi-three-dots"></i>
+                                                        </Button>
+                                                    )}
 
-                                                {questions.length > 6 && !mobileShowAll && (
-                                                    <Button
-                                                        variant="outline-primary"
-                                                        size="sm"
-                                                        className="rounded-circle fw-bold"
-                                                        style={{ width: '36px', height: '36px', padding: 0 }}
-                                                        onClick={() => setMobileShowAll(true)}
-                                                        title="Daha Fazla Göster"
-                                                    >
-                                                        <i className="bi bi-three-dots"></i>
-                                                    </Button>
-                                                )}
+                                                    {mobileShowAll && (
+                                                        <Button
+                                                            variant="link"
+                                                            size="sm"
+                                                            className="text-decoration-none text-body-secondary p-0 ms-auto pt-2 w-100 text-center"
+                                                            style={{ fontSize: '13px' }}
+                                                            onClick={() => setMobileShowAll(false)}
+                                                        >
+                                                            Daha az göster
+                                                        </Button>
+                                                    )}
+                                                </div>
+                                            ) : (
+                                                <div className="d-flex flex-column gap-2" style={{ maxHeight: '40vh', overflowY: 'auto', scrollbarWidth: 'thin' }}>
+                                                    {questions.map((q, idx) => {
+                                                        const isAnswered = !!answers[idx] || (q.type === 'written' && (writtenInputs[idx] || '').trim().length > 0);
+                                                        let answeredText = 'Boş bırakıldı';
+                                                        if (answers[idx]) {
+                                                            answeredText = answers[idx].selected.text;
+                                                        } else if (q.type === 'written' && (writtenInputs[idx] || '').trim().length > 0) {
+                                                            answeredText = writtenInputs[idx];
+                                                        }
 
-                                                {mobileShowAll && (
-                                                    <Button
-                                                        variant="link"
-                                                        size="sm"
-                                                        className="text-decoration-none text-body-secondary p-0 ms-auto pt-2 w-100 text-center"
-                                                        style={{ fontSize: '13px' }}
-                                                        onClick={() => setMobileShowAll(false)}
-                                                    >
-                                                        Daha az göster
-                                                    </Button>
-                                                )}
-                                            </div>
+                                                        return (
+                                                            <div
+                                                                key={`mobile-ans-${idx}`}
+                                                                className={`p-2 rounded-3 border ${isAnswered ? (completed ? (answers[idx]?.selected?.isCorrect ? 'border-success bg-success bg-opacity-10' : 'border-danger bg-danger bg-opacity-10') : 'border-primary bg-primary bg-opacity-10') : 'border-secondary bg-body-tertiary'} border-opacity-25 transition-all cursor-pointer`}
+                                                                onClick={() => { setShowAnswersSummary(false); setMobileNavExpanded(false); scrollToQuestion(idx); }}
+                                                            >
+                                                                <div className="d-flex justify-content-between align-items-center mb-1">
+                                                                    <Badge bg="secondary" className="rounded-pill px-2" style={{ fontSize: '0.7rem' }}>S. {idx + 1}</Badge>
+                                                                    {completed && isAnswered && (
+                                                                        <i className={`bi ${answers[idx]?.selected?.isCorrect ? 'bi-check-circle-fill text-success' : 'bi-x-circle-fill text-danger'} small`}></i>
+                                                                    )}
+                                                                </div>
+                                                                <div className="fw-bold text-body small text-truncate" style={{ whiteSpace: 'normal', display: '-webkit-box', WebkitLineClamp: '2', WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                                                                    {answeredText}
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 </Collapse>
@@ -1685,6 +1777,7 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                     onEdit && onEdit(null, word);
                 }}
             />
+
         </>);
 }
 

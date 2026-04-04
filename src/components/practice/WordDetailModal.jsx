@@ -128,7 +128,9 @@ function WordDetailModal({ word, onHide, onSpeak, onEdit, stickyNotes = [], onAd
     return (
         <>
             {/* Floating sticky note tooltip */}
-            {selectionTooltip && (
+            {selectionTooltip && (() => {
+                const existingNote = stickyNotes.find(n => n.wordId === word.id && n.text === selectionTooltip.text);
+                return (
                 <div
                     ref={tooltipRef}
                     className="sticky-note-tooltip"
@@ -141,16 +143,34 @@ function WordDetailModal({ word, onHide, onSpeak, onEdit, stickyNotes = [], onAd
                         pointerEvents: 'all',
                     }}
                 >
-                    <button
-                        className="btn btn-sm sticky-note-save-btn d-flex align-items-center gap-2"
-                        onClick={handleSaveNote}
-                    >
-                        <i className="bi bi-pin-angle-fill"></i>
-                        <span>Sticky Not</span>
-                    </button>
+                    {existingNote ? (
+                        <button
+                            className="btn btn-sm d-flex align-items-center gap-2"
+                            style={{ backgroundColor: '#ef4444', color: 'white', border: 'none', borderRadius: '6px', padding: '6px 12px', fontSize: '13px', fontWeight: '500', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => {
+                                onDeleteNote && onDeleteNote(existingNote.id);
+                                setSelectionTooltip(null);
+                                window.getSelection()?.removeAllRanges();
+                            }}
+                        >
+                            <i className="bi bi-trash3-fill"></i>
+                            <span>Notu Sil</span>
+                        </button>
+                    ) : (
+                        <button
+                            className="btn btn-sm sticky-note-save-btn d-flex align-items-center gap-2"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={handleSaveNote}
+                        >
+                            <i className="bi bi-pin-angle-fill"></i>
+                            <span>Sticky Not</span>
+                        </button>
+                    )}
                     <div className="sticky-note-tooltip-arrow"></div>
                 </div>
-            )}
+                );
+            })()}
 
             {/* Flash feedback */}
             {savedNoteFlash && (
@@ -322,7 +342,7 @@ function WordDetailModal({ word, onHide, onSpeak, onEdit, stickyNotes = [], onAd
                                 <h5 className="text-uppercase text-muted fw-bold small letter-spacing-1 border-bottom border-opacity-10 pb-2 mb-3">Eş Anlamlılar</h5>
                                 <ul className="custom-ul">
                                     {word.synonyms.split(',').map((syn, idx) => (
-                                        <li key={idx} className="fs-6 text-body">{syn.trim()}</li>
+                                        <li key={idx} className="fs-6 text-body">{highlightText(syn.trim(), stickyHighlights, onOpenNotesModal)}</li>
                                     ))}
                                 </ul>
                             </Col>
@@ -332,7 +352,7 @@ function WordDetailModal({ word, onHide, onSpeak, onEdit, stickyNotes = [], onAd
                                 <h5 className="text-uppercase text-muted fw-bold small letter-spacing-1 border-bottom border-opacity-10 pb-2 mb-3">Zıt Anlamlılar</h5>
                                 <ul className="custom-ul">
                                     {word.antonyms.split(',').map((ant, idx) => (
-                                        <li key={idx} className="fs-6 text-body">{ant.trim()}</li>
+                                        <li key={idx} className="fs-6 text-body">{highlightText(ant.trim(), stickyHighlights, onOpenNotesModal)}</li>
                                     ))}
                                 </ul>
                             </Col>
@@ -433,8 +453,8 @@ function WordDetailModal({ word, onHide, onSpeak, onEdit, stickyNotes = [], onAd
                                         <div key={i} className="d-flex align-items-baseline gap-2">
                                             <i className="bi bi-dot text-primary fs-4 lh-1"></i>
                                             <div className="fs-6">
-                                                <span className="text-muted-emphasis fw-semibold me-2">{parts[0]?.trim()}:</span>
-                                                <span className="text-body">{parts.slice(1).join(':').trim()}</span>
+                                                <span className="text-muted-emphasis fw-semibold me-2">{highlightText(parts[0]?.trim() + ':', stickyHighlights, onOpenNotesModal)}</span>
+                                                <span className="text-body">{highlightText(parts.slice(1).join(':').trim(), stickyHighlights, onOpenNotesModal)}</span>
                                             </div>
                                         </div>
                                     );
@@ -479,7 +499,7 @@ function WordDetailModal({ word, onHide, onSpeak, onEdit, stickyNotes = [], onAd
                                     return (
                                         <div key={i} className={`fs-6 ${styleClass} ${extraMargin}`}>
                                             {icon}
-                                            {content}
+                                            {highlightText(content, stickyHighlights, onOpenNotesModal)}
                                         </div>
                                     );
                                 })}
@@ -519,7 +539,7 @@ function WordDetailModal({ word, onHide, onSpeak, onEdit, stickyNotes = [], onAd
                                             <div className="sticky-note-pin">
                                                 <i className="bi bi-pin-angle-fill"></i>
                                             </div>
-                                            <p className="sticky-note-text mb-1">"{note.text}"</p>
+                                            <p className="sticky-note-text mb-1" style={{ whiteSpace: 'pre-wrap' }}>"{note.text}"</p>
                                             <div className="d-flex align-items-center justify-content-between mt-2">
                                                 <span className="sticky-note-date">{dateStr}</span>
                                                 <button
