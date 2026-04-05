@@ -3,6 +3,7 @@ import PracticeTestOptions from './PracticeTestOptions';
 import PracticeTestActive from './PracticeTestActive';
 import PracticeTestMatchPairs from './PracticeTestMatchPairs';
 import Swal from 'sweetalert2';
+import { levenshteinDistance } from '../../utils/stringUtils';
 
 function PracticeTestContainer({ words, onCancel, savedOptions, onSaveOptions, onUpdateStage, onToggleStar, onDelete, onEdit, initialConfig, onLogTestResults, dailyStats, practiceTests, onSaveTest, onDeleteTest, onDeleteAllTests }) {
     const [testState, setTestState] = useState('options'); // 'options' | 'running' | 'results'
@@ -63,17 +64,111 @@ function PracticeTestContainer({ words, onCancel, savedOptions, onSaveOptions, o
         const generatedQuestions = selectedWords.map(targetWord => {
             let activeFormat = config.questionFormat;
             if (activeFormat === 'mixed') {
-                activeFormat = Math.random() > 0.5 ? 'definition' : 'term';
+                const formats = ['definition', 'term'];
+                activeFormat = formats[Math.floor(Math.random() * formats.length)];
             }
-            const isFormatDefinition = activeFormat === 'definition';
+            
+            let isFormatDefinition = activeFormat === 'definition';
+            let isFormatExample = !!config.advancedOptions?.fillInTheBlanks;
+            
+            let exampleSentence = null;
+            let sentenceContext = null;
 
-            const prompt = isFormatDefinition
-                ? (targetWord.shortMeanings || targetWord.generalDefinition || 'Anlam girilmemiş')
-                : targetWord.term;
+            if (isFormatExample) {
+                const candidates = [];
+                if (targetWord.meanings) {
+                    for (const m of targetWord.meanings) {
+                        // Check if this context is allowed by filter
+                        if (config.selectedContexts && m.context) {
+                            const ctxLower = m.context.toLowerCase();
+                            let matchesCategory = false;
+                            let belongsToAnyCategory = false;
 
-            const correctAnswerText = isFormatDefinition
-                ? targetWord.term
-                : (targetWord.shortMeanings || targetWord.generalDefinition || 'Anlam girilmemiş');
+                            if (ctxLower.includes('yalın hal')) { belongsToAnyCategory = true; if (config.selectedContexts['Yalın Hal']) matchesCategory = true; }
+                            else if (ctxLower.includes('geniş zaman')) { belongsToAnyCategory = true; if (config.selectedContexts['Geniş Zaman']) matchesCategory = true; }
+                            else if (ctxLower.includes('geçmiş zaman')) { belongsToAnyCategory = true; if (config.selectedContexts['Geçmiş Zaman']) matchesCategory = true; }
+                            else if (ctxLower.includes('past participle')) { belongsToAnyCategory = true; if (config.selectedContexts['Past Participle']) matchesCategory = true; }
+                            else if (ctxLower.includes('şimdiki zaman') || ctxLower.includes('devam eden')) { belongsToAnyCategory = true; if (config.selectedContexts['Şimdiki Zaman']) matchesCategory = true; }
+                            
+                            // If it belongs to one of the 5 categories but that category is unchecked, skip it.
+                            if (belongsToAnyCategory && !matchesCategory) {
+                                continue;
+                            }
+                        }
+
+                        const termToMatch = targetWord.term.toLowerCase().slice(0, Math.max(3, targetWord.term.length - 2));
+                        
+                        if (m.definition && m.definition.toLowerCase().includes(termToMatch)) {
+                            candidates.push({ text: m.definition, context: m.context });
+                        }
+                        if (m.examples) {
+                            for (const ex of m.examples) {
+                                const match = ex.match(/^(.*?)(\([^)]+\))?$/);
+                                let engPart = match ? match[1].trim() : ex;
+                                if (engPart && engPart.toLowerCase().includes(termToMatch)) {
+                                    candidates.push({ text: engPart, context: m.context });
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                if (candidates.length > 0) {
+                    // Pick a random candidate
+                    const chosen = candidates[Math.floor(Math.random() * candidates.length)];
+                    exampleSentence = chosen.text;
+                    sentenceContext = chosen.context;
+                } else {
+                    isFormatExample = false;
+                    isFormatDefinition = true;
+                    activeFormat = 'definition';
+                }
+            }
+
+            let prompt = '';
+            let correctAnswerText = '';
+            let displayContext = null;
+
+            if (isFormatExample) {
+                const termLower = targetWord.term.toLowerCase();
+                let replaced = false;
+                let extractedTargetWord = targetWord.term; // fallback
+                const wordsInSentence = exampleSentence.split(/([\b\s.,!?;:()]+)/);
+                const processedWords = wordsInSentence.map(token => {
+                    if (!replaced && /[A-Za-z]+/.test(token)) {
+                        const tLower = token.toLowerCase();
+                        if (tLower === termLower || (tLower.startsWith(termLower.slice(0, Math.max(3, termLower.length - 1))) && levenshteinDistance(tLower, termLower) <= 3)) {
+                            replaced = true;
+                            extractedTargetWord = token; // capture the exact word form used in the sentence
+                            // Do not output trailing underscore if word ends quickly, use formula
+                            return '_ '.repeat(Math.max(5, token.length)).trim();
+                        }
+                    }
+                    return token;
+                });
+                
+                let processedSentence = processedWords.join('');
+                if (!replaced) {
+                    const termRoot = targetWord.term.toLowerCase().slice(0, Math.max(3, targetWord.term.length - 2));
+                    const fallbackRegex = new RegExp(`\\b\\w{0,2}${termRoot}\\w*\\b`, 'i');
+                    const match = exampleSentence.match(fallbackRegex);
+                    if (match && match[0]) {
+                        extractedTargetWord = match[0];
+                    }
+                    // Prevent replacement with 'undefined' if somehow length isn't calculated
+                    const replaceStr = '_ '.repeat(Math.max(5, extractedTargetWord?.length || targetWord.term.length)).trim();
+                    processedSentence = exampleSentence.replace(new RegExp(`\\b\\w{0,2}${termRoot}\\w*\\b`, 'gi'), replaceStr);
+                }
+                prompt = processedSentence.trim();
+                correctAnswerText = extractedTargetWord; // use the extracted form
+                displayContext = sentenceContext;
+            } else if (isFormatDefinition) {
+                prompt = (targetWord.shortMeanings || targetWord.generalDefinition || 'Anlam girilmemiş');
+                correctAnswerText = targetWord.term;
+            } else {
+                prompt = targetWord.term;
+                correctAnswerText = (targetWord.shortMeanings || targetWord.generalDefinition || 'Anlam girilmemiş');
+            }
 
             // Pick a random type from available types
             const qType = typesAvailable[Math.floor(Math.random() * typesAvailable.length)];
@@ -83,6 +178,7 @@ function PracticeTestContainer({ words, onCancel, savedOptions, onSaveOptions, o
                 return {
                     wordId: targetWord.id,
                     prompt,
+                    questionContext: displayContext,
                     answer: correctAnswerText,
                     type: 'flashcard',
                     format: activeFormat,
@@ -93,6 +189,7 @@ function PracticeTestContainer({ words, onCancel, savedOptions, onSaveOptions, o
                 return {
                     wordId: targetWord.id,
                     prompt,
+                    questionContext: displayContext,
                     answer: correctAnswerText,
                     type: 'written',
                     format: activeFormat,
@@ -111,13 +208,13 @@ function PracticeTestContainer({ words, onCancel, savedOptions, onSaveOptions, o
                     const wrongPool = pool.filter(w => w.id !== targetWord.id);
                     if (wrongPool.length > 0) {
                         const randomWrongWord = wrongPool[Math.floor(Math.random() * wrongPool.length)];
-                        displayedAnswerText = isFormatDefinition
+                        displayedAnswerText = isFormatDefinition || isFormatExample
                             ? randomWrongWord.term
                             : (randomWrongWord.shortMeanings || randomWrongWord.generalDefinition || 'Anlam girilmemiş');
                         
                         // If displayedAnswerText is an English term (isFormatDefinition is true),
                         // we need to show the pronunciation of that term.
-                        if (isFormatDefinition) {
+                        if (isFormatDefinition || isFormatExample) {
                             pronunciation = randomWrongWord.pronunciation;
                         }
                     }
@@ -131,6 +228,7 @@ function PracticeTestContainer({ words, onCancel, savedOptions, onSaveOptions, o
                 return {
                     wordId: targetWord.id,
                     prompt,
+                    questionContext: displayContext,
                     displayedAnswerText, // The text to show for "Is this correct?"
                     type: 'tf',
                     format: activeFormat,
@@ -195,7 +293,7 @@ function PracticeTestContainer({ words, onCancel, savedOptions, onSaveOptions, o
                 }
 
                 const wrongOptions = selectedWrongOptions.map(w => {
-                    return isFormatDefinition
+                    return isFormatDefinition || isFormatExample
                         ? { text: w.term, pronunciation: w.pronunciation }
                         : { text: (w.shortMeanings || w.generalDefinition || 'Anlam girilmemiş'), pronunciation: w.pronunciation };
                 });
@@ -211,6 +309,7 @@ function PracticeTestContainer({ words, onCancel, savedOptions, onSaveOptions, o
                 return {
                     wordId: targetWord.id,
                     prompt,
+                    questionContext: displayContext,
                     type: 'mcq',
                     format: activeFormat,
                     options,

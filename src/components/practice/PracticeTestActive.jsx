@@ -1390,6 +1390,13 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                             </div>
 
                                             <div className="mb-3 pb-3">
+                                                {currentQuestion.format === 'example' && currentQuestion.questionContext && (
+                                                    <div className="mb-2">
+                                                        <Badge bg="info" className="bg-opacity-25 text-info-emphasis px-2 py-1 rounded-pill">
+                                                            <i className="bi bi-info-circle me-1"></i> {currentQuestion.questionContext}
+                                                        </Badge>
+                                                    </div>
+                                                )}
                                                 <div className="d-flex align-items-center gap-3 flex-wrap">
                                                     <h4 className="text-body fw-medium lh-base m-0">
                                                         {currentQuestion.format === 'definition' ? displayMeaning(currentQuestion.prompt, idx) : currentQuestion.prompt}

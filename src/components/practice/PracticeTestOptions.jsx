@@ -2,6 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { Container, Form, Button, FormCheck, Badge } from 'react-bootstrap';
 import Swal from 'sweetalert2';
 
+const availableContexts = [
+    'Yalın Hal',
+    'Geniş Zaman',
+    'Geçmiş Zaman',
+    'Past Participle',
+    'Şimdiki Zaman'
+];
+
 function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOptions, onSaveOptions, practiceTests, onResumeTest, onDeleteTest, onDeleteAllTests }) {
     const [questionCount, setQuestionCount] = useState(Math.min(10, maxQuestions));
     const [onlyStarred, setOnlyStarred] = useState(false);
@@ -31,7 +39,14 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
         matchPairs: false,
         progressiveHint: false,
         timeSurvival: false,
-        singleMeaning: false
+        singleMeaning: false,
+        fillInTheBlanks: false
+    });
+
+    const [selectedContexts, setSelectedContexts] = useState(() => {
+        const initial = {};
+        availableContexts.forEach(c => initial[c] = true);
+        return initial;
     });
 
     // Track if we've already loaded saved options to avoid re-loading on every savedOptions update
@@ -48,8 +63,17 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
             if (savedOptions.learningStatus !== undefined) setLearningStatus(savedOptions.learningStatus);
             if (savedOptions.questionTypes !== undefined) setQuestionTypes(savedOptions.questionTypes);
             if (savedOptions.advancedOptions !== undefined) setAdvancedOptions(savedOptions.advancedOptions);
+            if (savedOptions.selectedContexts !== undefined) {
+                setSelectedContexts(savedOptions.selectedContexts);
+            } else {
+                const initial = {};
+                availableContexts.forEach(c => initial[c] = true);
+                if (Object.keys(savedOptions).length > 0) {
+                    setSelectedContexts(initial);
+                }
+            }
         }
-    }, [savedOptions]);
+    }, [savedOptions, availableContexts]);
 
     // Save options when they change (onSaveOptions is a stable setter, excluded from deps intentionally)
     useEffect(() => {
@@ -61,10 +85,11 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
             shuffle,
             learningStatus,
             questionTypes,
-            advancedOptions
+            advancedOptions,
+            selectedContexts
         });
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [questionCount, onlyStarred, questionFormat, shuffle, learningStatus, questionTypes, advancedOptions]);
+    }, [questionCount, onlyStarred, questionFormat, shuffle, learningStatus, questionTypes, advancedOptions, selectedContexts]);
 
     // Calculate available questions based on current filters
     const availableWordsCount = (words || []).filter(w => {
@@ -82,6 +107,19 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
 
     const maxSelectableCount = Math.min(availableWordsCount, maxQuestions);
 
+    const prevMaxRef = React.useRef(maxSelectableCount);
+    useEffect(() => {
+        if (prevMaxRef.current !== maxSelectableCount) {
+            setQuestionCount(Math.max(1, maxSelectableCount));
+            prevMaxRef.current = maxSelectableCount;
+        } else if (questionCount > maxSelectableCount) {
+            const capped = Math.max(1, maxSelectableCount);
+            if (questionCount !== capped) {
+                setQuestionCount(capped);
+            }
+        }
+    }, [maxSelectableCount, questionCount]);
+
     const handleStart = () => {
         // Validation: At least one question type must be selected
         if (!questionTypes.mcq && !questionTypes.tf && !questionTypes.flashcard && !questionTypes.written) {
@@ -95,13 +133,14 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
         }
 
         onStart({
-            questionCount: Math.min(questionCount, maxQuestions),
+            questionCount: Math.min(questionCount, maxSelectableCount),
             onlyStarred,
             questionFormat,
             shuffle,
             learningStatus,
             questionTypes,
-            advancedOptions
+            advancedOptions,
+            selectedContexts
         });
     };
 
@@ -240,7 +279,7 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
                                 type="number"
                                 value={questionCount}
                                 onChange={e => setQuestionCount(Math.max(1, parseInt(e.target.value) || 1))}
-                                max={maxQuestions}
+                                max={Math.max(1, maxSelectableCount)}
                                 min={1}
                                 className="bg-transparent text-body text-center border-secondary border-opacity-50 rounded-pill"
                                 style={{ width: '80px', fontSize: '14px' }}
@@ -403,6 +442,55 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
                     </h5>
                     
                     <div className="d-flex flex-column gap-3">
+                        <div className={`p-3 border rounded-3 transition-all ${advancedOptions.fillInTheBlanks ? 'border-primary bg-primary bg-opacity-10' : 'border-secondary border-opacity-25'}`}>
+                            <div className="d-flex justify-content-between align-items-start text-body">
+                                <div>
+                                    <div className="fw-bold d-flex align-items-center gap-2 text-primary">
+                                        <i className="bi bi-chat-right-quote-fill"></i> Örnek Cümle Tamamlama (Mod)
+                                    </div>
+                                    <div className="text-muted small mt-1">Kelimenin örnek cümleleri içinde kelime gizlenir ve boşluk doldurmanız istenir. <strong>Tüm test bu formata dönüşür.</strong></div>
+                                </div>
+                                <FormCheck
+                                    type="switch"
+                                    className="custom-switch-lg mt-1"
+                                    checked={advancedOptions.fillInTheBlanks}
+                                    onChange={(e) => setAdvancedOptions(prev => ({ ...prev, fillInTheBlanks: e.target.checked }))}
+                                />
+                            </div>
+                            
+                            {availableContexts.length > 0 && (
+                                <div className={`mt-3 pt-3 border-top transition-all ${advancedOptions.fillInTheBlanks ? 'border-primary border-opacity-25' : 'border-secondary border-opacity-25'}`} style={{ opacity: advancedOptions.fillInTheBlanks ? 1 : 0.6 }}>
+                                    <div className="d-flex justify-content-between align-items-center mb-2">
+                                        <span className="text-body fw-medium small">Gramer Filtresi</span>
+                                        <Button variant="link" size="sm" className={`text-decoration-none p-0 border-0 bg-transparent fw-semibold ${advancedOptions.fillInTheBlanks ? 'text-primary' : 'text-muted'}`} style={{fontSize: '0.8rem'}} onClick={() => {
+                                            const allSelected = Object.values(selectedContexts).every(v => v);
+                                            const next = {};
+                                            availableContexts.forEach(c => next[c] = !allSelected);
+                                            setSelectedContexts(next);
+                                        }}>
+                                            {Object.values(selectedContexts).every(v => v) ? 'Hiçbirini Seçme' : 'Tümünü Seç'}
+                                        </Button>
+                                    </div>
+                                    <div className="d-flex flex-wrap gap-2 mt-1">
+                                        {availableContexts.map(ctx => {
+                                            const isSelected = selectedContexts[ctx];
+                                            return (
+                                                <Badge 
+                                                    key={ctx} 
+                                                    bg={isSelected ? (advancedOptions.fillInTheBlanks ? "primary" : "secondary") : "secondary"} 
+                                                    className={`px-2 py-1 border ${isSelected && advancedOptions.fillInTheBlanks ? 'shadow-sm border-primary' : 'bg-opacity-10 text-body border-secondary border-opacity-25'} rounded-pill`}
+                                                    style={{ cursor: 'pointer', transition: 'all 0.2s', fontWeight: isSelected ? 'bold' : 'normal', fontSize: '0.75rem' }}
+                                                    onClick={() => setSelectedContexts(prev => ({ ...prev, [ctx]: !prev[ctx] }))}
+                                                >
+                                                    {ctx}
+                                                </Badge>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
                         <div className="d-flex justify-content-between align-items-start text-body p-3 border border-secondary border-opacity-25 rounded-3">
                             <div>
                                 <div className="fw-medium d-flex align-items-center gap-2">
