@@ -64,15 +64,24 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
     };
 
     const displayMeaning = (text, qIdx) => {
-        if (!initialTestState?.config?.advancedOptions?.singleMeaning) return text;
         const parts = getParsedMeaningsWithNumbers(text);
         if (parts.length <= 1) return text;
 
-        const revealedSeeds = activeMeanings[qIdx] || [0];
-        const revealedIndicesArray = Array.from(new Set(revealedSeeds.map(s => s % parts.length)));
-        revealedIndicesArray.sort((a, b) => a - b);
+        let visibleParts = parts;
+        if (initialTestState?.config?.advancedOptions?.singleMeaning) {
+            const revealedSeeds = activeMeanings[qIdx] || [0];
+            const revealedIndicesArray = Array.from(new Set(revealedSeeds.map(s => s % parts.length)));
+            revealedIndicesArray.sort((a, b) => a - b);
+            visibleParts = revealedIndicesArray.map(i => parts[i]);
+        }
 
-        return revealedIndicesArray.map(i => `${parts[i].number}. ${parts[i].text}`).join(" ");
+        return (
+            <span className="d-flex flex-column gap-2 mt-1 w-100">
+                {visibleParts.map(p => (
+                    <span key={p.number} className="d-block w-100">{p.number}. {p.text}</span>
+                ))}
+            </span>
+        );
     };
 
     const hasMultipleMeanings = (qIdx) => {
@@ -395,7 +404,7 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
             const answerStr = (q.answer || '').trim();
             const len = answerStr.length;
             if (len === 0) return;
-            
+
             if (currentHints < len) {
                 setRevealedHintIndices(prev => {
                     const revealedList = prev[idx] || [];
@@ -406,7 +415,7 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                         newlyRevealed = len - 1;
                     } else {
                         const unrevealed = [];
-                        for(let i=0; i<len; i++) {
+                        for (let i = 0; i < len; i++) {
                             if (!revealedList.includes(i) && answerStr[i] !== ' ' && i !== 0 && i !== len - 1) {
                                 unrevealed.push(i);
                             }
@@ -414,7 +423,7 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                         if (unrevealed.length > 0) {
                             newlyRevealed = unrevealed[Math.floor(Math.random() * unrevealed.length)];
                         } else {
-                            for(let i=0; i<len; i++) {
+                            for (let i = 0; i < len; i++) {
                                 if (!revealedList.includes(i)) unrevealed.push(i);
                             }
                             if (unrevealed.length > 0) {
@@ -812,7 +821,7 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
 
                 <Row className="px-md-4 h-100 position-relative">
                     {/* SIDEBAR: Question Navigation Map */}
-                    <Col md={3} lg={2} className="mb-4 mb-md-0 d-none d-md-block" style={{ position: 'sticky', top: '100px', height: 'fit-content' }}>
+                    <Col md={3} lg={2} className="p-0 mb-4 mb-md-0 d-none d-md-block" style={{ position: 'sticky', top: '100px', height: 'fit-content' }}>
                         <Card className="bg-body-tertiary border-secondary border-opacity-25 rounded-4 p-3 shadow-none text-body" style={{ maxHeight: 'calc(100vh - 160px)', overflowY: 'auto', scrollbarWidth: 'thin' }}>
                             <div className="d-flex justify-content-between align-items-center mb-4">
                                 <span className="fw-bold">{showAnswersSummary ? 'Cevaplarım' : 'Sorular'}</span>
@@ -826,7 +835,7 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                     <span className="d-none d-xl-inline">{showAnswersSummary ? 'Sorular' : 'Cevaplarım'}</span>
                                 </Button>
                             </div>
-                            
+
                             {!showAnswersSummary ? (
                                 <div className="d-flex flex-wrap gap-2 justify-content-start pb-4">
                                     {questions.map((q, idx) => {
@@ -886,7 +895,7 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                             <div
                                                 key={`sidebar-ans-${idx}`}
                                                 className={`p-2 rounded-3 border ${isAnswered ? (completed ? (answers[idx]?.selected?.isCorrect ? 'border-success bg-success bg-opacity-10' : 'border-danger bg-danger bg-opacity-10') : 'border-primary bg-primary bg-opacity-10') : 'border-secondary bg-body-tertiary'} border-opacity-25 transition-all cursor-pointer`}
-                                                onClick={() => { setShowAnswersSummary(false); scrollToQuestion(idx); }}
+                                                onClick={() => { scrollToQuestion(idx); }}
                                                 style={{ cursor: 'pointer' }}
                                             >
                                                 <div className="d-flex justify-content-between align-items-center mb-1">
@@ -937,7 +946,7 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                         >
                                             <i className={`bi ${showAnswersSummary ? 'bi-grid-3x3-gap-fill' : 'bi-list-check'}`}></i>
                                         </Button>
-                                        <i 
+                                        <i
                                             className={`bi bi-chevron-${mobileNavExpanded ? 'up' : 'down'} text-body-secondary ms-1 fs-5`}
                                             onClick={() => setMobileNavExpanded(!mobileNavExpanded)}
                                         ></i>
@@ -1028,7 +1037,7 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                                             <div
                                                                 key={`mobile-ans-${idx}`}
                                                                 className={`p-2 rounded-3 border ${isAnswered ? (completed ? (answers[idx]?.selected?.isCorrect ? 'border-success bg-success bg-opacity-10' : 'border-danger bg-danger bg-opacity-10') : 'border-primary bg-primary bg-opacity-10') : 'border-secondary bg-body-tertiary'} border-opacity-25 transition-all cursor-pointer`}
-                                                                onClick={() => { setShowAnswersSummary(false); setMobileNavExpanded(false); scrollToQuestion(idx); }}
+                                                                onClick={() => { setMobileNavExpanded(false); scrollToQuestion(idx); }}
                                                             >
                                                                 <div className="d-flex justify-content-between align-items-center mb-1">
                                                                     <Badge bg="secondary" className="rounded-pill px-2" style={{ fontSize: '0.7rem' }}>S. {idx + 1}</Badge>
@@ -1286,7 +1295,7 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                                                             const ans = (currentQuestion.answer || '').trim();
                                                                             const revealed = revealedHintIndices[idx] || [];
                                                                             let displayArr = [];
-                                                                            for(let i=0; i<ans.length; i++) {
+                                                                            for (let i = 0; i < ans.length; i++) {
                                                                                 if (ans[i] === ' ') {
                                                                                     displayArr.push('\u00A0\u00A0');
                                                                                 } else if (revealed.includes(i)) {
@@ -1321,8 +1330,8 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                                                         -%{Math.min(100, currentHints * 30)} Puan
                                                                     </Badge>
                                                                 )}
-                                                                {maxHints > 0 && (
-                                                                    <OverlayTrigger trigger={['hover', 'focus']} placement="top" overlay={popover}>
+                                                                {maxHints > 0 && (() => {
+                                                                    const hintButtonNode = (
                                                                         <span className="d-inline-block">
                                                                             <Button
                                                                                 variant="outline-warning"
@@ -1334,11 +1343,21 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                                                                 style={{ pointerEvents: canHint ? 'auto' : 'none' }}
                                                                             >
                                                                                 <i className="bi bi-lightbulb-fill"></i>
-                                                                                <span className="d-none d-sm-inline small">İpucu {currentHints}/{maxHints}</span>
+                                                                                <span className="d-none d-sm-inline small">{currentHints}/{maxHints}</span>
                                                                             </Button>
                                                                         </span>
-                                                                    </OverlayTrigger>
-                                                                )}
+                                                                    );
+
+                                                                    if (initialTestState?.config?.advancedOptions?.missingLetters && isWritten) {
+                                                                        return hintButtonNode;
+                                                                    }
+
+                                                                    return (
+                                                                        <OverlayTrigger trigger={['hover', 'focus']} placement="top" overlay={popover}>
+                                                                            {hintButtonNode}
+                                                                        </OverlayTrigger>
+                                                                    );
+                                                                })()}
                                                                 {hasMultipleMeanings(idx) && (
                                                                     <Button
                                                                         variant="outline-primary"
@@ -1368,12 +1387,11 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                                                             <Button
                                                                                 variant="outline-danger"
                                                                                 size="sm"
-                                                                                className="rounded-pill px-3 py-1 d-flex align-items-center gap-1"
+                                                                                className="rounded-circle px-2 py-1 d-flex align-items-center gap-1"
                                                                                 onClick={(e) => onDelete(e, wordObj.id, wordObj.term)}
                                                                                 title="Kelimeyi Sil"
                                                                             >
                                                                                 <i className="bi bi-trash"></i>
-                                                                                <span className="d-none d-sm-inline small">Sil</span>
                                                                             </Button>
                                                                         )}
                                                                     </>
@@ -1398,9 +1416,9 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                                     </div>
                                                 )}
                                                 <div className="d-flex align-items-center gap-3 flex-wrap">
-                                                    <h4 className="text-body fw-medium lh-base m-0">
+                                                    <h6 className="text-body fw-medium lh-base m-0">
                                                         {currentQuestion.format === 'definition' ? displayMeaning(currentQuestion.prompt, idx) : currentQuestion.prompt}
-                                                    </h4>
+                                                    </h6>
                                                     {/* Show pronunciation + speech button next to the prompt — only when prompt is English (format=term) */}
                                                     {currentQuestion.format === 'term' && currentQuestion.pronunciation && (
                                                         <div
@@ -1431,8 +1449,8 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                                                 <div className="fs-3 font-monospace fw-bold text-body letter-spacing-2" style={{ letterSpacing: '4px' }}>
                                                                     {currentQuestion.answer.split('').map((char, i) => {
                                                                         if (char === ' ') return <span key={i} className="mx-3"></span>;
-                                                                        // Show first letter, last letter, and roughly every 3rd letter, hide others
-                                                                        const show = i === 0 || i === currentQuestion.answer.length - 1 || i % 3 === 0;
+                                                                        const revealed = revealedHintIndices[idx] || [];
+                                                                        const show = revealed.includes(i);
                                                                         return <span key={i} className={show ? "text-primary" : "text-body-tertiary"}>{show ? char : '_'}</span>;
                                                                     })}
                                                                 </div>
@@ -1440,55 +1458,60 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                                         )}
 
                                                         {!answers[idx] ? (
-                                                            <div className="d-flex gap-2">
-                                                                <input
-                                                                    id={`written-input-${idx}`}
-                                                                    type="text"
-                                                                    className="form-control form-control-lg bg-transparent text-body border-secondary border-opacity-50 rounded-3"
-                                                                    style={{ fontSize: '1.25rem' }}
-                                                                    placeholder="Cevabınızı yazın..."
-                                                                    value={writtenInputs[idx] || ''}
-                                                                    autoCapitalize="none"
-                                                                    onChange={e => setWrittenInputs(prev => ({ ...prev, [idx]: e.target.value.toLowerCase() }))}
-                                                                    onKeyDown={e => {
-                                                                        if (e.key === 'Enter') {
-                                                                            e.preventDefault();
+                                                            <div className="d-flex flex-column gap-1">
+                                                                <div className="d-flex gap-2">
+                                                                    <input
+                                                                        id={`written-input-${idx}`}
+                                                                        type="text"
+                                                                        className="form-control form-control-lg bg-transparent text-body border-secondary border-opacity-50 rounded-3"
+                                                                        style={{ fontSize: '1.25rem' }}
+                                                                        placeholder="Cevabınızı yazın..."
+                                                                        value={writtenInputs[idx] || ''}
+                                                                        autoCapitalize="none"
+                                                                        onChange={e => setWrittenInputs(prev => ({ ...prev, [idx]: e.target.value.toLowerCase() }))}
+                                                                        onKeyDown={e => {
+                                                                            if (e.key === 'Enter') {
+                                                                                e.preventDefault();
 
-                                                                            let nextUnansweredIdx = questions.findIndex((q, i) => i > idx && !answers[i] && !(q.type === 'written' && (writtenInputs[i] || '').trim().length > 0));
+                                                                                let nextUnansweredIdx = questions.findIndex((q, i) => i > idx && !answers[i] && !(q.type === 'written' && (writtenInputs[i] || '').trim().length > 0));
 
-                                                                            if (nextUnansweredIdx === -1) {
-                                                                                nextUnansweredIdx = questions.findIndex((q, i) => !answers[i] && !(q.type === 'written' && (writtenInputs[i] || '').trim().length > 0));
-                                                                            }
-
-                                                                            if (nextUnansweredIdx !== -1) {
-                                                                                scrollToQuestion(nextUnansweredIdx);
-
-                                                                                if (questions[nextUnansweredIdx].type === 'written') {
-                                                                                    setTimeout(() => {
-                                                                                        const nextInput = document.getElementById(`written-input-${nextUnansweredIdx}`);
-                                                                                        if (nextInput) nextInput.focus();
-                                                                                    }, 100);
+                                                                                if (nextUnansweredIdx === -1) {
+                                                                                    nextUnansweredIdx = questions.findIndex((q, i) => !answers[i] && !(q.type === 'written' && (writtenInputs[i] || '').trim().length > 0));
                                                                                 }
-                                                                            } else {
-                                                                                // All answered! Scroll to submit.
-                                                                                if (submitBtnRef.current) {
-                                                                                    submitBtnRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+                                                                                if (nextUnansweredIdx !== -1) {
+                                                                                    scrollToQuestion(nextUnansweredIdx);
+
+                                                                                    if (questions[nextUnansweredIdx].type === 'written') {
+                                                                                        setTimeout(() => {
+                                                                                            const nextInput = document.getElementById(`written-input-${nextUnansweredIdx}`);
+                                                                                            if (nextInput) nextInput.focus();
+                                                                                        }, 100);
+                                                                                    }
+                                                                                } else {
+                                                                                    // All answered! Scroll to submit.
+                                                                                    if (submitBtnRef.current) {
+                                                                                        submitBtnRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                                                                    }
                                                                                 }
                                                                             }
-                                                                        }
-                                                                    }}
-                                                                    disabled={completed}
-                                                                    autoComplete="off"
-                                                                />
-                                                                <Button
-                                                                    variant="info"
-                                                                    className="rounded-3 px-4 fw-bold text-dark fs-5"
-                                                                    style={{ backgroundColor: '#4fd1c5', border: 'none', whiteSpace: 'nowrap' }}
-                                                                    onClick={() => handleWrittenSubmit(idx, currentQuestion.answer)}
-                                                                    disabled={!writtenInputs[idx]?.trim()}
-                                                                >
-                                                                    <i className="bi bi-check-lg"></i> Kontrol
-                                                                </Button>
+                                                                        }}
+                                                                        disabled={completed}
+                                                                        autoComplete="off"
+                                                                    />
+                                                                    <Button
+                                                                        variant="info"
+                                                                        className="rounded-3 px-4 fw-bold text-dark fs-5"
+                                                                        style={{ backgroundColor: '#4fd1c5', border: 'none', whiteSpace: 'nowrap' }}
+                                                                        onClick={() => handleWrittenSubmit(idx, currentQuestion.answer)}
+                                                                        disabled={!writtenInputs[idx]?.trim()}
+                                                                    >
+                                                                        <i className="bi bi-check-lg"></i> Kontrol
+                                                                    </Button>
+                                                                </div>
+                                                                <small className="text-body-tertiary ms-1" style={{ fontSize: '0.75rem' }}>
+                                                                    {(writtenInputs[idx] || '').length} harf
+                                                                </small>
                                                             </div>
                                                         ) : (
                                                             <div className={`rounded-3 p-3 border d-flex align-items-start gap-3 ${answers[idx]?.selected?.isCorrect
@@ -1539,7 +1562,7 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                                         <div
                                                             className={`rounded-4 border p-4 mb-3 text-center transition-all ${flippedCards[idx] ? 'border-info bg-info bg-opacity-10' : 'border-secondary border-opacity-25 bg-body-secondary'}`}
                                                             onClick={() => !completed && flipCard(idx)}
-                                                            style={{ cursor: completed ? 'default' : 'pointer', minHeight: '90px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                                                            style={{ cursor: completed ? 'default' : 'pointer', minHeight: '90px', display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
                                                         >
                                                             {!flippedCards[idx] ? (
                                                                 <span className="text-body-secondary fw-medium"><i className="bi bi-eye me-2"></i>Görmek için tıkla</span>
@@ -1708,7 +1731,7 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                                 const hasNext = questions.some((q, i) => i > idx && q.type === 'written' && !answers[i]);
 
                                                 return (
-                                                    <div className="position-absolute top-100 start-0 translate-middle-y ms-4" style={{ zIndex: 10 }}>
+                                                    <div className="mt-4" style={{ zIndex: 10 }}>
                                                         <div className="btn-group border border-secondary border-opacity-50  overflow-hidden bg-body shadow-sm" role="group">
                                                             <Button
                                                                 variant="link"
