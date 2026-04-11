@@ -1509,7 +1509,7 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                                                         <i className="bi bi-check-lg"></i> Kontrol
                                                                     </Button>
                                                                 </div>
-                                                                <small className="text-body-tertiary ms-1" style={{ fontSize: '0.75rem' }}>
+                                                                <small className={`ms-1 ${(writtenInputs[idx] || '').length === (currentQuestion.answer || '').length ? 'text-success' : 'text-danger'}`} style={{ fontSize: '0.75rem', fontWeight: (writtenInputs[idx] || '').length === (currentQuestion.answer || '').length ? 'bold' : 'normal' }}>
                                                                     {(writtenInputs[idx] || '').length} harf
                                                                 </small>
                                                             </div>

@@ -275,10 +275,12 @@ function App() {
   const [showStickyNotesModal, setShowStickyNotesModal] = useState(false);
   const [manualNoteText, setManualNoteText] = useState('');
   const [editingNoteId, setEditingNoteId] = useState(null);
+  const [inlineEditingText, setInlineEditingText] = useState('');
 
   // Global text-selection tooltip for home page
   const [homeSelectionTooltip, setHomeSelectionTooltip] = useState(null); // { x, y, text, wordId, wordTerm }
   const homeTooltipRef = useRef(null);
+  const inlineNoteRef = useRef(null);
 
   const handleGlobalMouseUp = useCallback(() => {
     // Small delay to let selection settle
@@ -325,6 +327,14 @@ function App() {
       });
     }, 10);
   }, []);
+
+  // Auto-resize inline sticky note textarea
+  useEffect(() => {
+    if (editingNoteId && inlineNoteRef.current) {
+      inlineNoteRef.current.style.height = 'auto';
+      inlineNoteRef.current.style.height = inlineNoteRef.current.scrollHeight + 'px';
+    }
+  }, [editingNoteId, inlineEditingText]);
 
   const handleGlobalMouseDown = useCallback((e) => {
     if (homeTooltipRef.current && homeTooltipRef.current.contains(e.target)) return;
@@ -1278,31 +1288,7 @@ function App() {
           </div>
         );
       })()}
-      <Container fluid>
-        {currentView === 'practice-test' ? (
-          <PracticeTestContainer
-            words={directPracticeWords || words}
-            initialConfig={directPracticeConfig}
-            onCancel={() => {
-              setCurrentView('home');
-              setDirectPracticeConfig(null);
-              setDirectPracticeWords(null);
-            }}
-            savedOptions={practiceOptions}
-            onSaveOptions={setPracticeOptions}
-            onUpdateStage={handleUpdateStage}
-            onToggleStar={handleToggleStar}
-            onDelete={handleDelete}
-            onEdit={handleEdit}
-            onLogTestResults={handleLogTestResults}
-            dailyStats={dailyStats}
-            practiceTests={practiceTests}
-            onSaveTest={handleSaveTest}
-            onDeleteTest={handleDeleteTest}
-            onDeleteAllTests={handleDeleteAllTests}
-          />
-        ) : (
-          <>
+      <Container fluid className="main-app-container">
             <Navbar className="glass-navbar border border-opacity-25 rounded-4 mb-4 px-2 px-md-4 py-2 py-md-3 shadow-sm d-flex flex-row align-items-center justify-content-between flex-nowrap bg-body-tertiary sticky-top" style={{ top: '10px', zIndex: 1020 }}>
               <Navbar.Brand className="d-flex align-items-center gap-2 m-0 p-0 h1 fs-4 fw-bold">
                 <img src="/iconv2.png" alt="Sözlük Logo" style={{ width: '36px', height: '36px', objectFit: 'contain' }} />
@@ -1324,12 +1310,12 @@ function App() {
                   placeholder="Ara..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className={`bg-body-secondary border-0 shadow-none ${searchQuery ? '' : 'rounded-end-pill pe-2 pe-md-3'} py-1 py-md-2`}
+                  className={`bg-body-secondary border-0 shadow-none ${searchQuery ? '' : 'pe-2 pe-md-3'} py-1 py-md-2`}
                   style={{ fontSize: '15px' }}
                 />
                 {searchQuery && (
                   <InputGroup.Text
-                    className="bg-body-secondary border-0 text-secondary rounded-end-pill pe-3"
+                    className="bg-body-secondary border-0 text-secondary pe-3"
                     style={{ cursor: 'pointer' }}
                     onClick={() => setSearchQuery('')}
                     title="Aramayı Temizle"
@@ -1337,14 +1323,22 @@ function App() {
                     <i className="bi bi-x-circle-fill text-opacity-50 text-body"></i>
                   </InputGroup.Text>
                 )}
+                <InputGroup.Text
+                  className="bg-body-secondary border-0 text-muted rounded-end-pill pe-3 d-flex d-md-none"
+                  style={{ cursor: 'pointer' }}
+                  onClick={() => setShowFiltersCollapse(!showFiltersCollapse)}
+                  title="Filtreler"
+                >
+                  <i className={`bi bi-sliders ${showFiltersCollapse ? 'text-primary' : ''}`} style={{ fontSize: '18px' }}></i>
+                </InputGroup.Text>
               </InputGroup>
 
-              <div className="d-flex gap-1 gap-md-2">
+              <div className="d-none d-md-flex gap-2">
                 <DailyGoalTracker dailyStats={dailyStats} />
-                <Button variant="info" className="rounded-pill d-flex align-items-center justify-content-center gap-2 px-0 px-md-3 fw-bold shadow-sm text-dark text-nowrap" style={{ backgroundColor: '#4fd1c5', border: 'none', minWidth: '40px', height: '40px' }} onClick={() => setCurrentView('practice-test')}>
+                <Button variant="info" className="rounded-pill d-flex align-items-center justify-content-center gap-2 px-3 fw-bold shadow-sm text-dark text-nowrap" style={{ backgroundColor: '#4fd1c5', border: 'none', height: '40px' }} onClick={() => setCurrentView('practice-test')}>
                   <i className="bi bi-controller" style={{ fontSize: '20px' }}></i> <span className="d-none d-md-inline">Test Çöz</span>
                 </Button>
-                <Button variant="primary" className="rounded-pill d-flex align-items-center justify-content-center gap-2 px-0 px-md-3 fw-semibold shadow-sm text-nowrap" style={{ minWidth: '40px', height: '40px' }} onClick={() => setIsModalOpen(true)}>
+                <Button variant="primary" className="rounded-pill d-flex align-items-center justify-content-center gap-2 px-3 fw-semibold shadow-sm text-nowrap" style={{ minWidth: '40px', height: '40px' }} onClick={() => setIsModalOpen(true)}>
                   <i className="bi bi-plus-lg" style={{ fontSize: '20px' }}></i> <span className="d-none d-md-inline">Yeni Kelime</span>
                 </Button>
                 <Button
@@ -1372,37 +1366,57 @@ function App() {
                   {theme === 'light' ? <i className="bi bi-moon-fill" style={{ fontSize: '20px' }}></i> : <i className="bi bi-sun-fill" style={{ fontSize: '20px' }}></i>}
                 </Button>
               </div>
+
+              {/* Mobile Only: Quick Tracker */}
+              <div className="d-md-none me-1">
+                <DailyGoalTracker dailyStats={dailyStats} />
+              </div>
             </Navbar>
 
-            <div className="mb-4 px-2">
-              {/* Mobile View: Collapse Toggle */}
-              <div className="d-flex justify-content-between align-items-center mb-2 d-md-none">
-                <Button
-                  variant="outline-secondary"
-                  size="sm"
-                  className="rounded-pill px-3 shadow-sm fw-medium d-flex align-items-center gap-2"
-                  onClick={() => setShowFiltersCollapse(!showFiltersCollapse)}
-                >
-                  <i className="bi bi-sliders"></i>
-                  <span>Araçlar ve Filtreler</span>
-                </Button>
-
-                {isSelectionMode && (
-                  <div className="d-flex gap-2 align-items-center bg-primary bg-opacity-10 px-3 py-1 rounded-pill border border-primary border-opacity-25 animated fadeIn">
-                    <Form.Check
-                      type="checkbox"
-                      id="select-all-mobile"
-                      label={<span className="fw-medium small d-none d-sm-inline">Tümünü Seç</span>}
-                      onChange={handleSelectAll}
-                      checked={filteredWords.length > 0 && selectedWords.length === filteredWords.length}
-                      className="me-2"
-                    />
-                    <span className="fw-bold text-primary small me-2">{selectedWords.length} <span className="d-none d-sm-inline">Seçili</span></span>
-                    <Button variant="primary" size="sm" className="rounded-pill px-3" disabled={selectedWords.length === 0} onClick={() => setShowBulkEditModal(true)}>
-                      İşlem Yap
-                    </Button>
-                  </div>
-                )}
+            {currentView === 'practice-test' ? (
+              <PracticeTestContainer
+                words={directPracticeWords || words}
+                initialConfig={directPracticeConfig}
+                onCancel={() => {
+                  setCurrentView('home');
+                  setDirectPracticeConfig(null);
+                  setDirectPracticeWords(null);
+                }}
+                savedOptions={practiceOptions}
+                onSaveOptions={setPracticeOptions}
+                onUpdateStage={handleUpdateStage}
+                onToggleStar={handleToggleStar}
+                onDelete={handleDelete}
+                onEdit={handleEdit}
+                onLogTestResults={handleLogTestResults}
+                dailyStats={dailyStats}
+                practiceTests={practiceTests}
+                onSaveTest={handleSaveTest}
+                onDeleteTest={handleDeleteTest}
+                onDeleteAllTests={handleDeleteAllTests}
+              />
+            ) : (
+              <>
+                <div className="mb-4 px-2">
+                {/* Mobile View: Selection Tools (Filters removed from here) */}
+                <div className="d-flex justify-content-end align-items-center mb-2 d-md-none">
+                  {isSelectionMode && (
+                    <div className="d-flex gap-2 align-items-center bg-primary bg-opacity-10 px-3 py-1 rounded-pill border border-primary border-opacity-25 animated fadeIn">
+                      <Form.Check
+                        type="checkbox"
+                        id="select-all-mobile"
+                        label={<span className="fw-medium small d-none d-sm-inline">Tümünü Seç</span>}
+                        onChange={handleSelectAll}
+                        checked={filteredWords.length > 0 && selectedWords.length === filteredWords.length}
+                        className="me-2"
+                      />
+                      <span className="fw-bold text-primary small me-2">{selectedWords.length} <span className="d-none d-sm-inline">Seçili</span></span>
+                      <Button variant="primary" size="sm" className="rounded-pill px-3" disabled={selectedWords.length === 0} onClick={() => setShowBulkEditModal(true)}>
+                        İşlem Yap
+                      </Button>
+                    </div>
+                  )}
+                </div>
               </div>
 
               <Collapse in={showFiltersCollapse}>
@@ -1586,9 +1600,8 @@ function App() {
                   </div>
                 )}
               </div>
-            </div>
 
-            <main>
+              <main>
               {loading ? (
                 <div className="d-flex justify-content-center py-5">
                   <Spinner animation="border" variant="primary" />
@@ -1951,6 +1964,48 @@ function App() {
         )}
       </Container>
 
+      {/* MOBILE BOTTOM NAVIGATION BAR */}
+      <div className="mobile-bottom-nav d-md-none">
+          <button
+            className={`mobile-nav-item ${currentView === 'home' ? 'active' : ''}`}
+            onClick={() => setCurrentView('home')}
+          >
+            <i className="bi bi-house-door-fill"></i>
+            <span>Ana Sayfa</span>
+          </button>
+          
+          <button className="mobile-nav-item" onClick={() => setCurrentView('practice-test')}>
+            <i className="bi bi-controller"></i>
+            <span>Test Çöz</span>
+          </button>
+
+          <button className="mobile-nav-center-btn" onClick={() => setIsModalOpen(true)}>
+            <i className="bi bi-plus-lg"></i>
+          </button>
+
+          <button className="mobile-nav-item position-relative" onClick={() => setShowStickyNotesModal(true)}>
+            <i className="bi bi-pin-angle-fill" style={{ color: '#f59e0b' }}></i>
+            <span>Notlarım</span>
+            {stickyNotes.length > 0 && (
+              <span
+                className="position-absolute top-0 end-0 text-white fw-bold d-flex align-items-center justify-content-center"
+                style={{
+                  width: '18px', height: '18px', borderRadius: '50%', fontSize: '9px',
+                  background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                  marginTop: '8px', marginRight: '8px'
+                }}
+              >
+                {stickyNotes.length > 99 ? '99+' : stickyNotes.length}
+              </span>
+            )}
+          </button>
+
+          <button className="mobile-nav-item" onClick={toggleTheme}>
+            {theme === 'light' ? <i className="bi bi-moon-fill"></i> : <i className="bi bi-sun-fill"></i>}
+            <span>Tema</span>
+          </button>
+        </div>
+
       {/* NEW WORD MODAL */}
       <Modal show={isModalOpen} onHide={closeModal} size="lg" centered backdrop="static" contentClassName="bg-body-tertiary border border-opacity-25 rounded-4 shadow-lg" style={{ zIndex: 1060 }}>
         <Form onSubmit={handleSubmit}>
@@ -2186,7 +2241,7 @@ function App() {
           <div className="mb-4 p-3 rounded-3 border border-opacity-25" style={{ background: 'rgba(245, 158, 11, 0.06)', borderColor: '#f59e0b' }}>
             <label className="fw-semibold small text-body opacity-75 mb-2 d-block">
               <i className="bi bi-pencil-fill me-1" style={{ color: '#f59e0b' }}></i>
-              {editingNoteId ? 'Notu Düzenle' : 'Yeni Not Ekle'}
+              Yeni Not Ekle
             </label>
             <Form.Control
               as="textarea"
@@ -2197,27 +2252,19 @@ function App() {
               className="border-0 shadow-none bg-body-secondary mb-2 rounded-2"
               style={{ resize: 'none', fontSize: '14px' }}
             />
-            <div className="d-flex justify-content-end gap-2">
-              {editingNoteId && (
-                <Button variant="outline-secondary" size="sm" className="rounded-pill px-3 fw-semibold" onClick={() => { setEditingNoteId(null); setManualNoteText(''); }}>İptal</Button>
-              )}
+            <div className="d-flex justify-content-end">
               <Button
                 size="sm"
                 className="rounded-pill px-3 fw-semibold d-flex align-items-center gap-2"
                 style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)', border: 'none', color: '#fff' }}
                 disabled={!manualNoteText.trim()}
                 onClick={() => {
-                  if (editingNoteId) {
-                    handleUpdateNote(editingNoteId, manualNoteText.trim());
-                    setEditingNoteId(null);
-                  } else {
-                    handleAddNote(null, null, manualNoteText.trim());
-                  }
+                  handleAddNote(null, null, manualNoteText.trim());
                   setManualNoteText('');
                 }}
               >
                 <i className="bi bi-pin-angle-fill"></i>
-                {editingNoteId ? 'Güncelle' : 'Kaydet'}
+                Kaydet
               </Button>
             </div>
           </div>
@@ -2251,33 +2298,83 @@ function App() {
                         <i className="bi bi-journal-text me-1 opacity-50" style={{ fontSize: '0.7rem' }}></i>
                         {note.wordTerm || '—'}
                       </div>
-                      <p className="sticky-note-list-text mb-1" style={{ whiteSpace: 'pre-wrap' }}>"{note.text}"</p>
-                      <span className="sticky-note-list-date">{dateStr}</span>
+                      {editingNoteId === note.id ? (
+                        <div className="mb-2">
+                          <Form.Control
+                            as="textarea"
+                            ref={inlineNoteRef}
+                            value={inlineEditingText}
+                            onChange={(e) => setInlineEditingText(e.target.value)}
+                            className="border border-opacity-25 shadow-none bg-body-secondary mb-2 rounded-2"
+                            style={{ resize: 'none', fontSize: '14px', borderColor: '#f59e0b' }}
+                            autoFocus
+                          />
+                          <div className="d-flex justify-content-end gap-2">
+                            <Button
+                              variant="outline-secondary"
+                              size="sm"
+                              className="rounded-pill px-3 fw-semibold"
+                              style={{ fontSize: '12px' }}
+                              onClick={() => {
+                                setEditingNoteId(null);
+                                setInlineEditingText('');
+                              }}
+                            >
+                              İptal
+                            </Button>
+                            <Button
+                              size="sm"
+                              className="rounded-pill px-3 fw-semibold"
+                              style={{
+                                background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                                border: 'none',
+                                color: '#fff',
+                                fontSize: '12px'
+                              }}
+                              disabled={!inlineEditingText.trim()}
+                              onClick={() => {
+                                handleUpdateNote(note.id, inlineEditingText.trim());
+                                setEditingNoteId(null);
+                                setInlineEditingText('');
+                              }}
+                            >
+                              Kaydet
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <p className="sticky-note-list-text mb-1" style={{ whiteSpace: 'pre-wrap' }}>"{note.text}"</p>
+                          <span className="sticky-note-list-date">{dateStr}</span>
+                        </>
+                      )}
                     </div>
                     {/* Right: action buttons */}
                     <div className="flex-shrink-0 d-flex flex-column gap-1">
-                      {note.wordId === null && (
+                      {note.wordId === null && editingNoteId !== note.id && (
                         <Button
                           variant="link"
                           className="sticky-note-list-delete p-1"
                           style={{ color: '#3b82f6' }}
                           onClick={() => {
                             setEditingNoteId(note.id);
-                            setManualNoteText(note.text);
+                            setInlineEditingText(note.text);
                           }}
                           title="Notu Düzenle"
                         >
                           <i className="bi bi-pencil-square"></i>
                         </Button>
                       )}
-                      <Button
-                        variant="link"
-                        className="sticky-note-list-delete p-1"
-                        onClick={() => handleDeleteNote(note.id)}
-                        title="Notu Sil"
-                      >
-                        <i className="bi bi-trash3"></i>
-                      </Button>
+                      {editingNoteId !== note.id && (
+                        <Button
+                          variant="link"
+                          className="sticky-note-list-delete p-1"
+                          onClick={() => handleDeleteNote(note.id)}
+                          title="Notu Sil"
+                        >
+                          <i className="bi bi-trash3"></i>
+                        </Button>
+                      )}
                     </div>
                   </div>
                 );
