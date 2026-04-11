@@ -430,6 +430,15 @@ mark.sticky-highlight:hover {
   color: var(--bs-danger) !important;
 }
 
+/* ─── Just Updated Success Flash ─── */
+.sticky-note-list-item.just-updated {
+  background-color: rgba(34, 197, 94, 0.1) !important;
+  border-color: rgba(34, 197, 94, 0.3) !important;
+  border-left-color: #22c55e !important;
+  box-shadow: 0 0 15px rgba(34, 197, 94, 0.15) !important;
+  transition: all 0.3s ease;
+}
+
 /* ─── Mobile Bottom Navigation ─── */
 .mobile-bottom-nav {
   position: fixed;
@@ -592,4 +601,30 @@ mark.sticky-highlight:hover {
 
 html, body {
   max-width: 100%;
+}
+
+/* ─── Custom Sidebar Scroll ─── */
+.custom-sidebar-scroll::-webkit-scrollbar {
+  width: 4px;
+}
+
+.custom-sidebar-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-sidebar-scroll::-webkit-scrollbar-thumb {
+  background: rgba(111, 66, 193, 0.2);
+  border-radius: 10px;
+}
+
+.custom-sidebar-scroll:hover::-webkit-scrollbar-thumb {
+  background: rgba(111, 66, 193, 0.4);
+}
+
+[data-bs-theme="dark"] .custom-sidebar-scroll::-webkit-scrollbar-thumb {
+  background: rgba(111, 66, 193, 0.3);
+}
+
+[data-bs-theme="dark"] .custom-sidebar-scroll:hover::-webkit-scrollbar-thumb {
+  background: rgba(111, 66, 193, 0.5);
 }

@@ -772,8 +772,8 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                 <Row className="px-md-4 position-relative">
                     {/* SIDEBAR: Question Navigation Map */}
                     <Col md={3} lg={2} className="p-0 mb-4 mb-md-0 d-none d-md-block" style={{ position: 'sticky', top: '100px', height: 'fit-content', zIndex: 100 }}>
-                        <Card className="bg-body-tertiary border-secondary border-opacity-25 rounded-4 p-3 shadow-none text-body">
-                            <div className="d-flex justify-content-between align-items-center mb-4">
+                        <Card className="bg-body-tertiary border-secondary border-opacity-25 rounded-4 p-3 shadow-none text-body d-flex flex-column" style={{ maxHeight: 'calc(100vh - 140px)' }}>
+                            <div className="d-flex justify-content-between align-items-center mb-4 flex-shrink-0">
                                 <span className="fw-bold">{showAnswersSummary ? 'Cevaplarım' : 'Sorular'}</span>
                                 <Button
                                     variant={showAnswersSummary ? "primary" : "outline-primary"}
@@ -786,82 +786,84 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                 </Button>
                             </div>
 
-                            {!showAnswersSummary ? (
-                                <div className="d-flex flex-wrap gap-2 justify-content-start pb-4">
-                                    {questions.map((q, idx) => {
-                                        const isAnswered = !!answers[idx] || (q.type === 'written' && (writtenInputs[idx] || '').trim().length > 0);
-                                        const isActive = activeQuestionIdx === idx;
+                            <div className="flex-grow-1 overflow-y-auto pe-2 custom-sidebar-scroll" style={{ scrollbarWidth: 'thin', maxHeight: '100%' }}>
+                                {!showAnswersSummary ? (
+                                    <div className="d-flex flex-wrap gap-2 justify-content-start pb-4">
+                                        {questions.map((q, idx) => {
+                                            const isAnswered = !!answers[idx] || (q.type === 'written' && (writtenInputs[idx] || '').trim().length > 0);
+                                            const isActive = activeQuestionIdx === idx;
 
-                                        let btnClass = "btn btn-sm rounded-circle fw-bold border-secondary border-opacity-50 transition-all ";
-                                        let btnStyle = { width: '36px', height: '36px', padding: 0 };
+                                            let btnClass = "btn btn-sm rounded-circle fw-bold border-secondary border-opacity-50 transition-all ";
+                                            let btnStyle = { width: '36px', height: '36px', padding: 0 };
 
-                                        if (completed) {
-                                            // Show correct/incorrect in navigation map if completed
-                                            const ans = answers[idx]?.selected;
-                                            const isCorrect = ans?.isCorrect;
-                                            const hasTypo = ans?.hasTypo;
+                                            if (completed) {
+                                                // Show correct/incorrect in navigation map if completed
+                                                const ans = answers[idx]?.selected;
+                                                const isCorrect = ans?.isCorrect;
+                                                const hasTypo = ans?.hasTypo;
 
-                                            if (isCorrect) {
-                                                btnClass += hasTypo ? "bg-warning text-dark border-warning" : "bg-success text-white border-success";
+                                                if (isCorrect) {
+                                                    btnClass += hasTypo ? "bg-warning text-dark border-warning" : "bg-success text-white border-success";
+                                                } else {
+                                                    btnClass += isAnswered ? "bg-danger text-white border-danger" : "bg-transparent text-body-secondary";
+                                                }
                                             } else {
-                                                btnClass += isAnswered ? "bg-danger text-white border-danger" : "bg-transparent text-body-secondary";
+                                                if (isActive) {
+                                                    btnClass += "text-white border-purple shadow-sm";
+                                                    btnStyle.backgroundColor = '#6f42c1';
+                                                    btnStyle.borderColor = '#6f42c1';
+                                                } else {
+                                                    // Just show answered state
+                                                    btnClass += isAnswered ? "bg-info text-dark border-info" : "bg-transparent text-body-secondary";
+                                                }
                                             }
-                                        } else {
-                                            if (isActive) {
-                                                btnClass += "text-white border-purple shadow-sm";
-                                                btnStyle.backgroundColor = '#6f42c1';
-                                                btnStyle.borderColor = '#6f42c1';
-                                            } else {
-                                                // Just show answered state
-                                                btnClass += isAnswered ? "bg-info text-dark border-info" : "bg-transparent text-body-secondary";
+
+                                            return (
+                                                <button
+                                                    key={idx}
+                                                    className={btnClass}
+                                                    style={btnStyle}
+                                                    onClick={() => scrollToQuestion(idx)}
+                                                    title={`Soru ${idx + 1}`}
+                                                >
+                                                    {idx + 1}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                ) : (
+                                    <div className="d-flex flex-column gap-2 pb-4">
+                                        {questions.map((q, idx) => {
+                                            const isAnswered = !!answers[idx] || (q.type === 'written' && (writtenInputs[idx] || '').trim().length > 0);
+                                            let answeredText = 'Boş bırakıldı';
+                                            if (answers[idx]) {
+                                                answeredText = answers[idx].selected.text;
+                                            } else if (q.type === 'written' && (writtenInputs[idx] || '').trim().length > 0) {
+                                                answeredText = writtenInputs[idx];
                                             }
-                                        }
 
-                                        return (
-                                            <button
-                                                key={idx}
-                                                className={btnClass}
-                                                style={btnStyle}
-                                                onClick={() => scrollToQuestion(idx)}
-                                                title={`Soru ${idx + 1}`}
-                                            >
-                                                {idx + 1}
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-                            ) : (
-                                <div className="d-flex flex-column gap-2 pb-4">
-                                    {questions.map((q, idx) => {
-                                        const isAnswered = !!answers[idx] || (q.type === 'written' && (writtenInputs[idx] || '').trim().length > 0);
-                                        let answeredText = 'Boş bırakıldı';
-                                        if (answers[idx]) {
-                                            answeredText = answers[idx].selected.text;
-                                        } else if (q.type === 'written' && (writtenInputs[idx] || '').trim().length > 0) {
-                                            answeredText = writtenInputs[idx];
-                                        }
-
-                                        return (
-                                            <div
-                                                key={`sidebar-ans-${idx}`}
-                                                className={`p-2 rounded-3 border ${isAnswered ? (completed ? (answers[idx]?.selected?.isCorrect ? 'border-success bg-success bg-opacity-10' : 'border-danger bg-danger bg-opacity-10') : 'border-primary bg-primary bg-opacity-10') : 'border-secondary bg-body-tertiary'} border-opacity-25 transition-all cursor-pointer`}
-                                                onClick={() => { scrollToQuestion(idx); }}
-                                                style={{ cursor: 'pointer' }}
-                                            >
-                                                <div className="d-flex justify-content-between align-items-center mb-1">
-                                                    <Badge bg="secondary" className="rounded-pill px-2" style={{ fontSize: '0.7rem' }}>S. {idx + 1}</Badge>
-                                                    {completed && isAnswered && (
-                                                        <i className={`bi ${answers[idx]?.selected?.isCorrect ? 'bi-check-circle-fill text-success' : 'bi-x-circle-fill text-danger'} small`}></i>
-                                                    )}
+                                            return (
+                                                <div
+                                                    key={`sidebar-ans-${idx}`}
+                                                    className={`p-2 rounded-3 border ${isAnswered ? (completed ? (answers[idx]?.selected?.isCorrect ? 'border-success bg-success bg-opacity-10' : 'border-danger bg-danger bg-opacity-10') : 'border-primary bg-primary bg-opacity-10') : 'border-secondary bg-body-tertiary'} border-opacity-25 transition-all cursor-pointer`}
+                                                    onClick={() => { scrollToQuestion(idx); }}
+                                                    style={{ cursor: 'pointer' }}
+                                                >
+                                                    <div className="d-flex justify-content-between align-items-center mb-1">
+                                                        <Badge bg="secondary" className="rounded-pill px-2" style={{ fontSize: '0.7rem' }}>S. {idx + 1}</Badge>
+                                                        {completed && isAnswered && (
+                                                            <i className={`bi ${answers[idx]?.selected?.isCorrect ? 'bi-check-circle-fill text-success' : 'bi-x-circle-fill text-danger'} small`}></i>
+                                                        )}
+                                                    </div>
+                                                    <div className="fw-bold text-body small text-truncate" style={{ whiteSpace: 'normal', display: '-webkit-box', WebkitLineClamp: '2', WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                                                        {answeredText}
+                                                    </div>
                                                 </div>
-                                                <div className="fw-bold text-body small text-truncate" style={{ whiteSpace: 'normal', display: '-webkit-box', WebkitLineClamp: '2', WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                                                    {answeredText}
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            )}
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
                         </Card>
                     </Col>
 

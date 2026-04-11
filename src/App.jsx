@@ -23,6 +23,8 @@ import AddWordPage from './components/pages/AddWordPage';
 import StickyNotesPage from './components/pages/StickyNotesPage';
 import SettingsPage from './components/pages/SettingsPage';
 import DailyGoalTracker from './components/DailyGoalTracker';
+import CustomListsPage from './components/pages/CustomListsPage';
+import ListDetailPage from './components/pages/ListDetailPage';
 import Swal from 'sweetalert2';
 
 const isConfigMissing = db._app.options.apiKey === "YOUR_API_KEY";
@@ -283,6 +285,12 @@ function App() {
   const [editingNoteId, setEditingNoteId] = useState(null);
   const [inlineEditingText, setInlineEditingText] = useState('');
 
+  // Custom Lists State
+  const [customLists, setCustomLists] = useState([]);
+  const [currentListId, setCurrentListId] = useState(null);
+  const [bulkListId, setBulkListId] = useState('');
+  const [newListName, setNewListName] = useState('');
+
   // Global text-selection tooltip for home page
   const [homeSelectionTooltip, setHomeSelectionTooltip] = useState(null); // { x, y, text, wordId, wordTerm }
   const homeTooltipRef = useRef(null);
@@ -403,7 +411,8 @@ function App() {
       unstarred: false
     },
     startDate: '',
-    endDate: ''
+    endDate: '',
+    listId: ''
   });
 
   const [showOnlyStarred, setShowOnlyStarred] = useState(() => {
@@ -599,6 +608,19 @@ function App() {
       setLoading(false);
     });
 
+    const unsubscribeLists = onSnapshot(collection(db, 'customLists'), (snapshot) => {
+      const listsData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setCustomLists(listsData);
+    });
+
+    return () => {
+      unsubscribeWords();
+      unsubscribeLists();
+    };
+
     const qTests = query(collection(db, 'practice_tests'), orderBy('updatedAt', 'desc'));
     const unsubscribeTests = onSnapshot(qTests, (snapshot) => {
       const testsData = snapshot.docs.map(doc => ({
@@ -752,6 +774,130 @@ function App() {
       } catch (err) {
         console.error('Sticky not silinemedi:', err);
       }
+    }
+  };
+
+  // --- Custom List Handlers ---
+  const handleCreateList = async (name) => {
+    if (!name.trim()) return;
+    try {
+      if (!isConfigMissing) {
+        const docRef = await addDoc(collection(db, 'customLists'), {
+          name: name.trim(),
+          wordIds: [],
+          createdAt: new Date().toISOString()
+        });
+        return docRef.id;
+      } else {
+        const newId = Date.now().toString();
+        setCustomLists(prev => [...prev, { id: newId, name: name.trim(), wordIds: [], createdAt: new Date().toISOString() }]);
+        return newId;
+      }
+    } catch (e) {
+      console.error("Liste oluşturulamadı:", e);
+      Swal.fire({ icon: 'error', title: 'Hata', text: 'Liste oluşturulurken bir sorun oluştu.' });
+    }
+  };
+
+  const handleUpdateList = async (listId, name) => {
+    if (!name.trim()) return;
+    try {
+      if (!isConfigMissing) {
+        await updateDoc(doc(db, 'customLists', listId), {
+          name: name.trim()
+        });
+      } else {
+        setCustomLists(prev => prev.map(l => l.id === listId ? { ...l, name: name.trim() } : l));
+      }
+    } catch (e) {
+      console.error("Liste güncellenemedi:", e);
+    }
+  };
+
+  const handleDeleteList = async (listId) => {
+    const listToDelete = customLists.find(l => l.id === listId);
+    const result = await Swal.fire({
+      title: 'Emin misiniz?',
+      text: `"${listToDelete?.name}" listesi silinecek. İçindeki kelimeler sözlükten silinmez, sadece bu listeden kalkar.`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#d33',
+      cancelButtonColor: '#3085d6',
+      confirmButtonText: 'Evet, sil!',
+      cancelButtonText: 'İptal'
+    });
+
+    if (result.isConfirmed) {
+      try {
+        if (!isConfigMissing) {
+          await deleteDoc(doc(db, 'customLists', listId));
+        } else {
+          setCustomLists(prev => prev.filter(l => l.id !== listId));
+        }
+        if (currentListId === listId) {
+          setCurrentListId(null);
+          setCurrentView('home');
+        }
+      } catch (e) {
+        console.error("Liste silinemedi:", e);
+      }
+    }
+  };
+
+  const handleAddWordsToList = async (listId, wordIds) => {
+    try {
+      if (!isConfigMissing) {
+        const listDoc = await getDoc(doc(db, 'customLists', listId));
+        if (listDoc.exists()) {
+          const currentWordIds = listDoc.data().wordIds || [];
+          const updatedWordIds = [...new Set([...currentWordIds, ...wordIds])];
+          await updateDoc(doc(db, 'customLists', listId), {
+            wordIds: updatedWordIds
+          });
+          const listName = listDoc.data().name;
+          Swal.fire({
+            icon: 'success',
+            title: 'Başarılı',
+            text: `${wordIds.length} kelime "${listName}" listesine eklendi.`,
+            timer: 1500,
+            showConfirmButton: false
+          });
+        }
+      } else {
+        setCustomLists(prev => prev.map(l => {
+          if (l.id === listId) {
+            const updatedWordIds = [...new Set([...l.wordIds, ...wordIds])];
+            return { ...l, wordIds: updatedWordIds };
+          }
+          return l;
+        }));
+      }
+    } catch (e) {
+      console.error("Kelimeler listeye eklenemedi:", e);
+    }
+  };
+
+  const handleRemoveWordFromList = async (listId, wordId) => {
+    try {
+      if (!isConfigMissing) {
+        const listDoc = await getDoc(doc(db, 'customLists', listId));
+        if (listDoc.exists()) {
+          const currentWordIds = listDoc.data().wordIds || [];
+          const updatedWordIds = currentWordIds.filter(id => id !== wordId);
+          await updateDoc(doc(db, 'customLists', listId), {
+            wordIds: updatedWordIds
+          });
+        }
+      } else {
+        setCustomLists(prev => prev.map(l => {
+          if (l.id === listId) {
+            return { ...l, wordIds: l.wordIds.filter(id => id !== wordId) };
+          }
+          return l;
+        }));
+      }
+    } catch (e) {
+      console.error("Kelime listeden çıkarılamadı:", e);
     }
   };
 
@@ -1046,6 +1192,18 @@ function App() {
       return;
     }
 
+    if (bulkActionType === 'list') {
+      if (!bulkListId) {
+        Swal.fire({ icon: 'warning', title: 'Uyarı', text: 'Lütfen bir liste seçin veya yeni bir tane oluşturun.' });
+        return;
+      }
+      await handleAddWordsToList(bulkListId, selectedWords);
+      setSelectedWords([]);
+      setIsSelectionMode(false);
+      setShowBulkEditModal(false);
+      return;
+    }
+
     try {
       const updates = {};
       if (bulkActionType === 'status') updates.learningStatus = bulkStatusValue;
@@ -1164,6 +1322,19 @@ function App() {
         }
       }
     }
+
+    if (filters.listId) {
+      if (filters.listId === 'all_listed') {
+        const isListed = customLists.some(l => l.wordIds?.includes(word.id));
+        if (!isListed) return false;
+      } else {
+        const selectedList = customLists.find(l => l.id === filters.listId);
+        if (selectedList && !selectedList.wordIds?.includes(word.id)) {
+          return false;
+        }
+      }
+    }
+
     return true;
   });
 
@@ -1239,6 +1410,19 @@ function App() {
         }
       }
     }
+
+    if (filters.listId) {
+      if (filters.listId === 'all_listed') {
+        const isListed = customLists.some(l => l.wordIds?.includes(word.id));
+        if (!isListed) return false;
+      } else {
+        const selectedList = customLists.find(l => l.id === filters.listId);
+        if (selectedList && !selectedList.wordIds?.includes(word.id)) {
+          return false;
+        }
+      }
+    }
+
     return true;
   }).length;
 
@@ -1355,6 +1539,27 @@ function App() {
                   variant="outline-secondary"
                   className="rounded-circle d-flex align-items-center justify-content-center border-0 bg-body-secondary position-relative"
                   style={{ width: '40px', height: '40px', minWidth: '40px' }}
+                  onClick={() => setCurrentView('custom-lists')}
+                  title="Özel Listelerim"
+                >
+                  <i className="bi bi-collection-play-fill" style={{ fontSize: '18px', color: '#3b82f6' }}></i>
+                  {customLists.length > 0 && (
+                    <span
+                      className="position-absolute top-0 end-0 text-white fw-bold d-flex align-items-center justify-content-center"
+                      style={{
+                        width: '16px', height: '16px', borderRadius: '50%', fontSize: '9px',
+                        background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+                        transform: 'translate(2px, -2px)'
+                      }}
+                    >
+                      {customLists.length > 99 ? '99+' : customLists.length}
+                    </span>
+                  )}
+                </Button>
+                <Button
+                  variant="outline-secondary"
+                  className="rounded-circle d-flex align-items-center justify-content-center border-0 bg-body-secondary position-relative"
+                  style={{ width: '40px', height: '40px', minWidth: '40px' }}
                   onClick={() => setCurrentView('sticky-notes')}
                   title="Sticky Notlarım"
                 >
@@ -1437,7 +1642,7 @@ function App() {
                             title="Filtreyi Sıfırla"
                             onClick={(e) => {
                               e.stopPropagation();
-                              setFilters({ status: { Yeni: false, Öğreniyor: false, Öğrendi: false }, starred: { starred: false, unstarred: false }, startDate: '', endDate: '' });
+                              setFilters({ status: { Yeni: false, Öğreniyor: false, Öğrendi: false }, starred: { starred: false, unstarred: false }, startDate: '', endDate: '', listId: '' });
                             }}
                           >
                             <i className="bi bi-x-circle-fill"></i>
@@ -1450,6 +1655,46 @@ function App() {
                       <div className="d-flex align-items-center gap-2"><i className="bi bi-sort-down"></i> Sırala</div>
                       {sortRules.length > 0 && <Badge bg="primary" className="rounded-pill">{sortRules.length}</Badge>}
                     </Button>
+
+                    <Dropdown onSelect={id => setFilters({ ...filters, listId: id })} className="w-100">
+                      <Dropdown.Toggle 
+                        variant={filters.listId ? "primary" : "outline-primary"} 
+                        size="sm" 
+                        className="rounded-pill px-3 py-2 shadow-sm bg-body fw-medium d-flex align-items-center justify-content-between dropdown-toggle-no-caret"
+                        id="quick-list-dropdown-mobile"
+                      >
+                        <div className="d-flex align-items-center gap-2">
+                          <i className="bi bi-collection-play-fill text-primary"></i>
+                          <span>{
+                            filters.listId === 'all_listed' ? 'Tüm Listelerim' :
+                            filters.listId ? customLists.find(l => l.id === filters.listId)?.name : 
+                            'Listeye Göre Filtrele'
+                          }</span>
+                        </div>
+                        <i className="bi bi-chevron-down small opacity-50"></i>
+                      </Dropdown.Toggle>
+
+                      <Dropdown.Menu className="w-100 shadow-lg border-0 rounded-4 mt-2 overflow-hidden">
+                        <Dropdown.Item eventKey="" active={!filters.listId} className="py-3">
+                          <i className="bi bi-grid-fill me-2 opacity-50"></i> Tüm Sözlük
+                        </Dropdown.Item>
+                        <Dropdown.Item eventKey="all_listed" active={filters.listId === 'all_listed'} className="py-3 d-flex justify-content-between align-items-center">
+                          <div><i className="bi bi-collection-play-fill me-2 text-primary"></i> Tüm Listelerim</div>
+                          <Badge bg="primary" className="rounded-pill">
+                            {new Set(customLists.flatMap(l => l.wordIds || [])).size}
+                          </Badge>
+                        </Dropdown.Item>
+                        {customLists.length > 0 && <Dropdown.Divider className="m-0 border-opacity-10" />}
+                        <div style={{ maxHeight: '250px', overflowY: 'auto' }}>
+                          {customLists.map(list => (
+                            <Dropdown.Item key={list.id} eventKey={list.id} active={filters.listId === list.id} className="py-3 d-flex justify-content-between align-items-center">
+                              <span>{list.name}</span>
+                              <Badge bg="secondary" className="rounded-pill opacity-50">{list.wordIds?.length || 0}</Badge>
+                            </Dropdown.Item>
+                          ))}
+                        </div>
+                      </Dropdown.Menu>
+                    </Dropdown>
 
                     <Button variant={isSelectionMode ? "primary" : "outline-secondary"} size="sm" className="rounded-pill px-3 py-2 shadow-sm fw-medium d-flex align-items-center justify-content-between" onClick={() => { setIsSelectionMode(!isSelectionMode); setSelectedWords([]); }}>
                       <div className="d-flex align-items-center gap-2"><i className="bi bi-check2-square"></i> Seç</div>
@@ -1521,7 +1766,7 @@ function App() {
                         title="Filtreyi Sıfırla"
                         onClick={(e) => {
                           e.stopPropagation();
-                          setFilters({ status: { Yeni: false, Öğreniyor: false, Öğrendi: false }, starred: { starred: false, unstarred: false }, startDate: '', endDate: '' });
+                          setFilters({ status: { Yeni: false, Öğreniyor: false, Öğrendi: false }, starred: { starred: false, unstarred: false }, startDate: '', endDate: '', listId: '' });
                         }}
                       >
                         <i className="bi bi-x-circle-fill"></i>
@@ -1531,6 +1776,45 @@ function App() {
                   <Button variant="outline-primary" size="sm" className="rounded-pill px-3 shadow-sm bg-body fw-medium d-flex align-items-center gap-1 text-nowrap" onClick={() => setShowSortModal(true)}>
                     <i className="bi bi-sort-down me-1"></i> <span>Sırala</span> {sortRules.length > 0 && <Badge bg="primary" className="ms-1 rounded-pill">{sortRules.length}</Badge>}
                   </Button>
+
+                  {/* Quick List Switcher (Desktop) */}
+                  <Dropdown onSelect={id => setFilters({ ...filters, listId: id })}>
+                    <Dropdown.Toggle 
+                      variant={filters.listId ? "primary" : "outline-primary"} 
+                      size="sm" 
+                      className="rounded-pill px-3 shadow-sm fw-medium d-flex align-items-center gap-1 text-nowrap dropdown-toggle-no-caret"
+                      id="quick-list-dropdown-desktop"
+                    >
+                      <i className="bi bi-collection-play-fill"></i>
+                      <span>{
+                        filters.listId === 'all_listed' ? 'Tüm Listelerim' : 
+                        filters.listId ? customLists.find(l => l.id === filters.listId)?.name : 
+                        'Listelerim'
+                      }</span>
+                    </Dropdown.Toggle>
+
+                    <Dropdown.Menu className="shadow-lg border-0 rounded-4 mt-2 overflow-hidden animate-fade-in" style={{ minWidth: '220px' }}>
+                      <Dropdown.Item eventKey="" active={!filters.listId} className="py-2">
+                        <i className="bi bi-grid-fill me-2 opacity-50"></i> Tüm Sözlük
+                      </Dropdown.Item>
+                      <Dropdown.Item eventKey="all_listed" active={filters.listId === 'all_listed'} className="py-2 d-flex justify-content-between align-items-center">
+                        <div><i className="bi bi-collection-play-fill me-2 text-primary"></i> Tüm Listelerim</div>
+                        <Badge bg="primary" className="rounded-pill opacity-75" style={{ fontSize: '0.65rem' }}>
+                          {new Set(customLists.flatMap(l => l.wordIds || [])).size}
+                        </Badge>
+                      </Dropdown.Item>
+                      {customLists.length > 0 && <Dropdown.Divider className="my-1 border-opacity-10" />}
+                      <div style={{ maxHeight: '250px', overflowY: 'auto' }}>
+                        {customLists.map(list => (
+                          <Dropdown.Item key={list.id} eventKey={list.id} active={filters.listId === list.id} className="py-2 d-flex justify-content-between align-items-center">
+                            <span>{list.name}</span>
+                            <Badge bg="secondary" className="rounded-pill opacity-50" style={{ fontSize: '0.65rem' }}>{list.wordIds?.length || 0}</Badge>
+                          </Dropdown.Item>
+                        ))}
+                      </div>
+                      {customLists.length === 0 && <Dropdown.Item disabled className="text-muted small py-3 text-center italic">Henüz bir liste yok</Dropdown.Item>}
+                    </Dropdown.Menu>
+                  </Dropdown>
                   <Button variant={isSelectionMode ? "primary" : "outline-secondary"} size="sm" className="rounded-pill px-3 shadow-sm fw-medium d-flex align-items-center gap-1 text-nowrap" onClick={() => { setIsSelectionMode(!isSelectionMode); setSelectedWords([]); }}>
                     <i className="bi bi-check2-square me-1"></i> <span>Seç</span>
                   </Button>
@@ -2051,6 +2335,33 @@ function App() {
         />
       )}
 
+      {/* Custom Lists Page */}
+      {currentView === 'custom-lists' && (
+        <CustomListsPage
+          customLists={customLists}
+          handleCreateList={handleCreateList}
+          handleUpdateList={handleUpdateList}
+          handleDeleteList={handleDeleteList}
+          setCurrentView={setCurrentView}
+          setCurrentListId={setCurrentListId}
+          dailyStats={dailyStats}
+        />
+      )}
+
+      {/* List Detail Page */}
+      {currentView === 'list-detail' && (
+        <ListDetailPage
+          listId={currentListId}
+          customLists={customLists}
+          words={words}
+          handleRemoveWordFromList={handleRemoveWordFromList}
+          setCurrentView={setCurrentView}
+          onWordClick={setSelectedWord}
+          handleSpeak={handleSpeak}
+          dailyStats={dailyStats}
+        />
+      )}
+
       {/* MOBILE BOTTOM NAVIGATION BAR */}
       <div className="mobile-bottom-nav d-md-none">
           <button
@@ -2096,6 +2407,26 @@ function App() {
                 }}
               >
                 {stickyNotes.length > 99 ? '99+' : stickyNotes.length}
+              </span>
+            )}
+          </button>
+
+          <button 
+            className={`mobile-nav-item position-relative ${currentView === 'custom-lists' || currentView === 'list-detail' ? 'active' : ''}`} 
+            onClick={() => setCurrentView('custom-lists')}
+          >
+            <i className={currentView === 'custom-lists' || currentView === 'list-detail' ? "bi bi-collection-play-fill text-primary" : "bi bi-collection-play"} style={{ color: (currentView === 'custom-lists' || currentView === 'list-detail') ? '' : '#3b82f6' }}></i>
+            <span className={currentView === 'custom-lists' || currentView === 'list-detail' ? "text-primary fw-bold" : ""}>Listelerim</span>
+            {customLists.length > 0 && (
+              <span
+                className="position-absolute top-0 end-0 text-white fw-bold d-flex align-items-center justify-content-center"
+                style={{
+                  width: '16px', height: '16px', borderRadius: '50%', fontSize: '9px',
+                  background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+                  transform: 'translate(2px, 0px)'
+                }}
+              >
+                {customLists.length > 99 ? '99+' : customLists.length}
               </span>
             )}
           </button>
@@ -2226,6 +2557,27 @@ function App() {
             </Col>
           </Row>
 
+          <hr className="my-3 border-opacity-10" />
+          
+          <Form.Group className="mb-4 mt-2">
+            <Form.Label className="fw-medium text-muted small mb-2 text-uppercase letter-spacing-1 d-flex align-items-center gap-2">
+              <i className="bi bi-collection-play-fill text-primary"></i> Özel Liste Filtresi
+            </Form.Label>
+            <Form.Select 
+              value={filters.listId} 
+              onChange={e => setFilters({ ...filters, listId: e.target.value })}
+              className="bg-body-secondary border-0 rounded-3 shadow-none px-3 py-2 cursor-pointer transition-all"
+            >
+              <option value="">Tüm Sözlük (Hepsini Göster)</option>
+              <option value="all_listed">Tüm Listelerim (Sadece Listelenmiş Kelimeler)</option>
+              {customLists.map(list => (
+                <option key={list.id} value={list.id}>
+                  {list.name} ({list.wordIds?.length || 0} Kelime)
+                </option>
+              ))}
+            </Form.Select>
+          </Form.Group>
+
           {/* Quick date presets */}
           <div className="d-flex gap-2 flex-wrap mb-2">
             {[
@@ -2268,7 +2620,8 @@ function App() {
               status: { Yeni: false, Öğreniyor: false, Öğrendi: false },
               starred: { starred: false, unstarred: false },
               startDate: '',
-              endDate: ''
+              endDate: '',
+              listId: ''
             })}>Sıfırla</Button>
             <Button variant="primary" className="flex-grow-1 px-4 rounded-pill fw-bold" onClick={() => setShowFilterModal(false)}>
               Uygula
@@ -2383,6 +2736,7 @@ function App() {
                 { key: 'status', icon: 'bi-mortarboard', label: 'Öğrenme' },
                 { key: 'practice', icon: 'bi-controller', label: 'Test Çöz' },
                 { key: 'star', icon: 'bi-star', label: 'Yıldız' },
+                { key: 'list', icon: 'bi-collection-play', label: 'Listeye Ekle' },
                 { key: 'date', icon: 'bi-calendar', label: 'Tarih' },
                 { key: 'delete', icon: 'bi-trash', label: 'Sil', danger: true },
               ].map(({ key, icon, label, danger }) => (
@@ -2509,6 +2863,64 @@ function App() {
                       </div>
                     </div>
                   ))}
+                </div>
+              </>
+            )}
+
+            {/* Custom Lists */}
+            {bulkActionType === 'list' && (
+              <>
+                <p className="fw-medium text-muted small text-uppercase letter-spacing-1 mb-2">Liste Seçin</p>
+                <div className="d-flex flex-column gap-2 mb-3" style={{ maxHeight: '250px', overflowY: 'auto' }}>
+                  {customLists.length > 0 ? (
+                    customLists.map(list => (
+                      <div
+                        key={list.id}
+                        className={`d-flex justify-content-between align-items-center p-3 rounded-3 border border-2 cursor-pointer transition-all ${bulkListId === list.id ? 'border-primary bg-primary bg-opacity-10' : 'border-secondary border-opacity-10 bg-body'}`}
+                        onClick={() => setBulkListId(list.id)}
+                        style={{ cursor: 'pointer' }}
+                      >
+                        <div className="d-flex align-items-center gap-2">
+                          <i className={`bi ${bulkListId === list.id ? 'bi-check-circle-fill text-primary' : 'bi-circle text-muted'}`}></i>
+                          <span className="fw-bold">{list.name}</span>
+                        </div>
+                        <Badge bg="secondary" className="rounded-pill px-2" style={{ fontSize: '0.7rem' }}>
+                          {list.wordIds?.length || 0} Kelime
+                        </Badge>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-center py-3 text-muted border border-dashed rounded-3">
+                      Henüz bir liste oluşturmadınız.
+                    </div>
+                  )}
+                </div>
+
+                <div className="p-3 rounded-3 border border-2 border-dashed border-secondary border-opacity-25 bg-body-secondary mt-2">
+                  <p className="fw-medium text-muted small text-uppercase letter-spacing-1 mb-2">Veya Yeni Liste Oluştur</p>
+                  <InputGroup>
+                    <Form.Control
+                      placeholder="Yeni liste adı..."
+                      value={newListName}
+                      onChange={e => setNewListName(e.target.value)}
+                      className="bg-body border-0 shadow-none rounded-start-pill ps-3"
+                    />
+                    <Button
+                      variant="primary"
+                      className="rounded-end-pill px-3"
+                      disabled={!newListName.trim()}
+                      onClick={async (e) => {
+                        e.preventDefault();
+                        const id = await handleCreateList(newListName);
+                        if (id) {
+                          setBulkListId(id);
+                          setNewListName('');
+                        }
+                      }}
+                    >
+                      <i className="bi bi-plus-lg"></i>
+                    </Button>
+                  </InputGroup>
                 </div>
               </>
             )}

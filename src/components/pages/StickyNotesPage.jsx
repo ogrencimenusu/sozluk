@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Container, Row, Col, Card, Form, Button } from 'react-bootstrap';
 import PageHeader from '../layout/PageHeader';
 
@@ -18,6 +18,15 @@ const StickyNotesPage = ({
   setCurrentView,
   dailyStats
 }) => {
+  const [justUpdatedNoteId, setJustUpdatedNoteId] = useState(null);
+
+  const handleUpdateWithFeedback = (noteId, text, wordId, wordTerm) => {
+    handleUpdateNote(noteId, text, wordId, wordTerm);
+    setJustUpdatedNoteId(noteId);
+    setTimeout(() => setJustUpdatedNoteId(null), 3000);
+    setEditingNoteId(null);
+  };
+
   return (
     <Container fluid className="main-app-container animation-fade-in" style={{ animation: 'fadeIn 0.3s ease-in-out' }}>
       <PageHeader 
@@ -86,7 +95,10 @@ const StickyNotesPage = ({
                       const isValidDate = noteDate instanceof Date && !isNaN(noteDate);
                       
                       return (
-                        <div key={note.id} className="sticky-note-list-item d-flex align-items-start gap-3 p-3 overflow-hidden">
+                        <div 
+                          key={note.id} 
+                          className={`sticky-note-list-item d-flex align-items-start gap-3 p-3 overflow-hidden ${justUpdatedNoteId === note.id ? 'just-updated' : ''}`}
+                        >
                           <div className="sticky-note-list-pin flex-shrink-0">
                             <i className="bi bi-pin-angle-fill"></i>
                           </div>
@@ -115,6 +127,14 @@ const StickyNotesPage = ({
                                     e.target.style.height = 'auto';
                                     e.target.style.height = e.target.scrollHeight + 'px';
                                   }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter' && !e.shiftKey) {
+                                      e.preventDefault();
+                                      handleUpdateWithFeedback(note.id, inlineEditingText, note.wordId, note.wordTerm);
+                                    } else if (e.key === 'Escape') {
+                                      setEditingNoteId(null);
+                                    }
+                                  }}
                                   ref={(tag) => {
                                     if (tag) {
                                       tag.style.height = 'auto';
@@ -136,7 +156,7 @@ const StickyNotesPage = ({
                                     variant="warning"
                                     size="sm"
                                     className="rounded-pill px-4 fw-bold text-dark shadow-sm"
-                                    onClick={() => handleUpdateNote(note.id, inlineEditingText, note.wordId, note.wordTerm)}
+                                    onClick={() => handleUpdateWithFeedback(note.id, inlineEditingText, note.wordId, note.wordTerm)}
                                   >
                                     Kaydet
                                   </Button>
