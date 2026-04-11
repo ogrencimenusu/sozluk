@@ -1,11 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useImperativeHandle, forwardRef } from 'react';
 import PracticeTestOptions from './PracticeTestOptions';
 import PracticeTestActive from './PracticeTestActive';
 import PracticeTestMatchPairs from './PracticeTestMatchPairs';
 import Swal from 'sweetalert2';
 import { levenshteinDistance } from '../../utils/stringUtils';
 
-function PracticeTestContainer({ words, onCancel, savedOptions, onSaveOptions, onUpdateStage, onToggleStar, onDelete, onEdit, initialConfig, onLogTestResults, dailyStats, practiceTests, onSaveTest, onDeleteTest, onDeleteAllTests }) {
+const PracticeTestContainer = forwardRef((props, ref) => {
+    const { 
+        words, onCancel, savedOptions, onSaveOptions, 
+        onUpdateStage, onToggleStar, onDelete, onEdit, 
+        initialConfig, onLogTestResults, dailyStats, 
+        practiceTests, onSaveTest, onDeleteTest, onDeleteAllTests 
+    } = props;
+
     const [testState, setTestState] = useState('options'); // 'options' | 'running' | 'results'
     const [questions, setQuestions] = useState([]);
     const [lastConfig, setLastConfig] = useState(null);
@@ -19,6 +26,17 @@ function PracticeTestContainer({ words, onCancel, savedOptions, onSaveOptions, o
             handleStart(initialConfig);
         }
     }, [initialConfig]);
+
+    // Expose goBack to parent
+    useImperativeHandle(ref, () => ({
+        goBack: () => {
+            if (testState === 'running') {
+                handleCloseTest();
+                return true; // Handled internally
+            }
+            return false; // Not handled, parent should handle
+        }
+    }));
 
     // Generate Questions when starting
     const handleStart = async (config) => {
@@ -381,7 +399,7 @@ function PracticeTestContainer({ words, onCancel, savedOptions, onSaveOptions, o
             {testState === 'options' && (
                 <PracticeTestOptions
                     maxQuestions={words.length}
-                    words={words} // Pass full words array for dynamic counting
+                    words={words}
                     onStart={handleStart}
                     onCancel={onCancel}
                     savedOptions={savedOptions}
@@ -427,6 +445,6 @@ function PracticeTestContainer({ words, onCancel, savedOptions, onSaveOptions, o
             )}
         </div>
     );
-}
+});
 
 export default PracticeTestContainer;

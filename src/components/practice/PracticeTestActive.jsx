@@ -766,63 +766,13 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
 
     return (
         <>
-            <Container fluid className="py-4 h-100 bg-body">
-                <div className="d-flex justify-content-between align-items-center mb-4 px-md-4 sticky-top bg-body py-2 z-index-10 border-bottom border-secondary border-opacity-25 pb-3">
-                    <div className="d-flex align-items-center gap-2">
-                        <img src="/iconv2.png" alt="Sözlük Logo" style={{ width: '32px', height: '32px', objectFit: 'contain' }} />
-                        <span className="fw-bold fs-5 text-body d-none d-md-inline">Sözlük</span>
-                    </div>
-                    <div className="d-flex align-items-center gap-3">
-                        {dailyStats && <DailyGoalTracker dailyStats={dailyStats} />}
-                        <div className="bg-body-tertiary border border-secondary border-opacity-50 rounded-pill px-3 py-1 text-body fw-bold d-flex align-items-center gap-2" title="Soru Sayısı">
-                            <i className="bi bi-pencil-fill text-info"></i> {questions.length}
-                        </div>
-                        {initialTestState?.config?.advancedOptions?.comboStreak && (
-                            <div className="bg-body-tertiary border border-warning border-opacity-50 rounded-pill px-3 py-1 text-body fw-bold d-flex align-items-center gap-2 position-relative" title="Seri">
-                                <i className="bi bi-fire text-warning"></i> {currentStreak}
-                                <span className="vr mx-1" style={{ width: '2px' }}></span>
-                                <span className={`small ${comboTimer <= 3 && comboTimer > 0 ? 'text-danger' : 'text-body-secondary'}`}>{comboTimer}s</span>
-                                {streakAnimParams.show && (
-                                    <span key={streakAnimParams.key} className="position-absolute translate-middle badge rounded-pill bg-danger text-light pb-1 px-2 pointer-events-none" style={{ top: '-1px', left: '100%', fontSize: '0.65rem', animation: 'bounceUp 1s ease-out forwards', zIndex: 100 }}>
-                                        +10s
-                                    </span>
-                                )}
-                            </div>
-                        )}
-                        {initialTestState?.config?.advancedOptions?.timeSurvival && timeLeft !== null && (
-                            <div className={`bg-body-tertiary border ${timeLeft < 10 && !completed ? 'border-danger text-danger' : 'border-success border-opacity-50'} rounded-pill px-3 py-1 text-body fw-bold d-flex align-items-center gap-2 position-relative`} title="Kalan Süre">
-                                <i className="bi bi-stopwatch-fill"></i> {timeLeft}s
-                                {addedTimeParams.show && (
-                                    <span key={addedTimeParams.key} className="position-absolute translate-middle badge rounded-pill text-success fw-bold pointer-events-none fs-6" style={{ top: '-5px', left: '90%', animation: 'floatUp 1s ease-out forwards', backgroundColor: 'transparent', zIndex: 100 }}>
-                                        +{addedTimeParams.val}s
-                                    </span>
-                                )}
-                            </div>
-                        )}
-                        <style>{`
-                            @keyframes floatUp {
-                                0% { opacity: 1; transform: translateY(0); }
-                                80% { opacity: 1; transform: translateY(-15px); }
-                                100% { opacity: 0; transform: translateY(-20px); }
-                            }
-                            @keyframes bounceUp {
-                                0% { transform: scale(0.5); opacity: 0; }
-                                40% { transform: scale(1.4); opacity: 1; }
-                                80% { transform: scale(0.9); opacity: 1; }
-                                100% { transform: scale(1); opacity: 0; }
-                            }
-                        `}</style>
-                        <Button variant="outline-secondary" className="rounded-pill px-3 py-1 d-none d-md-block" onClick={handleOptions}>Seçenekler</Button>
-                        <Button variant="outline-secondary" className="rounded-circle d-flex align-items-center justify-content-center p-0" style={{ width: '36px', height: '36px' }} onClick={handleClose}>
-                            <i className="bi bi-x fs-5 text-body"></i>
-                        </Button>
-                    </div>
-                </div>
+            <Container fluid className="py-4 bg-body">
+                {/* Internal header removed to avoid redundancy with global PageHeader */}
 
-                <Row className="px-md-4 h-100 position-relative">
+                <Row className="px-md-4 position-relative">
                     {/* SIDEBAR: Question Navigation Map */}
-                    <Col md={3} lg={2} className="p-0 mb-4 mb-md-0 d-none d-md-block" style={{ position: 'sticky', top: '100px', height: 'fit-content' }}>
-                        <Card className="bg-body-tertiary border-secondary border-opacity-25 rounded-4 p-3 shadow-none text-body" style={{ maxHeight: 'calc(100vh - 160px)', overflowY: 'auto', scrollbarWidth: 'thin' }}>
+                    <Col md={3} lg={2} className="p-0 mb-4 mb-md-0 d-none d-md-block" style={{ position: 'sticky', top: '100px', height: 'fit-content', zIndex: 100 }}>
+                        <Card className="bg-body-tertiary border-secondary border-opacity-25 rounded-4 p-3 shadow-none text-body">
                             <div className="d-flex justify-content-between align-items-center mb-4">
                                 <span className="fw-bold">{showAnswersSummary ? 'Cevaplarım' : 'Sorular'}</span>
                                 <Button
@@ -1808,7 +1758,8 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                 }}
             />
 
-        </>);
+        </>
+    );
 }
 
 const StatusBadge = ({ isCorrect }) => {
@@ -1818,7 +1769,7 @@ const StatusBadge = ({ isCorrect }) => {
 
     return (
         <div className={`${bgClass} bg-opacity-25 rounded-pill px-3 py-1 d-flex align-items-center gap-2 fw-bold fs-6 border border-${isCorrect ? 'success' : 'danger'} border-opacity-50`}>
-            <i className={`bi ${icon} ${colorClass}`}></i> <span className={colorClass}>{status}</span>
+            <i className={`bi ${icon} ${colorClass}`}></i> <span className={colorClass}>{isCorrect ? 'Doğru' : 'Yanlış'}</span>
         </div>
     );
 };

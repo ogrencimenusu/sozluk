@@ -140,7 +140,7 @@ function DailyGoalTracker({ dailyStats }) {
           onClick={() => { setShowModal(true); setSelectedDate(todayStr); }}
         >
           <i className={`bi bi-fire ${isGoalReached ? 'text-white' : 'text-danger'}`} style={{ fontSize: '18px' }}></i>
-          <span className="d-none d-md-inline">{isGoalReached ? todayProgress : `${remaining} kaldı`}</span>
+          <span className="d-none d-lg-inline">{isGoalReached ? todayProgress : `${remaining} kaldı`}</span>
         </Button>
       </OverlayTrigger>
 

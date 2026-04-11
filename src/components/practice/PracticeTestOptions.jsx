@@ -145,15 +145,16 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
     };
 
     return (
-        <Container className="py-2 px-md-5 bg-body text-body">
-            <div className="d-flex justify-content-between align-items-center border-bottom border-secondary border-opacity-25 pb-2 mb-3 sticky-top bg-body py-2" style={{ zIndex: 10 }}>
-                <div className="d-flex align-items-center gap-3">
-                    <Button variant="link" className="p-0 text-muted" onClick={onCancel}>
+        <Container className="py-2 px-md-5 bg-body text-body px-3">
+            <div className="d-flex justify-content-between align-items-center border-bottom border-secondary border-opacity-25 pb-2 mb-3 sticky-top bg-body py-2 d-md-flex" style={{ zIndex: 10, top: '-1px' }}>
+                <div className="d-flex align-items-center gap-2 gap-md-3">
+                    <Button variant="link" className="p-0 text-muted d-md-none" onClick={onCancel} style={{ display: 'none' }}>
                         <i className="bi bi-arrow-left fs-4"></i>
                     </Button>
-                    <h2 className="fw-bold m-0 text-body">Test Seçenekleri</h2>
+                    <h4 className="fw-bold m-0 text-body d-none d-md-block">Test Seçenekleri</h4>
+                    <h5 className="fw-bold m-0 text-body d-md-none">Seçenekler</h5>
                 </div>
-                <Button variant="info" className="rounded-pill px-4 fw-bold" onClick={handleStart} style={{ backgroundColor: '#4fd1c5', color: '#1a202c', border: 'none', fontSize: '14px' }}>
+                <Button variant="info" className="rounded-pill px-3 px-md-4 py-2 fw-bold shadow-sm" onClick={handleStart} style={{ backgroundColor: '#4fd1c5', color: '#1a202c', border: 'none', fontSize: '13px' }}>
                     Teste Başla
                 </Button>
             </div>
@@ -162,8 +163,8 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
                 {practiceTests && practiceTests.length > 0 && (
                     <div className="mb-4 pb-3 border-bottom border-secondary border-opacity-25">
                         <div className="d-flex justify-content-between align-items-center mb-3">
-                            <h5 className="text-body fw-bold mb-0">Tamamlanmış & Devam Eden Testler</h5>
-                            <Button variant="outline-danger" size="sm" className="rounded-pill px-3 fw-bold" onClick={() => {
+                            <h6 className="text-body fw-bold mb-0">Tamamlanmış & Devam Eden Testler</h6>
+                            <Button variant="outline-danger" size="sm" className="rounded-pill px-2 py-1 fw-bold" style={{ fontSize: '11px' }} onClick={() => {
                                 Swal.fire({
                                     title: 'Tümünü Sil',
                                     text: 'Tüm sınav geçmişini silmek istediğinize emin misiniz? Bu işlem geri alınamaz.',
@@ -219,9 +220,9 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
                                     <button
                                         key={test.id}
                                         type="button"
-                                        className={`btn bg-body text-body rounded-4 px-3 py-2 fw-medium border text-nowrap d-flex align-items-center gap-3 flex-shrink-0 text-start ${borderClass}`}
+                                        className={`btn bg-body text-body rounded-4 px-2 py-1 fw-medium border text-nowrap d-flex align-items-center gap-2 flex-shrink-0 text-start ${borderClass}`}
                                         onClick={() => onResumeTest(test.id)}
-                                        style={{ fontSize: '14px', transition: 'all 0.2s', boxShadow: '0 2px 5px rgba(0,0,0,0.05)' }}
+                                        style={{ fontSize: '12px', transition: 'all 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}
                                     >
                                         <div className="d-flex flex-column" style={{ lineHeight: '1.4' }}>
                                             <div className="d-flex align-items-center gap-2">
@@ -263,11 +264,11 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
                 )}
 
                 <div className="mb-4 pb-3 border-bottom border-secondary border-opacity-25">
-                    <h5 className="text-body fw-bold mb-3">Test Uzunluğu</h5>
+                    <h6 className="text-body fw-bold mb-3">Test Uzunluğu</h6>
                     <div className="d-flex justify-content-between align-items-center">
                         <div>
-                            <span className="text-body">Soru Sayısı</span>
-                            <div className="text-muted mt-1" style={{ fontSize: '14px' }}>
+                            <span className="text-body small fw-medium">Soru Sayısı</span>
+                            <div className="text-muted mt-0" style={{ fontSize: '12px' }}>
                                 Seçili ayarlarla {availableWordsCount} kelime bulunuyor.
                                 {availableWordsCount > 0 && availableWordsCount < questionCount && (
                                     <span className="text-warning ms-1">Maksimum {availableWordsCount} soru çıkacak.</span>
@@ -282,7 +283,7 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
                                 max={Math.max(1, maxSelectableCount)}
                                 min={1}
                                 className="bg-transparent text-body text-center border-secondary border-opacity-50 rounded-pill"
-                                style={{ width: '80px', fontSize: '14px' }}
+                                style={{ width: '65px', fontSize: '13px', height: '32px' }}
                             />
                             <Button 
                                 variant="outline-secondary" 
@@ -299,7 +300,7 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
                 </div>
 
                 <div className="mb-4 pb-3 border-bottom border-secondary border-opacity-25">
-                    <h5 className="text-body fw-bold mb-3">Soru Tipleri</h5>
+                    <h6 className="text-body fw-bold mb-3">Soru Tipleri</h6>
                     <div className="d-flex justify-content-between align-items-center mb-3 text-body">
                         <span>Çoktan Seçmeli (4 Şık)</span>
                         <FormCheck
@@ -347,7 +348,7 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
                 </div>
 
                 <div className="mb-4 pb-3 border-bottom border-secondary border-opacity-25">
-                    <h5 className="text-body fw-bold mb-3">Soru Formatı</h5>
+                    <h6 className="text-body fw-bold mb-3">Soru Formatı</h6>
                     <div className="d-flex gap-2">
                         {[
                             { key: 'mixed', label: 'Karışık' },
@@ -358,9 +359,9 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
                                 key={key}
                                 type="button"
                                 variant={questionFormat === key ? 'primary' : 'outline-secondary'}
-                                className={`rounded-pill px-3 py-2 fw-medium flex-grow-1 border-opacity-50`}
+                                className={`rounded-pill px-2 py-1 fw-medium flex-grow-1 border-opacity-50`}
                                 onClick={() => setQuestionFormat(key)}
-                                style={{ fontSize: '14px' }}
+                                style={{ fontSize: '12px' }}
                             >
                                 {label}
                             </Button>
@@ -437,9 +438,9 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
                 </div>
 
                 <div className="mb-4">
-                    <h5 className="text-body fw-bold mb-3 d-flex align-items-center gap-2">
-                        Ekstra Zorlaştırıcı & Eğlenceli Modlar <i className="bi bi-fire text-danger"></i>
-                    </h5>
+                    <h6 className="text-body fw-bold mb-3 d-flex align-items-center gap-2">
+                        Ekstra Modlar <i className="bi bi-fire text-danger"></i>
+                    </h6>
                     
                     <div className="d-flex flex-column gap-3">
                         <div className={`p-3 border rounded-3 transition-all ${advancedOptions.fillInTheBlanks ? 'border-primary bg-primary bg-opacity-10' : 'border-secondary border-opacity-25'}`}>

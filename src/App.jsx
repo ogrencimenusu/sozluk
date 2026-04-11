@@ -18,6 +18,10 @@ import { Container, Row, Col, Card, Navbar, Form, Button, InputGroup, Modal, Bad
 import PracticeTestContainer from './components/practice/PracticeTestContainer';
 import LearningStageBar from './components/LearningStageBar';
 import WordDetailModal from './components/practice/WordDetailModal';
+import PageHeader from './components/layout/PageHeader';
+import AddWordPage from './components/pages/AddWordPage';
+import StickyNotesPage from './components/pages/StickyNotesPage';
+import SettingsPage from './components/pages/SettingsPage';
 import DailyGoalTracker from './components/DailyGoalTracker';
 import Swal from 'sweetalert2';
 
@@ -249,6 +253,8 @@ function App() {
       return false;
     }
   });
+  
+  const practiceTestRef = useRef();
 
   const [selectedWords, setSelectedWords] = useState(() => {
     try {
@@ -828,7 +834,7 @@ function App() {
       setSelectedDate(new Date().toISOString().split('T')[0]);
     }
 
-    setIsModalOpen(true);
+    setCurrentView('add-word');
   };
 
   const handleSubmit = async (e) => {
@@ -921,7 +927,7 @@ function App() {
   };
 
   const closeModal = () => {
-    setIsModalOpen(false);
+    setCurrentView('home');
     setTermText('');
     setSelectedDate(new Date().toISOString().split('T')[0]);
     setEditingWordId(null);
@@ -1288,9 +1294,10 @@ function App() {
           </div>
         );
       })()}
+      {currentView === 'home' && (
       <Container fluid className="main-app-container">
             <Navbar className="glass-navbar border border-opacity-25 rounded-4 mb-4 px-2 px-md-4 py-2 py-md-3 shadow-sm d-flex flex-row align-items-center justify-content-between flex-nowrap bg-body-tertiary sticky-top" style={{ top: '10px', zIndex: 1020 }}>
-              <Navbar.Brand className="d-flex align-items-center gap-2 m-0 p-0 h1 fs-4 fw-bold">
+              <Navbar.Brand className="d-flex align-items-center gap-2 m-0 p-0 h1 fs-4 fw-bold flex-shrink-0">
                 <img src="/iconv2.png" alt="Sözlük Logo" style={{ width: '36px', height: '36px', objectFit: 'contain' }} />
 
               </Navbar.Brand>
@@ -1333,19 +1340,22 @@ function App() {
                 </InputGroup.Text>
               </InputGroup>
 
-              <div className="d-none d-md-flex gap-2">
+              <div className="ms-1 me-1 flex-shrink-0">
                 <DailyGoalTracker dailyStats={dailyStats} />
+              </div>
+
+              <div className="d-none d-md-flex gap-2 flex-shrink-0">
                 <Button variant="info" className="rounded-pill d-flex align-items-center justify-content-center gap-2 px-3 fw-bold shadow-sm text-dark text-nowrap" style={{ backgroundColor: '#4fd1c5', border: 'none', height: '40px' }} onClick={() => setCurrentView('practice-test')}>
-                  <i className="bi bi-controller" style={{ fontSize: '20px' }}></i> <span className="d-none d-md-inline">Test Çöz</span>
+                  <i className="bi bi-controller" style={{ fontSize: '20px' }}></i> <span className="d-none d-lg-inline">Test Çöz</span>
                 </Button>
-                <Button variant="primary" className="rounded-pill d-flex align-items-center justify-content-center gap-2 px-3 fw-semibold shadow-sm text-nowrap" style={{ minWidth: '40px', height: '40px' }} onClick={() => setIsModalOpen(true)}>
-                  <i className="bi bi-plus-lg" style={{ fontSize: '20px' }}></i> <span className="d-none d-md-inline">Yeni Kelime</span>
+                <Button variant="primary" className="rounded-pill d-flex align-items-center justify-content-center gap-2 px-3 fw-semibold shadow-sm text-nowrap" style={{ minWidth: '40px', height: '40px' }} onClick={() => setCurrentView('add-word')}>
+                  <i className="bi bi-plus-lg" style={{ fontSize: '20px' }}></i> <span className="d-none d-lg-inline">Yeni Kelime</span>
                 </Button>
                 <Button
                   variant="outline-secondary"
                   className="rounded-circle d-flex align-items-center justify-content-center border-0 bg-body-secondary position-relative"
                   style={{ width: '40px', height: '40px', minWidth: '40px' }}
-                  onClick={() => setShowStickyNotesModal(true)}
+                  onClick={() => setCurrentView('sticky-notes')}
                   title="Sticky Notlarım"
                 >
                   <i className="bi bi-pin-angle-fill" style={{ fontSize: '18px', color: '#f59e0b' }}></i>
@@ -1362,41 +1372,13 @@ function App() {
                     </span>
                   )}
                 </Button>
-                <Button variant="outline-secondary" className="rounded-circle d-flex align-items-center justify-content-center border-0 bg-body-secondary" style={{ width: '40px', height: '40px', minWidth: '40px' }} onClick={toggleTheme} title="Tema Değiştir">
-                  {theme === 'light' ? <i className="bi bi-moon-fill" style={{ fontSize: '20px' }}></i> : <i className="bi bi-sun-fill" style={{ fontSize: '20px' }}></i>}
+                <Button variant="outline-secondary" className="rounded-circle d-flex align-items-center justify-content-center border-0 bg-body-secondary text-body" style={{ width: '40px', height: '40px', minWidth: '40px' }} onClick={() => setCurrentView('settings')} title="Ayarlar">
+                  <i className="bi bi-gear-fill" style={{ fontSize: '20px' }}></i>
                 </Button>
-              </div>
-
-              {/* Mobile Only: Quick Tracker */}
-              <div className="d-md-none me-1">
-                <DailyGoalTracker dailyStats={dailyStats} />
               </div>
             </Navbar>
 
-            {currentView === 'practice-test' ? (
-              <PracticeTestContainer
-                words={directPracticeWords || words}
-                initialConfig={directPracticeConfig}
-                onCancel={() => {
-                  setCurrentView('home');
-                  setDirectPracticeConfig(null);
-                  setDirectPracticeWords(null);
-                }}
-                savedOptions={practiceOptions}
-                onSaveOptions={setPracticeOptions}
-                onUpdateStage={handleUpdateStage}
-                onToggleStar={handleToggleStar}
-                onDelete={handleDelete}
-                onEdit={handleEdit}
-                onLogTestResults={handleLogTestResults}
-                dailyStats={dailyStats}
-                practiceTests={practiceTests}
-                onSaveTest={handleSaveTest}
-                onDeleteTest={handleDeleteTest}
-                onDeleteAllTests={handleDeleteAllTests}
-              />
-            ) : (
-              <>
+
                 <div className="mb-4 px-2">
                 {/* Mobile View: Selection Tools (Filters removed from here) */}
                 <div className="d-flex justify-content-end align-items-center mb-2 d-md-none">
@@ -1675,7 +1657,7 @@ function App() {
                               {highlightText(
                                 word.shortMeanings,
                                 stickyNotes.filter(n => n.wordId === word.id).map(n => n.text),
-                                () => setShowStickyNotesModal(true)
+                                () => setCurrentView('sticky-notes')
                               )}
                             </Card.Text>
                           )}
@@ -1686,7 +1668,7 @@ function App() {
                               {highlightText(
                                 word.generalDefinition,
                                 stickyNotes.filter(n => n.wordId === word.id).map(n => n.text),
-                                () => setShowStickyNotesModal(true)
+                                () => setCurrentView('sticky-notes')
                               )}
                             </Card.Text>
                           )}
@@ -1696,7 +1678,7 @@ function App() {
                               <strong className="small text-body opacity-75 d-block mb-1">Anlamları ve Örnek Cümleler:</strong>
                               {word.meanings.map((meaning, mIdx) => {
                                 const hl = stickyNotes.filter(n => n.wordId === word.id).map(n => n.text);
-                                const openNotes = () => setShowStickyNotesModal(true);
+                                const openNotes = () => setCurrentView('sticky-notes');
                                 return (
                                   <div key={mIdx} className="mb-2 ps-2 border-start border-2 border-primary border-opacity-25">
                                     <div className="small fw-medium text-body d-flex align-items-start gap-1">
@@ -1767,7 +1749,7 @@ function App() {
                                         {highlightText(
                                           g,
                                           stickyNotes.filter(n => n.wordId === word.id).map(n => n.text),
-                                          () => setShowStickyNotesModal(true)
+                                          () => setCurrentView('sticky-notes')
                                         )}
                                       </span>
                                     </li>
@@ -1801,14 +1783,14 @@ function App() {
                                           {highlightText(
                                             parts[0]?.trim(),
                                             stickyNotes.filter(n => n.wordId === word.id).map(n => n.text),
-                                            () => setShowStickyNotesModal(true)
+                                            () => setCurrentView('sticky-notes')
                                           )}
                                         </span>
                                         {parts[1] && (
                                           <span className="ms-1 fst-italic">— {highlightText(
                                             parts[1].trim(),
                                             stickyNotes.filter(n => n.wordId === word.id).map(n => n.text),
-                                            () => setShowStickyNotesModal(true)
+                                            () => setCurrentView('sticky-notes')
                                           )}</span>
                                         )}
                                       </div>
@@ -1858,7 +1840,7 @@ function App() {
                                         {highlightText(
                                           t,
                                           stickyNotes.filter(n => n.wordId === word.id).map(n => n.text),
-                                          () => setShowStickyNotesModal(true)
+                                          () => setCurrentView('sticky-notes')
                                         )}
                                       </span>
                                     </li>
@@ -1960,9 +1942,114 @@ function App() {
                 </div>
               )}
             </main>
-          </>
-        )}
+          
+        
       </Container>
+      )}
+
+      
+      
+      {/* Practice Test Page */}
+      {currentView === 'practice-test' && (
+        <Container fluid className="main-app-container">
+          <PageHeader 
+            title="Test Çöz" 
+            icon="bi-controller" 
+            onBack={() => {
+              if (practiceTestRef.current) {
+                const handled = practiceTestRef.current.goBack();
+                if (!handled) {
+                  setCurrentView('home');
+                }
+              } else {
+                setCurrentView('home');
+              }
+            }} 
+            dailyStats={dailyStats}
+          />
+          <PracticeTestContainer
+            ref={practiceTestRef}
+            words={directPracticeWords || words}
+            initialConfig={directPracticeConfig}
+            onCancel={() => {
+              setCurrentView('home');
+              setDirectPracticeConfig(null);
+              setDirectPracticeWords(null);
+            }}
+            savedOptions={practiceOptions}
+            onSaveOptions={setPracticeOptions}
+            onUpdateStage={handleUpdateStage}
+            onToggleStar={handleToggleStar}
+            onDelete={handleDelete}
+            onEdit={handleEdit}
+            onLogTestResults={handleLogTestResults}
+            dailyStats={dailyStats}
+            practiceTests={practiceTests}
+            onSaveTest={handleSaveTest}
+            onDeleteTest={handleDeleteTest}
+            onDeleteAllTests={handleDeleteAllTests}
+          />
+        </Container>
+      )}
+
+      {/* Add Word Page */}
+      {currentView === 'add-word' && (
+        <AddWordPage 
+          words={words}
+          templateType={templateType}
+          setTemplateType={setTemplateType}
+          templates={templates}
+          setShowTemplateExampleModal={setShowTemplateExampleModal}
+          learningStatus={learningStatus}
+          setLearningStatus={setLearningStatus}
+          selectedDate={selectedDate}
+          setSelectedDate={setSelectedDate}
+          termText={termText}
+          setTermText={setTermText}
+          parsedPreview={parsedPreview}
+          isSubmitting={isSubmitting}
+          handleSubmit={handleSubmit}
+          editingWordId={editingWordId}
+          theme={theme}
+          toggleTheme={toggleTheme}
+          setCurrentView={setCurrentView}
+          closeModal={closeModal}
+          onWordClick={setSelectedWord}
+          dailyStats={dailyStats}
+        />
+      )}
+
+      {/* Sticky Notes Page */}
+      {currentView === 'sticky-notes' && (
+        <StickyNotesPage
+          stickyNotes={stickyNotes}
+          manualNoteText={manualNoteText}
+          setManualNoteText={setManualNoteText}
+          handleAddNote={handleAddNote}
+          handleDeleteNote={handleDeleteNote}
+          editingNoteId={editingNoteId}
+          setEditingNoteId={setEditingNoteId}
+          inlineEditingText={inlineEditingText}
+          setInlineEditingText={setInlineEditingText}
+          handleUpdateNote={handleUpdateNote}
+          theme={theme}
+          toggleTheme={toggleTheme}
+          setCurrentView={setCurrentView}
+          dailyStats={dailyStats}
+        />
+      )}
+
+      {/* Settings Page */}
+      {currentView === 'settings' && (
+        <SettingsPage 
+          theme={theme}
+          toggleTheme={toggleTheme}
+          viewMode={viewMode}
+          setViewMode={setViewMode}
+          setCurrentView={setCurrentView}
+          dailyStats={dailyStats}
+        />
+      )}
 
       {/* MOBILE BOTTOM NAVIGATION BAR */}
       <div className="mobile-bottom-nav d-md-none">
@@ -1970,29 +2057,42 @@ function App() {
             className={`mobile-nav-item ${currentView === 'home' ? 'active' : ''}`}
             onClick={() => setCurrentView('home')}
           >
-            <i className="bi bi-house-door-fill"></i>
-            <span>Ana Sayfa</span>
+            <i className={currentView === 'home' ? "bi bi-house-door-fill text-primary" : "bi bi-house-door"}></i>
+            <span className={currentView === 'home' ? "text-primary fw-bold" : ""}>Ana Sayfa</span>
           </button>
           
-          <button className="mobile-nav-item" onClick={() => setCurrentView('practice-test')}>
-            <i className="bi bi-controller"></i>
-            <span>Test Çöz</span>
+          <button 
+            className={`mobile-nav-item ${currentView === 'practice-test' ? 'active' : ''}`} 
+            onClick={() => setCurrentView('practice-test')}
+          >
+            <i className={currentView === 'practice-test' ? "bi bi-controller text-primary" : "bi bi-controller"}></i>
+            <span className={currentView === 'practice-test' ? "text-primary fw-bold" : ""}>Test Çöz</span>
           </button>
 
-          <button className="mobile-nav-center-btn" onClick={() => setIsModalOpen(true)}>
+          <button 
+            className="mobile-nav-center-btn" 
+            onClick={() => {
+              setCurrentView('add-word');
+              setEditingWordId(null);
+              setTermText('');
+            }}
+          >
             <i className="bi bi-plus-lg"></i>
           </button>
 
-          <button className="mobile-nav-item position-relative" onClick={() => setShowStickyNotesModal(true)}>
-            <i className="bi bi-pin-angle-fill" style={{ color: '#f59e0b' }}></i>
-            <span>Notlarım</span>
+          <button 
+            className={`mobile-nav-item position-relative ${currentView === 'sticky-notes' ? 'active' : ''}`} 
+            onClick={() => setCurrentView('sticky-notes')}
+          >
+            <i className={currentView === 'sticky-notes' ? "bi bi-pin-angle-fill text-primary" : "bi bi-pin-angle"} style={{ color: currentView === 'sticky-notes' ? '' : '#f59e0b' }}></i>
+            <span className={currentView === 'sticky-notes' ? "text-primary fw-bold" : ""}>Notlarım</span>
             {stickyNotes.length > 0 && (
               <span
                 className="position-absolute top-0 end-0 text-white fw-bold d-flex align-items-center justify-content-center"
                 style={{
-                  width: '18px', height: '18px', borderRadius: '50%', fontSize: '9px',
+                  width: '16px', height: '16px', borderRadius: '50%', fontSize: '9px',
                   background: 'linear-gradient(135deg, #f59e0b, #d97706)',
-                  marginTop: '8px', marginRight: '8px'
+                  transform: 'translate(2px, 0px)'
                 }}
               >
                 {stickyNotes.length > 99 ? '99+' : stickyNotes.length}
@@ -2000,154 +2100,16 @@ function App() {
             )}
           </button>
 
-          <button className="mobile-nav-item" onClick={toggleTheme}>
-            {theme === 'light' ? <i className="bi bi-moon-fill"></i> : <i className="bi bi-sun-fill"></i>}
-            <span>Tema</span>
+          <button 
+            className={`mobile-nav-item ${currentView === 'settings' ? 'active' : ''}`} 
+            onClick={() => setCurrentView('settings')}
+          >
+            <i className={currentView === 'settings' ? "bi bi-gear-fill text-primary" : "bi bi-gear"}></i>
+            <span className={currentView === 'settings' ? "text-primary fw-bold" : ""}>Ayarlar</span>
           </button>
         </div>
 
-      {/* NEW WORD MODAL */}
-      <Modal show={isModalOpen} onHide={closeModal} size="lg" centered backdrop="static" contentClassName="bg-body-tertiary border border-opacity-25 rounded-4 shadow-lg" style={{ zIndex: 1060 }}>
-        <Form onSubmit={handleSubmit}>
-          <Modal.Header closeButton className="border-bottom border-opacity-10 pb-3">
-            <Modal.Title className="fs-3 fw-bold ps-2">{editingWordId ? "Kelime Şablonu Düzenle" : "Kelime Şablonu Ekle"}</Modal.Title>
-          </Modal.Header>
-          <Modal.Body className="p-4">
-            <Form.Group className="mb-4 d-flex flex-column flex-sm-row gap-3 px-2">
-              <div className="flex-grow-1">
-                <Form.Label className="mb-1 fw-semibold text-muted">Şablon Tipi</Form.Label>
-                <Form.Select
-                  value={templateType}
-                  onChange={e => setTemplateType(e.target.value)}
-                  className="bg-body-secondary border-0 px-3 py-2 rounded-3 shadow-none w-100"
-                >
-                  {templates.map(t => (
-                    <option key={t.id} value={t.id}>{t.name}</option>
-                  ))}
-                </Form.Select>
-              </div>
-              <div className="flex-shrink-0 d-flex align-items-end">
-                <Button
-                  variant="outline-info"
-                  className="mb-0 rounded-3"
-                  onClick={() => setShowTemplateExampleModal(true)}
-                  title="Şablon Örneğini Gör"
-                >
-                  <i className="bi bi-eye"></i> Örnek
-                </Button>
-              </div>
-              <div className="flex-grow-1">
-                <Form.Label className="mb-1 fw-semibold text-muted">Öğrenme Durumu</Form.Label>
-                <Form.Select
-                  value={learningStatus}
-                  onChange={e => setLearningStatus(e.target.value)}
-                  className="bg-body-secondary border-0 px-3 py-2 rounded-3 shadow-none w-100"
-                >
-                  <option value="Yeni">Yeni</option>
-                  <option value="Öğreniyor">Öğreniyor</option>
-                  <option value="Öğrendi">Öğrendi</option>
-                </Form.Select>
-              </div>
-              <div className="flex-grow-1">
-                <Form.Label className="mb-1 fw-semibold text-muted">Eklenme Tarihi</Form.Label>
-                <Form.Control
-                  type="date"
-                  value={selectedDate}
-                  onChange={e => setSelectedDate(e.target.value)}
-                  className="bg-body-secondary border-0 px-3 py-2 rounded-3 shadow-none w-100"
-                />
-              </div>
-            </Form.Group>
-
-            <Form.Group className="mb-2 px-2">
-              <div className="d-flex justify-content-between align-items-center mb-3">
-                <Form.Label className="fw-semibold text-muted mb-0">Şablonu Buraya Yapıştırın</Form.Label>
-                <Button
-                  variant="outline-primary"
-                  size="sm"
-                  className="rounded-pill px-3 shadow-sm fw-medium d-flex align-items-center gap-1"
-                  onClick={async () => {
-                    try {
-                      const text = await navigator.clipboard.readText();
-                      setTermText(prev => prev ? prev + '\n' + text : text);
-                    } catch (err) {
-                      console.error('Panodan okuma başarısız: ', err);
-                    }
-                  }}
-                >
-                  <i className="bi bi-clipboard"></i> Yapıştır
-                </Button>
-              </div>
-              <Form.Control
-                as="textarea"
-                rows={12}
-                value={termText}
-                onChange={e => setTermText(e.target.value)}
-                required
-                placeholder="Kelime: compromise&#10;Türkçe Okunuşu: kom-pro-mayz..."
-                className="font-monospace bg-body-secondary border-0 p-4 rounded-4 shadow-none fs-6"
-                style={{ resize: 'vertical' }}
-              />
-            </Form.Group>
-
-            {parsedPreview.length > 0 && (
-              <div className="px-2 mt-3">
-                <h6 className="fw-bold mb-2 text-muted">Araç Çıktısı ({parsedPreview.length} kelime)</h6>
-                <div className="d-flex flex-column gap-3" style={{ maxHeight: '250px', overflowY: 'auto' }}>
-                  {parsedPreview.map((item, idx) => (
-                    <div key={idx} className="bg-body-secondary p-3 rounded-4">
-                      <div className="fw-bold text-primary mb-2 border-bottom border-primary border-opacity-25 pb-1">
-                        {item.term || 'Bilinmeyen Kelime'}
-                      </div>
-                      <div className="d-flex flex-wrap gap-2" style={{ fontSize: '0.85em' }}>
-                        <span className={`badge bg-${item.pronunciation ? 'success' : 'danger'} bg-opacity-75 rounded-pill`}>
-                          Okunuşu {item.pronunciation ? <i className="bi bi-check-lg ms-1"></i> : <i className="bi bi-x-lg ms-1"></i>}
-                        </span>
-                        <span className={`badge bg-${item.shortMeanings ? 'success' : 'danger'} bg-opacity-75 rounded-pill`}>
-                          Kısa Anlam {item.shortMeanings ? <i className="bi bi-check-lg ms-1"></i> : <i className="bi bi-x-lg ms-1"></i>}
-                        </span>
-                        <span className={`badge bg-${item.generalDefinition ? 'success' : 'danger'} bg-opacity-75 rounded-pill`}>
-                          Genel Tanım {item.generalDefinition ? <i className="bi bi-check-lg ms-1"></i> : <i className="bi bi-x-lg ms-1"></i>}
-                        </span>
-                        <span className={`badge bg-${item.meanings.length > 0 ? 'success' : 'danger'} bg-opacity-75 rounded-pill`}>
-                          Anlamlar {item.meanings.length > 0 ? <i className="bi bi-check-lg ms-1"></i> : <i className="bi bi-x-lg ms-1"></i>}
-                        </span>
-                        <span className={`badge bg-${item.grammar.length > 0 ? 'success' : 'danger'} bg-opacity-75 rounded-pill`}>
-                          Gramer {item.grammar.length > 0 ? <i className="bi bi-check-lg ms-1"></i> : <i className="bi bi-x-lg ms-1"></i>}
-                        </span>
-                        <span className={`badge bg-${item.synonyms || item.antonyms ? 'success' : 'danger'} bg-opacity-75 rounded-pill`}>
-                          Eş/Zıt {item.synonyms || item.antonyms ? <i className="bi bi-check-lg ms-1"></i> : <i className="bi bi-x-lg ms-1"></i>}
-                        </span>
-                        <span className={`badge bg-${item.collocations.length > 0 ? 'success' : 'danger'} bg-opacity-75 rounded-pill`}>
-                          Edatlar {item.collocations.length > 0 ? <i className="bi bi-check-lg ms-1"></i> : <i className="bi bi-x-lg ms-1"></i>}
-                        </span>
-                        <span className={`badge bg-${item.idioms.length > 0 ? 'success' : 'danger'} bg-opacity-75 rounded-pill`}>
-                          Deyimler {item.idioms.length > 0 ? <i className="bi bi-check-lg ms-1"></i> : <i className="bi bi-x-lg ms-1"></i>}
-                        </span>
-                        <span className={`badge bg-${item.wordFamily.length > 0 ? 'success' : 'danger'} bg-opacity-75 rounded-pill`}>
-                          Aile {item.wordFamily.length > 0 ? <i className="bi bi-check-lg ms-1"></i> : <i className="bi bi-x-lg ms-1"></i>}
-                        </span>
-                        <span className={`badge bg-${item.tips.length > 0 ? 'success' : 'danger'} bg-opacity-75 rounded-pill`}>
-                          İpuçları {item.tips.length > 0 ? <i className="bi bi-check-lg ms-1"></i> : <i className="bi bi-x-lg ms-1"></i>}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </Modal.Body>
-          <Modal.Footer className="border-top border-opacity-10 pt-3 pb-3 pe-4">
-            <Button variant="secondary" onClick={closeModal} className="rounded-pill px-4 bg-body-secondary text-body border-0 shadow-sm fw-medium">
-              İptal
-            </Button>
-            <Button variant="primary" type="submit" disabled={isSubmitting} className="rounded-pill px-4 fw-semibold shadow-sm text-light">
-              {isSubmitting ? <><Spinner as="span" animation="border" size="sm" role="status" aria-hidden="true" className="me-2" />{editingWordId ? 'Güncelleniyor...' : 'Kaydediliyor...'}</> : (editingWordId ? 'Güncelle' : 'Ayrıştır ve Kaydet')}
-            </Button>
-          </Modal.Footer>
-        </Form>
-      </Modal>
-
+      
       {/* TEMPLATE EXAMPLE MODAL */}
       <Modal show={showTemplateExampleModal} onHide={() => setShowTemplateExampleModal(false)} size="lg" centered contentClassName="bg-body-tertiary border border-opacity-25 rounded-4 shadow-lg" style={{ zIndex: 1070 }}>
         <Modal.Header closeButton className="border-bottom border-opacity-10 pb-3">
@@ -2187,202 +2149,10 @@ function App() {
         onAddNote={handleAddNote}
         onDeleteNote={handleDeleteNote}
         stickyHighlights={selectedWord ? stickyNotes.filter(n => n.wordId === selectedWord.id).map(n => n.text) : []}
-        onOpenNotesModal={() => setShowStickyNotesModal(true)}
+        onOpenNotesModal={() => setCurrentView('sticky-notes')}
       />
 
-      {/* STICKY NOTES LIST MODAL */}
-      <Modal
-        show={showStickyNotesModal}
-        onHide={() => setShowStickyNotesModal(false)}
-        size="lg"
-        centered
-        scrollable
-        contentClassName="bg-body-tertiary border border-opacity-25 rounded-4 shadow-lg"
-      >
-        <Modal.Header className="border-bottom border-opacity-10 py-3 px-4 bg-body-tertiary">
-          <Modal.Title className="fs-5 fw-bold d-flex align-items-center gap-2">
-            <i className="bi bi-pin-angle-fill" style={{ color: '#f59e0b' }}></i>
-            Sticky Notlarım
-            {stickyNotes.length > 0 && (
-              <span
-                className="fw-bold text-white d-flex align-items-center justify-content-center"
-                style={{
-                  width: '22px', height: '22px', borderRadius: '50%', fontSize: '10px',
-                  background: 'linear-gradient(135deg, #f59e0b, #d97706)'
-                }}
-              >
-                {stickyNotes.length}
-              </span>
-            )}
-          </Modal.Title>
-          <div className="ms-auto d-flex align-items-center gap-3">
-            {stickyNotes.length > 0 && (
-              <Button
-                variant="outline-danger"
-                size="sm"
-                className="rounded-pill px-3 py-1 d-flex align-items-center gap-1 shadow-sm"
-                onClick={handleDeleteAllNotes}
-              >
-                <i className="bi bi-trash3"></i>
-                <span className="d-none d-sm-inline fw-semibold" style={{ fontSize: '13px' }}>Tümünü Sil</span>
-              </Button>
-            )}
-            <Button
-              variant="link"
-              className="p-1 text-body-secondary text-decoration-none"
-              onClick={() => setShowStickyNotesModal(false)}
-            >
-              <i className="bi bi-x-lg fs-5"></i>
-            </Button>
-          </div>
-        </Modal.Header>
-        <Modal.Body className="p-4 custom-scroll">
-          {/* Manuel Not Ekleme Alanı */}
-          <div className="mb-4 p-3 rounded-3 border border-opacity-25" style={{ background: 'rgba(245, 158, 11, 0.06)', borderColor: '#f59e0b' }}>
-            <label className="fw-semibold small text-body opacity-75 mb-2 d-block">
-              <i className="bi bi-pencil-fill me-1" style={{ color: '#f59e0b' }}></i>
-              Yeni Not Ekle
-            </label>
-            <Form.Control
-              as="textarea"
-              rows={3}
-              placeholder="Notunuzu buraya yazın..."
-              value={manualNoteText}
-              onChange={(e) => setManualNoteText(e.target.value)}
-              className="border-0 shadow-none bg-body-secondary mb-2 rounded-2"
-              style={{ resize: 'none', fontSize: '14px' }}
-            />
-            <div className="d-flex justify-content-end">
-              <Button
-                size="sm"
-                className="rounded-pill px-3 fw-semibold d-flex align-items-center gap-2"
-                style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)', border: 'none', color: '#fff' }}
-                disabled={!manualNoteText.trim()}
-                onClick={() => {
-                  handleAddNote(null, null, manualNoteText.trim());
-                  setManualNoteText('');
-                }}
-              >
-                <i className="bi bi-pin-angle-fill"></i>
-                Kaydet
-              </Button>
-            </div>
-          </div>
-
-          {/* Not Listesi */}
-          {stickyNotes.length === 0 ? (
-            <div className="text-center py-4">
-              <i className="bi bi-pin-angle text-muted opacity-25" style={{ fontSize: '3.5rem' }}></i>
-              <p className="text-muted mt-3 mb-0">
-                Henüz sticky not eklemediniz.<br />
-                <span className="small opacity-75">Kelime detayında bir metni seçip <strong>Sticky Not</strong> butonuna bas veya yukarıdan manuel ekle.</span>
-              </p>
-            </div>
-          ) : (
-            <div className="d-flex flex-column gap-3">
-              {stickyNotes.map((note) => {
-                const dateStr = note.createdAt
-                  ? (note.createdAt.toDate
-                    ? note.createdAt.toDate().toLocaleString('tr-TR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-                    : new Date(note.createdAt).toLocaleString('tr-TR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }))
-                  : '';
-                return (
-                  <div key={note.id} className="sticky-note-list-item d-flex align-items-start gap-3">
-                    {/* Left: pin icon */}
-                    <div className="sticky-note-list-pin flex-shrink-0">
-                      <i className="bi bi-pin-angle-fill"></i>
-                    </div>
-                    {/* Center: content */}
-                    <div className="flex-grow-1 min-w-0">
-                      <div className="sticky-note-list-word-tag mb-1">
-                        <i className="bi bi-journal-text me-1 opacity-50" style={{ fontSize: '0.7rem' }}></i>
-                        {note.wordTerm || '—'}
-                      </div>
-                      {editingNoteId === note.id ? (
-                        <div className="mb-2">
-                          <Form.Control
-                            as="textarea"
-                            ref={inlineNoteRef}
-                            value={inlineEditingText}
-                            onChange={(e) => setInlineEditingText(e.target.value)}
-                            className="border border-opacity-25 shadow-none bg-body-secondary mb-2 rounded-2"
-                            style={{ resize: 'none', fontSize: '14px', borderColor: '#f59e0b' }}
-                            autoFocus
-                          />
-                          <div className="d-flex justify-content-end gap-2">
-                            <Button
-                              variant="outline-secondary"
-                              size="sm"
-                              className="rounded-pill px-3 fw-semibold"
-                              style={{ fontSize: '12px' }}
-                              onClick={() => {
-                                setEditingNoteId(null);
-                                setInlineEditingText('');
-                              }}
-                            >
-                              İptal
-                            </Button>
-                            <Button
-                              size="sm"
-                              className="rounded-pill px-3 fw-semibold"
-                              style={{
-                                background: 'linear-gradient(135deg, #f59e0b, #d97706)',
-                                border: 'none',
-                                color: '#fff',
-                                fontSize: '12px'
-                              }}
-                              disabled={!inlineEditingText.trim()}
-                              onClick={() => {
-                                handleUpdateNote(note.id, inlineEditingText.trim());
-                                setEditingNoteId(null);
-                                setInlineEditingText('');
-                              }}
-                            >
-                              Kaydet
-                            </Button>
-                          </div>
-                        </div>
-                      ) : (
-                        <>
-                          <p className="sticky-note-list-text mb-1" style={{ whiteSpace: 'pre-wrap' }}>"{note.text}"</p>
-                          <span className="sticky-note-list-date">{dateStr}</span>
-                        </>
-                      )}
-                    </div>
-                    {/* Right: action buttons */}
-                    <div className="flex-shrink-0 d-flex flex-column gap-1">
-                      {note.wordId === null && editingNoteId !== note.id && (
-                        <Button
-                          variant="link"
-                          className="sticky-note-list-delete p-1"
-                          style={{ color: '#3b82f6' }}
-                          onClick={() => {
-                            setEditingNoteId(note.id);
-                            setInlineEditingText(note.text);
-                          }}
-                          title="Notu Düzenle"
-                        >
-                          <i className="bi bi-pencil-square"></i>
-                        </Button>
-                      )}
-                      {editingNoteId !== note.id && (
-                        <Button
-                          variant="link"
-                          className="sticky-note-list-delete p-1"
-                          onClick={() => handleDeleteNote(note.id)}
-                          title="Notu Sil"
-                        >
-                          <i className="bi bi-trash3"></i>
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </Modal.Body>
-      </Modal>
+      
 
       {/* FILTER MODAL */}
       <Modal show={showFilterModal} onHide={() => setShowFilterModal(false)} centered>
