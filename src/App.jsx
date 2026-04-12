@@ -282,8 +282,10 @@ function App() {
   const [showTemplateExampleModal, setShowTemplateExampleModal] = useState(false);
   const [showStickyNotesModal, setShowStickyNotesModal] = useState(false);
   const [manualNoteText, setManualNoteText] = useState('');
+  const [manualNoteTitle, setManualNoteTitle] = useState('');
   const [editingNoteId, setEditingNoteId] = useState(null);
   const [inlineEditingText, setInlineEditingText] = useState('');
+  const [inlineEditingTitle, setInlineEditingTitle] = useState('');
 
   // Custom Lists State
   const [customLists, setCustomLists] = useState([]);
@@ -707,7 +709,7 @@ function App() {
     }
   };
 
-  const handleAddNote = async (wordId, wordTerm, text) => {
+  const handleAddNote = async (wordId, wordTerm, text, title = '') => {
     if (!text || !text.trim()) return;
     try {
       if (!isConfigMissing) {
@@ -715,26 +717,52 @@ function App() {
           wordId: wordId || null,
           wordTerm: wordTerm || 'Manuel Not',
           text,
+          title: title || '',
+          isCompleted: false,
           createdAt: new Date()
         });
       } else {
-        const newNote = { id: Date.now().toString(), wordId: wordId || null, wordTerm: wordTerm || 'Manuel Not', text, createdAt: new Date() };
+        const newNote = { 
+          id: Date.now().toString(), 
+          wordId: wordId || null, 
+          wordTerm: wordTerm || 'Manuel Not', 
+          text, 
+          title: title || '',
+          isCompleted: false,
+          createdAt: new Date() 
+        };
         setStickyNotes(prev => [newNote, ...prev]);
       }
+      setManualNoteTitle(''); // Clear title after add
     } catch (err) {
       console.error('Sticky not eklenemedi:', err);
     }
   };
 
-  const handleUpdateNote = async (noteId, text) => {
+  const handleToggleNoteCompletion = async (noteId, currentStatus) => {
+    try {
+      if (!isConfigMissing) {
+        await updateDoc(doc(db, 'sticky_notes', noteId), {
+          isCompleted: !currentStatus
+        });
+      } else {
+        setStickyNotes(prev => prev.map(n => n.id === noteId ? { ...n, isCompleted: !currentStatus } : n));
+      }
+    } catch (err) {
+      console.error('Sticky not durumu güncellenemedi:', err);
+    }
+  };
+
+  const handleUpdateNote = async (noteId, text, title = '') => {
     if (!text || !text.trim()) return;
     try {
       if (!isConfigMissing) {
         await updateDoc(doc(db, 'sticky_notes', noteId), {
-          text
+          text,
+          title: title || ''
         });
       } else {
-        setStickyNotes(prev => prev.map(n => n.id === noteId ? { ...n, text } : n));
+        setStickyNotes(prev => prev.map(n => n.id === noteId ? { ...n, text, title: title || '' } : n));
       }
     } catch (err) {
       console.error('Sticky not güncellenemedi:', err);
@@ -781,12 +809,13 @@ function App() {
         const docRef = await addDoc(collection(db, 'customLists'), {
           name: name.trim(),
           wordIds: [],
-          createdAt: new Date().toISOString()
+          createdAt: new Date().toISOString(),
+          order: (customLists && customLists.length) ? customLists.length : 0
         });
         return docRef.id;
       } else {
         const newId = Date.now().toString();
-        setCustomLists(prev => [...prev, { id: newId, name: name.trim(), wordIds: [], createdAt: new Date().toISOString() }]);
+        setCustomLists(prev => [...prev, { id: newId, name: name.trim(), wordIds: [], createdAt: new Date().toISOString(), order: prev.length }]);
         return newId;
       }
     } catch (e) {
@@ -807,6 +836,38 @@ function App() {
       }
     } catch (e) {
       console.error("Liste güncellenemedi:", e);
+    }
+  };
+
+  const handleMoveList = async (listId, direction) => {
+    // Get current sorted state
+    const sorted = [...customLists].sort((a, b) => {
+      const orderA = a.order ?? Number.MAX_SAFE_INTEGER;
+      const orderB = b.order ?? Number.MAX_SAFE_INTEGER;
+      if (orderA !== orderB) return orderA - orderB;
+      return new Date(b.createdAt) - new Date(a.createdAt);
+    });
+
+    const currentIndex = sorted.findIndex(l => l.id === listId);
+    if (currentIndex === -1) return;
+
+    const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+    if (targetIndex < 0 || targetIndex >= sorted.length) return;
+
+    const newSorted = [...sorted];
+    const [movedItem] = newSorted.splice(currentIndex, 1);
+    newSorted.splice(targetIndex, 0, movedItem);
+
+    try {
+      if (!isConfigMissing) {
+        await Promise.all(newSorted.map((list, index) =>
+          updateDoc(doc(db, 'customLists', list.id), { order: index })
+        ));
+      } else {
+        setCustomLists(newSorted.map((list, index) => ({ ...list, order: index })));
+      }
+    } catch (e) {
+      console.error("Liste sıralanamadı:", e);
     }
   };
 
@@ -1682,7 +1743,12 @@ function App() {
                         </Dropdown.Item>
                         {customLists.length > 0 && <Dropdown.Divider className="m-0 border-opacity-10" />}
                         <div style={{ maxHeight: '250px', overflowY: 'auto' }}>
-                          {customLists.map(list => (
+                          {[...customLists].sort((a, b) => {
+                            const orderA = a.order ?? Number.MAX_SAFE_INTEGER;
+                            const orderB = b.order ?? Number.MAX_SAFE_INTEGER;
+                            if (orderA !== orderB) return orderA - orderB;
+                            return new Date(b.createdAt) - new Date(a.createdAt);
+                          }).map(list => (
                             <Dropdown.Item key={list.id} eventKey={list.id} active={filters.listId === list.id} className="py-3 d-flex justify-content-between align-items-center">
                               <span>{list.name}</span>
                               <Badge bg="secondary" className="rounded-pill opacity-50">{list.wordIds?.length || 0}</Badge>
@@ -1725,6 +1791,23 @@ function App() {
                         </Button>
                       );
                     })}
+
+                    {isSelectionMode && (
+                      <div className="d-none d-md-flex gap-2 align-items-center bg-primary bg-opacity-10 px-3 py-1 rounded-pill border border-primary border-opacity-25 animated fadeIn text-nowrap ms-auto">
+                        <Form.Check
+                          type="checkbox"
+                          id="select-all-desktop"
+                          label={<span className="fw-medium small d-none d-lg-inline">Tümünü Seç</span>}
+                          onChange={handleSelectAll}
+                          checked={filteredWords.length > 0 && selectedWords.length === filteredWords.length}
+                          className="me-2"
+                        />
+                        <span className="fw-bold text-primary small me-2">{selectedWords.length} <span className="d-none d-lg-inline">Seçili</span></span>
+                        <Button variant="primary" size="sm" className="rounded-pill px-3" disabled={selectedWords.length === 0} onClick={() => setShowBulkEditModal(true)}>
+                          İşlem Yap
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 </div>
               </Collapse>
@@ -2175,12 +2258,17 @@ function App() {
           stickyNotes={stickyNotes}
           manualNoteText={manualNoteText}
           setManualNoteText={setManualNoteText}
+          manualNoteTitle={manualNoteTitle}
+          setManualNoteTitle={setManualNoteTitle}
           handleAddNote={handleAddNote}
           handleDeleteNote={handleDeleteNote}
+          handleToggleNoteCompletion={handleToggleNoteCompletion}
           editingNoteId={editingNoteId}
           setEditingNoteId={setEditingNoteId}
           inlineEditingText={inlineEditingText}
           setInlineEditingText={setInlineEditingText}
+          inlineEditingTitle={inlineEditingTitle}
+          setInlineEditingTitle={setInlineEditingTitle}
           handleUpdateNote={handleUpdateNote}
           theme={theme}
           toggleTheme={toggleTheme}
@@ -2208,6 +2296,7 @@ function App() {
           handleCreateList={handleCreateList}
           handleUpdateList={handleUpdateList}
           handleDeleteList={handleDeleteList}
+          handleMoveList={handleMoveList}
           setCurrentView={setCurrentView}
           setCurrentListId={setCurrentListId}
           dailyStats={dailyStats}
@@ -2436,7 +2525,12 @@ function App() {
             >
               <option value="">Tüm Sözlük (Hepsini Göster)</option>
               <option value="all_listed">Tüm Listelerim (Sadece Listelenmiş Kelimeler)</option>
-              {customLists.map(list => (
+              {[...customLists].sort((a, b) => {
+                const orderA = a.order ?? Number.MAX_SAFE_INTEGER;
+                const orderB = b.order ?? Number.MAX_SAFE_INTEGER;
+                if (orderA !== orderB) return orderA - orderB;
+                return new Date(b.createdAt) - new Date(a.createdAt);
+              }).map(list => (
                 <option key={list.id} value={list.id}>
                   {list.name} ({list.wordIds?.length || 0} Kelime)
                 </option>
@@ -2739,13 +2833,18 @@ function App() {
                 <p className="fw-medium text-muted small text-uppercase letter-spacing-1 mb-2">Liste Seçin</p>
                 <div className="d-flex flex-column gap-2 mb-3" style={{ maxHeight: '250px', overflowY: 'auto' }}>
                   {customLists.length > 0 ? (
-                    customLists.map(list => (
-                      <div
-                        key={list.id}
-                        className={`d-flex justify-content-between align-items-center p-3 rounded-3 border border-2 cursor-pointer transition-all ${bulkListId === list.id ? 'border-primary bg-primary bg-opacity-10' : 'border-secondary border-opacity-10 bg-body'}`}
-                        onClick={() => setBulkListId(list.id)}
-                        style={{ cursor: 'pointer' }}
-                      >
+                  [...customLists].sort((a, b) => {
+                    const orderA = a.order ?? Number.MAX_SAFE_INTEGER;
+                    const orderB = b.order ?? Number.MAX_SAFE_INTEGER;
+                    if (orderA !== orderB) return orderA - orderB;
+                    return new Date(b.createdAt) - new Date(a.createdAt);
+                  }).map(list => (
+                    <div
+                      key={list.id}
+                      className={`d-flex justify-content-between align-items-center p-3 rounded-3 border border-2 cursor-pointer transition-all ${bulkListId === list.id ? 'border-primary bg-primary bg-opacity-10' : 'border-secondary border-opacity-10 bg-body'}`}
+                      onClick={() => setBulkListId(list.id)}
+                      style={{ cursor: 'pointer' }}
+                    >
                         <div className="d-flex align-items-center gap-2">
                           <i className={`bi ${bulkListId === list.id ? 'bi-check-circle-fill text-primary' : 'bi-circle text-muted'}`}></i>
                           <span className="fw-bold">{list.name}</span>

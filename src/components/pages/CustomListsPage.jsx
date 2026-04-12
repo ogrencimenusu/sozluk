@@ -7,6 +7,7 @@ const CustomListsPage = ({
   handleCreateList,
   handleUpdateList,
   handleDeleteList,
+  handleMoveList,
   setCurrentView,
   setCurrentListId,
   dailyStats
@@ -67,16 +68,27 @@ const CustomListsPage = ({
 
           {/* Liste Görünümü */}
           <Row className="g-4">
-            {customLists.length === 0 ? (
-              <Col xs={12}>
-                <div className="text-center py-5 bg-body-tertiary rounded-4 border border-dashed border-opacity-25 mt-2">
-                  <i className="bi bi-collection-play text-primary opacity-25 mb-3 d-block" style={{ fontSize: '4rem' }}></i>
-                  <h5 className="fw-bold">Henüz hiç liste oluşturmadınız</h5>
-                  <p className="text-muted">Kelimelerinizi anlamlı gruplara ayırmak için hemen bir liste oluşturun.</p>
-                </div>
-              </Col>
-            ) : (
-              [...customLists].sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt)).map((list) => (
+            {(() => {
+              const sortedLists = [...customLists].sort((a, b) => {
+                const orderA = a.order ?? Number.MAX_SAFE_INTEGER;
+                const orderB = b.order ?? Number.MAX_SAFE_INTEGER;
+                if (orderA !== orderB) return orderA - orderB;
+                return new Date(b.createdAt) - new Date(a.createdAt);
+              });
+
+              if (sortedLists.length === 0) {
+                return (
+                  <Col xs={12}>
+                    <div className="text-center py-5 bg-body-tertiary rounded-4 border border-dashed border-opacity-25 mt-2">
+                      <i className="bi bi-collection-play text-primary opacity-25 mb-3 d-block" style={{ fontSize: '4rem' }}></i>
+                      <h5 className="fw-bold">Henüz hiç liste oluşturmadınız</h5>
+                      <p className="text-muted">Kelimelerinizi anlamlı gruplara ayırmak için hemen bir liste oluşturun.</p>
+                    </div>
+                  </Col>
+                );
+              }
+
+              return sortedLists.map((list, index) => (
                 <Col key={list.id} sm={6}>
                   <Card 
                     className="h-100 border-0 shadow-sm rounded-4 bg-body-tertiary transition-all glass-card hover-lift"
@@ -94,6 +106,24 @@ const CustomListsPage = ({
                           <i className="bi bi-collection-play-fill fs-4"></i>
                         </div>
                         <div className="d-flex gap-1" onClick={e => e.stopPropagation()}>
+                          <Button 
+                            variant="link" 
+                            className={`p-1 text-primary transition-all ${index === 0 ? 'opacity-10' : 'opacity-50 hover-opacity-100'}`}
+                            onClick={() => handleMoveList(list.id, 'up')}
+                            disabled={index === 0}
+                            title="Yukarı Taşı"
+                          >
+                            <i className="bi bi-chevron-up fs-5 fw-bold"></i>
+                          </Button>
+                          <Button 
+                            variant="link" 
+                            className={`p-1 text-primary transition-all ${index === sortedLists.length - 1 ? 'opacity-10' : 'opacity-50 hover-opacity-100'}`}
+                            onClick={() => handleMoveList(list.id, 'down')}
+                            disabled={index === sortedLists.length - 1}
+                            title="Aşağı Taşı"
+                          >
+                            <i className="bi bi-chevron-down fs-5 fw-bold"></i>
+                          </Button>
                           <Button 
                             variant="link" 
                             className="p-1 text-muted opacity-50 hover-opacity-100 transition-all"
@@ -151,8 +181,8 @@ const CustomListsPage = ({
                     </Card.Body>
                   </Card>
                 </Col>
-              ))
-            )}
+              ));
+            })()}
           </Row>
         </Col>
       </Row>

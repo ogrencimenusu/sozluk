@@ -1355,7 +1355,12 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                                                                             {listCount > 0 && <span className="badge bg-primary bg-opacity-10 text-primary fw-normal px-2">{listCount} Liste</span>}
                                                                                         </Dropdown.Header>
                                                                                         {customLists && customLists.length > 0 ? (
-                                                                                            customLists.slice().sort((a,b) => a.name.localeCompare(b.name)).map(list => {
+                                                                                            customLists.slice().sort((a,b) => {
+                                                                                                const orderA = a.order ?? Number.MAX_SAFE_INTEGER;
+                                                                                                const orderB = b.order ?? Number.MAX_SAFE_INTEGER;
+                                                                                                if (orderA !== orderB) return orderA - orderB;
+                                                                                                return new Date(b.createdAt) - new Date(a.createdAt);
+                                                                                            }).map(list => {
                                                                                                 const isInList = list.wordIds?.includes(wordObj.id);
                                                                                                 return (
                                                                                                     <Dropdown.Item 

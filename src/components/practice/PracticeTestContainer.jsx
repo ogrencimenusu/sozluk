@@ -49,9 +49,26 @@ const PracticeTestContainer = forwardRef((props, ref) => {
             pool = pool.filter(w => w.isStarred);
         }
 
-        // Filter by Learning Status
-        if (config.learningStatus) {
+        const selectedListIds = config.selectedLists ? Object.keys(config.selectedLists).filter(id => config.selectedLists[id]) : [];
+        const hasListSelection = selectedListIds.length > 0;
+
+        // Filter by Learning Status (Only if no custom lists are selected)
+        if (!hasListSelection && config.learningStatus) {
             pool = pool.filter(w => config.learningStatus[w.learningStatus || 'Yeni']);
+        }
+
+        // Filter by Custom Lists
+        if (hasListSelection && customLists) {
+            // Get all word IDs from selected lists (Union)
+            const allowedWordIds = new Set();
+            customLists
+                .filter(l => selectedListIds.includes(l.id))
+                .forEach(l => {
+                    if (l.wordIds) {
+                        l.wordIds.forEach(id => allowedWordIds.add(id));
+                    }
+                });
+            pool = pool.filter(w => allowedWordIds.has(w.id));
         }
 
         if (pool.length === 0) {
@@ -409,6 +426,7 @@ const PracticeTestContainer = forwardRef((props, ref) => {
                     onResumeTest={handleResumeTest}
                     onDeleteTest={onDeleteTest}
                     onDeleteAllTests={onDeleteAllTests}
+                    customLists={customLists}
                 />
             )}
             {testState === 'running' && (

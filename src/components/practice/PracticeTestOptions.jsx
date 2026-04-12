@@ -10,7 +10,7 @@ const availableContexts = [
     'Şimdiki Zaman'
 ];
 
-function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOptions, onSaveOptions, practiceTests, onResumeTest, onDeleteTest, onDeleteAllTests }) {
+function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOptions, onSaveOptions, practiceTests, onResumeTest, onDeleteTest, onDeleteAllTests, customLists }) {
     const [questionCount, setQuestionCount] = useState(Math.min(10, maxQuestions));
     const [onlyStarred, setOnlyStarred] = useState(false);
     const [questionFormat, setQuestionFormat] = useState('mixed'); // 'definition' or 'term' or 'mixed'
@@ -22,6 +22,10 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
         "Öğreniyor": true,
         "Öğrendi": true
     });
+
+    // New State for Custom Lists
+    const [selectedLists, setSelectedLists] = useState({});
+    const [showAllLists, setShowAllLists] = useState(false);
 
     // New State for Question Types
     const [questionTypes, setQuestionTypes] = useState({
@@ -63,6 +67,7 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
             if (savedOptions.learningStatus !== undefined) setLearningStatus(savedOptions.learningStatus);
             if (savedOptions.questionTypes !== undefined) setQuestionTypes(savedOptions.questionTypes);
             if (savedOptions.advancedOptions !== undefined) setAdvancedOptions(savedOptions.advancedOptions);
+            if (savedOptions.selectedLists !== undefined) setSelectedLists(savedOptions.selectedLists);
             if (savedOptions.selectedContexts !== undefined) {
                 setSelectedContexts(savedOptions.selectedContexts);
             } else {
@@ -86,15 +91,35 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
             learningStatus,
             questionTypes,
             advancedOptions,
+            selectedLists,
             selectedContexts
         });
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [questionCount, onlyStarred, questionFormat, shuffle, learningStatus, questionTypes, advancedOptions, selectedContexts]);
+    }, [questionCount, onlyStarred, questionFormat, shuffle, learningStatus, questionTypes, advancedOptions, selectedLists, selectedContexts]);
 
     // Calculate available questions based on current filters
     const availableWordsCount = (words || []).filter(w => {
         if (onlyStarred && !w.isStarred) return false;
-        if (learningStatus && !learningStatus[w.learningStatus || 'Yeni']) return false;
+        
+        // Filter by Custom Lists
+        const activeListIds = Object.keys(selectedLists).filter(id => selectedLists[id]);
+        const hasListSelection = activeListIds.length > 0;
+
+        // Filter by Learning Status (Only if no custom lists are selected)
+        if (!hasListSelection) {
+            if (learningStatus && !learningStatus[w.learningStatus || 'Yeni']) return false;
+        }
+        
+        if (hasListSelection && customLists) {
+            const allowedIds = new Set();
+            customLists
+                .filter(l => activeListIds.includes(l.id))
+                .forEach(l => {
+                    if (l.wordIds) l.wordIds.forEach(id => allowedIds.add(id));
+                });
+            if (!allowedIds.has(w.id)) return false;
+        }
+        
         return true;
     }).length;
 
@@ -140,6 +165,7 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
             learningStatus,
             questionTypes,
             advancedOptions,
+            selectedLists,
             selectedContexts
         });
     };
@@ -147,22 +173,13 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
     return (
         <Container className="py-2 px-md-5 bg-body text-body px-3">
             <div className="d-flex justify-content-between align-items-center border-bottom border-secondary border-opacity-25 pb-2 mb-3 sticky-top bg-body py-2 d-md-flex" style={{ zIndex: 10, top: '-1px' }}>
-        <div className="d-flex align-items-center gap-2 gap-md-3">
+                <div className="d-flex align-items-center gap-2 gap-md-3">
                     <h4 className="fw-bold m-0 text-body d-none d-md-block">Test Seçenekleri</h4>
                     <h5 className="fw-bold m-0 text-body d-md-none">Seçenekler</h5>
                 </div>
                 <div className="d-flex align-items-center gap-2">
                     <Button variant="info" className="rounded-pill px-3 px-md-4 py-2 fw-bold shadow-sm" onClick={handleStart} style={{ backgroundColor: '#4fd1c5', color: '#1a202c', border: 'none', fontSize: '13px' }}>
                         Teste Başla
-                    </Button>
-                    <Button 
-                        variant="light" 
-                        className="rounded-circle d-flex align-items-center justify-content-center border shadow-sm bg-body ms-2"
-                        style={{ width: '40px', height: '40px' }}
-                        onClick={onCancel}
-                        title="Geri Dön"
-                    >
-                        <i className="bi bi-arrow-left fs-5"></i>
                     </Button>
                 </div>
             </div>
@@ -195,7 +212,7 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
                                 const dateObj = test.updatedAt?.toDate ? test.updatedAt.toDate() : new Date(test.updatedAt || test.createdAt || Date.now());
                                 const date = dateObj.toLocaleDateString('tr-TR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
                                 const isCompleted = test.status === 'completed';
-                                
+
                                 const total = test.questions?.length || 0;
                                 let answeredCount = 0;
                                 let correctCount = 0;
@@ -241,7 +258,7 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
                                                 {total} Soru {isCompleted ? <span className="text-success fw-semibold"> • %{successRate} Başarı</span> : `• ${unanswered} Boş`}
                                             </small>
                                         </div>
-                                        
+
                                         <div
                                             className="ms-1 d-flex align-items-center"
                                             onClick={(e) => {
@@ -293,9 +310,9 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
                                 className="bg-transparent text-body text-center border-secondary border-opacity-50 rounded-pill"
                                 style={{ width: '65px', fontSize: '13px', height: '32px' }}
                             />
-                            <Button 
-                                variant="outline-secondary" 
-                                size="sm" 
+                            <Button
+                                variant="outline-secondary"
+                                size="sm"
                                 className="rounded-pill px-2 border-opacity-50 d-flex align-items-center justify-content-center"
                                 onClick={() => setQuestionCount(maxSelectableCount)}
                                 style={{ height: '31px', width: '31px' }}
@@ -418,7 +435,65 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
                         />
                     </div>
 
-                    <div className="d-flex justify-content-between align-items-center mb-3 mt-2 text-body">
+                    {/* Özel Listeler Section */}
+                    {customLists && customLists.length > 0 && (
+                        <div className="mt-4 pt-3 border-top border-secondary border-opacity-10 ">
+                            <div className="mb-3 d-flex justify-content-between align-items-center">
+                                <span className="fw-bold text-body-secondary">Özel Listeler</span>
+                            </div>
+                            {(() => {
+                                const sortedLists = [...customLists].sort((a, b) => {
+                                    const orderA = a.order ?? Number.MAX_SAFE_INTEGER;
+                                    const orderB = b.order ?? Number.MAX_SAFE_INTEGER;
+                                    if (orderA !== orderB) return orderA - orderB;
+                                    return (new Date(b.createdAt)) - (new Date(a.createdAt));
+                                });
+
+                                const listsToDisplay = showAllLists ? sortedLists : sortedLists.slice(0, 5);
+
+                                return (
+                                    <>
+                                        {listsToDisplay.map(list => (
+                                            <div key={list.id} className="d-flex justify-content-between align-items-center mb-2 ms-3 text-body">
+                                                <span className="d-flex align-items-center gap-2 text-truncate pe-2">
+                                                    <i className="bi bi-collection-play text-info small" style={{ fontSize: '10px' }}></i>
+                                                    <span className="text-truncate" style={{ maxWidth: '200px' }}>{list.name}</span>
+                                                    <Badge bg="secondary" className="bg-opacity-25 text-body rounded-pill ms-1" style={{ fontSize: '12px' }}>
+                                                        {list.wordIds?.length || 0}
+                                                    </Badge>
+                                                </span>
+                                                <FormCheck
+                                                    type="switch"
+                                                    className="custom-switch-lg"
+                                                    checked={!!selectedLists[list.id]}
+                                                    onChange={(e) => setSelectedLists(prev => ({ ...prev, [list.id]: e.target.checked }))}
+                                                />
+                                            </div>
+                                        ))}
+
+                                        {sortedLists.length > 5 && (
+                                            <div className="text-center mt-3">
+                                                <Button
+                                                    variant="link"
+                                                    className="text-decoration-none text-primary fw-bold p-0 d-flex align-items-center gap-1 mx-auto"
+                                                    onClick={() => setShowAllLists(!showAllLists)}
+                                                    style={{ fontSize: '13px' }}
+                                                >
+                                                    {showAllLists ? (
+                                                        <>Daha Az Göster <i className="bi bi-chevron-up"></i></>
+                                                    ) : (
+                                                        <>Daha Fazla ({sortedLists.length - 5}) <i className="bi bi-chevron-down"></i></>
+                                                    )}
+                                                </Button>
+                                            </div>
+                                        )}
+                                    </>
+                                );
+                            })()}
+                        </div>
+                    )}
+
+                    <div className="d-flex justify-content-between align-items-center mb-3 mt-4 pt-3 text-body  border-top border-secondary border-opacity-25">
                         <span className="d-flex align-items-center gap-2">
                             Sadece Yıldızlı Kelimeleri Çalış <i className="bi bi-star-fill text-warning fs-6"></i>
                             <Badge bg="warning" className="text-dark rounded-pill ms-1" style={{ fontSize: '12px' }}>{counts.starred}</Badge>
@@ -449,7 +524,7 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
                     <h6 className="text-body fw-bold mb-3 d-flex align-items-center gap-2">
                         Ekstra Modlar <i className="bi bi-fire text-danger"></i>
                     </h6>
-                    
+
                     <div className="d-flex flex-column gap-3">
                         <div className={`p-3 border rounded-3 transition-all ${advancedOptions.fillInTheBlanks ? 'border-primary bg-primary bg-opacity-10' : 'border-secondary border-opacity-25'}`}>
                             <div className="d-flex justify-content-between align-items-start text-body">
@@ -466,12 +541,12 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
                                     onChange={(e) => setAdvancedOptions(prev => ({ ...prev, fillInTheBlanks: e.target.checked }))}
                                 />
                             </div>
-                            
+
                             {availableContexts.length > 0 && (
                                 <div className={`mt-3 pt-3 border-top transition-all ${advancedOptions.fillInTheBlanks ? 'border-primary border-opacity-25' : 'border-secondary border-opacity-25'}`} style={{ opacity: advancedOptions.fillInTheBlanks ? 1 : 0.6 }}>
                                     <div className="d-flex justify-content-between align-items-center mb-2">
                                         <span className="text-body fw-medium small">Gramer Filtresi</span>
-                                        <Button variant="link" size="sm" className={`text-decoration-none p-0 border-0 bg-transparent fw-semibold ${advancedOptions.fillInTheBlanks ? 'text-primary' : 'text-muted'}`} style={{fontSize: '0.8rem'}} onClick={() => {
+                                        <Button variant="link" size="sm" className={`text-decoration-none p-0 border-0 bg-transparent fw-semibold ${advancedOptions.fillInTheBlanks ? 'text-primary' : 'text-muted'}`} style={{ fontSize: '0.8rem' }} onClick={() => {
                                             const allSelected = Object.values(selectedContexts).every(v => v);
                                             const next = {};
                                             availableContexts.forEach(c => next[c] = !allSelected);
@@ -484,9 +559,9 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
                                         {availableContexts.map(ctx => {
                                             const isSelected = selectedContexts[ctx];
                                             return (
-                                                <Badge 
-                                                    key={ctx} 
-                                                    bg={isSelected ? (advancedOptions.fillInTheBlanks ? "primary" : "secondary") : "secondary"} 
+                                                <Badge
+                                                    key={ctx}
+                                                    bg={isSelected ? (advancedOptions.fillInTheBlanks ? "primary" : "secondary") : "secondary"}
                                                     className={`px-2 py-1 border ${isSelected && advancedOptions.fillInTheBlanks ? 'shadow-sm border-primary' : 'bg-opacity-10 text-body border-secondary border-opacity-25'} rounded-pill`}
                                                     style={{ cursor: 'pointer', transition: 'all 0.2s', fontWeight: isSelected ? 'bold' : 'normal', fontSize: '0.75rem' }}
                                                     onClick={() => setSelectedContexts(prev => ({ ...prev, [ctx]: !prev[ctx] }))}
