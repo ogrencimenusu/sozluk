@@ -239,6 +239,15 @@ function App() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedWord, setSelectedWord] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [wordsPerPage, setWordsPerPage] = useState(() => {
+    try {
+      const saved = localStorage.getItem('wordsPerPage');
+      return saved ? parseInt(saved, 10) : 50;
+    } catch {
+      return 50;
+    }
+  });
+  const [visibleCount, setVisibleCount] = useState(wordsPerPage);
 
   const [termText, setTermText] = useState('');
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
@@ -438,6 +447,7 @@ function App() {
     localStorage.setItem('quickStatusFilter', quickStatusFilter);
   }, [quickStatusFilter]);
 
+
   const [sortRules, setSortRules] = useState([]);
 
   const [bulkActionType, setBulkActionType] = useState('status'); // 'status', 'star', 'date', 'delete', 'practice'
@@ -464,6 +474,11 @@ function App() {
     localStorage.setItem('viewMode', viewMode);
   }, [viewMode]);
 
+  // Reset pagination when any filter/sort changes
+  useEffect(() => {
+    setVisibleCount(wordsPerPage);
+  }, [searchQuery, filters, sortRules, showDuplicates, showOnlyStarred, quickStatusFilter, wordsPerPage]);
+
   const [practiceOptions, setPracticeOptions] = useState(null);
 
   // Flag to prevent saving before settings are loaded from Firestore
@@ -483,6 +498,10 @@ function App() {
             setTheme(data.theme);
             document.documentElement.setAttribute('data-bs-theme', data.theme);
             localStorage.setItem('theme', data.theme);
+          }
+          if (data.wordsPerPage) {
+            setWordsPerPage(data.wordsPerPage);
+            localStorage.setItem('wordsPerPage', data.wordsPerPage.toString());
           }
           if (data.practiceOptions) {
             setPracticeOptions(data.practiceOptions);
@@ -529,6 +548,14 @@ function App() {
       setDoc(doc(db, 'settings', 'app'), { theme }, { merge: true }).catch(() => { });
     }
   }, [theme]);
+
+  // Save wordsPerPage to Firestore and localStorage
+  useEffect(() => {
+    localStorage.setItem('wordsPerPage', wordsPerPage.toString());
+    if (!isConfigMissing && settingsLoaded.current) {
+      setDoc(doc(db, 'settings', 'app'), { wordsPerPage }, { merge: true }).catch(() => { });
+    }
+  }, [wordsPerPage]);
 
   // Save sortRules to Firestore when they change
   useEffect(() => {
@@ -1429,6 +1456,22 @@ function App() {
 
   const filteredWords = processedWords;
 
+  const displayedWords = useMemo(() => {
+    return filteredWords.slice(0, visibleCount);
+  }, [filteredWords, visibleCount]);
+
+  const observerRef = useRef();
+  const lastElementRef = useCallback(node => {
+    if (loading) return;
+    if (observerRef.current) observerRef.current.disconnect();
+    observerRef.current = new IntersectionObserver(entries => {
+      if (entries[0].isIntersecting && visibleCount < filteredWords.length) {
+        setVisibleCount(prev => prev + wordsPerPage);
+      }
+    });
+    if (node) observerRef.current.observe(node);
+  }, [loading, filteredWords.length, visibleCount]);
+
   const getWordCountForDate = (dateStr) => {
     if (!dateStr) return 0;
     return words.filter(w => {
@@ -1818,9 +1861,10 @@ function App() {
                 <div className="d-flex justify-content-center py-5">
                   <Spinner animation="border" variant="primary" />
                 </div>
-              ) : filteredWords.length > 0 ? (
-                <Row xs={1} md={2} lg={viewMode === 'detailed' ? 2 : 3} className="g-4">
-                  {filteredWords.map((word) => (
+              ) : displayedWords.length > 0 ? (
+                <>
+                  <Row xs={1} md={2} lg={viewMode === 'detailed' ? 2 : 3} className="g-4">
+                  {displayedWords.map((word) => (
                     <Col key={word.id}>
                       <Card
                         className={`h-100 interactive-card border ${isSelectionMode && selectedWords.includes(word.id) ? 'border-primary border-2 bg-primary bg-opacity-10' : 'border-opacity-25'} bg-body-tertiary shadow-sm`}
@@ -2154,6 +2198,12 @@ function App() {
                     </Col>
                   ))}
                 </Row>
+                {visibleCount < filteredWords.length && (
+                  <div ref={lastElementRef} className="d-flex justify-content-center py-4">
+                    <Spinner animation="border" variant="primary" size="sm" />
+                  </div>
+                )}
+              </>
               ) : (
                 <div className="text-center py-5 bg-body-tertiary rounded-4 border border-opacity-25 mt-4">
                   {searchQuery ? (
@@ -2284,6 +2334,8 @@ function App() {
           toggleTheme={toggleTheme}
           viewMode={viewMode}
           setViewMode={setViewMode}
+          wordsPerPage={wordsPerPage}
+          setWordsPerPage={setWordsPerPage}
           setCurrentView={setCurrentView}
           dailyStats={dailyStats}
         />
