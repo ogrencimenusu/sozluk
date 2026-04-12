@@ -1,12 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Container, Button, Row, Col, Card, Badge, OverlayTrigger, Popover, Collapse, Modal } from 'react-bootstrap';
+import { Container, Button, Row, Col, Card, Badge, OverlayTrigger, Popover, Collapse, Modal, Dropdown } from 'react-bootstrap';
 import WordDetailModal from './WordDetailModal';
 import LearningStageBar from '../LearningStageBar';
 import { levenshteinDistance } from '../../utils/stringUtils';
 import DailyGoalTracker from '../DailyGoalTracker';
 import Swal from 'sweetalert2';
 
-function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpdateStage, onToggleStar, onDelete, onEdit, onRetakeSame, onRetakeNew, onRetakeMissed, onLogTestResults, dailyStats, testId, initialTestState, onSaveTest }) {
+function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpdateStage, onToggleStar, onDelete, onEdit, onRetakeSame, onRetakeNew, onRetakeMissed, onLogTestResults, dailyStats, testId, initialTestState, onSaveTest, customLists, onAddWordsToList, onRemoveWordFromList }) {
     const [answers, setAnswers] = useState(() => initialTestState?.answers || {}); // { [questionIdx]: { selected: OptionObj } }
     const [writtenInputs, setWrittenInputs] = useState(() => initialTestState?.writtenInputs || {}); // { [questionIdx]: string } for 'written' type
     const [completed, setCompleted] = useState(() => initialTestState?.completed || false);
@@ -1325,6 +1325,67 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                                                 )}
                                                                 {wordObj ? (
                                                                     <>
+                                                                        {(() => {
+                                                                            const listsWithWord = customLists?.filter(l => l.wordIds?.includes(wordObj.id)) || [];
+                                                                            const listCount = listsWithWord.length;
+                                                                            return (
+                                                                                <Dropdown align="end" className="d-inline-flex">
+                                                                                    <Dropdown.Toggle
+                                                                                        variant={listCount > 0 ? "primary" : "outline-primary"}
+                                                                                        size="sm"
+                                                                                        className="rounded-circle px-2 py-1 d-flex align-items-center no-caret border-opacity-75 position-relative shadow-sm"
+                                                                                        title="Listeye Ekle/Çıkar"
+                                                                                    >
+                                                                                        <i className="bi bi-collection-play-fill text-white"></i>
+                                                                                        {listCount > 0 && (
+                                                                                            <Badge 
+                                                                                                bg="danger" 
+                                                                                                pill 
+                                                                                                className="position-absolute top-0 start-100 translate-middle border border-2 border-white"
+                                                                                                style={{ fontSize: '10px', padding: '0.25em 0.5em', minWidth: '18px' }}
+                                                                                            >
+                                                                                                {listCount}
+                                                                                            </Badge>
+                                                                                        )}
+                                                                                    </Dropdown.Toggle>
+
+                                                                                    <Dropdown.Menu className="shadow-lg border-secondary border-opacity-25 bg-body-tertiary rounded-3" style={{ minWidth: '220px' }}>
+                                                                                        <Dropdown.Header className="small fw-bold text-primary border-bottom border-opacity-10 mb-1 d-flex justify-content-between align-items-center">
+                                                                                            <span>Listelere Ekle</span>
+                                                                                            {listCount > 0 && <span className="badge bg-primary bg-opacity-10 text-primary fw-normal px-2">{listCount} Liste</span>}
+                                                                                        </Dropdown.Header>
+                                                                                        {customLists && customLists.length > 0 ? (
+                                                                                            customLists.slice().sort((a,b) => a.name.localeCompare(b.name)).map(list => {
+                                                                                                const isInList = list.wordIds?.includes(wordObj.id);
+                                                                                                return (
+                                                                                                    <Dropdown.Item 
+                                                                                                        key={list.id} 
+                                                                                                        className={`small d-flex align-items-center justify-content-between gap-2 py-2 ${isInList ? 'bg-primary bg-opacity-10' : ''}`}
+                                                                                                        onClick={(e) => {
+                                                                                                            e.stopPropagation();
+                                                                                                            if (isInList) {
+                                                                                                                onRemoveWordFromList && onRemoveWordFromList(list.id, wordObj.id);
+                                                                                                            } else {
+                                                                                                                onAddWordsToList && onAddWordsToList(list.id, [wordObj.id]);
+                                                                                                            }
+                                                                                                        }}
+                                                                                                    >
+                                                                                                        <div className="d-flex align-items-center gap-2">
+                                                                                                            <i className={`bi ${isInList ? 'bi-collection-play-fill text-primary' : 'bi-collection-play opacity-50'}`}></i> 
+                                                                                                            <span className={isInList ? 'fw-bold text-primary' : ''}>{list.name}</span>
+                                                                                                        </div>
+                                                                                                        {isInList && <i className="bi bi-check2 text-primary fw-bold"></i>}
+                                                                                                    </Dropdown.Item>
+                                                                                                );
+                                                                                            })
+                                                                                        ) : (
+                                                                                            <Dropdown.Item disabled className="small text-muted py-2 text-center italic">Henüz liste yok</Dropdown.Item>
+                                                                                        )}
+                                                                                    </Dropdown.Menu>
+                                                                                </Dropdown>
+                                                                            );
+                                                                        })()}
+
                                                                         <Button
                                                                             variant="outline-secondary"
                                                                             size="sm"

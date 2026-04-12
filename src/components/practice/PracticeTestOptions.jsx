@@ -147,16 +147,24 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
     return (
         <Container className="py-2 px-md-5 bg-body text-body px-3">
             <div className="d-flex justify-content-between align-items-center border-bottom border-secondary border-opacity-25 pb-2 mb-3 sticky-top bg-body py-2 d-md-flex" style={{ zIndex: 10, top: '-1px' }}>
-                <div className="d-flex align-items-center gap-2 gap-md-3">
-                    <Button variant="link" className="p-0 text-muted d-md-none" onClick={onCancel} style={{ display: 'none' }}>
-                        <i className="bi bi-arrow-left fs-4"></i>
-                    </Button>
+        <div className="d-flex align-items-center gap-2 gap-md-3">
                     <h4 className="fw-bold m-0 text-body d-none d-md-block">Test Seçenekleri</h4>
                     <h5 className="fw-bold m-0 text-body d-md-none">Seçenekler</h5>
                 </div>
-                <Button variant="info" className="rounded-pill px-3 px-md-4 py-2 fw-bold shadow-sm" onClick={handleStart} style={{ backgroundColor: '#4fd1c5', color: '#1a202c', border: 'none', fontSize: '13px' }}>
-                    Teste Başla
-                </Button>
+                <div className="d-flex align-items-center gap-2">
+                    <Button variant="info" className="rounded-pill px-3 px-md-4 py-2 fw-bold shadow-sm" onClick={handleStart} style={{ backgroundColor: '#4fd1c5', color: '#1a202c', border: 'none', fontSize: '13px' }}>
+                        Teste Başla
+                    </Button>
+                    <Button 
+                        variant="light" 
+                        className="rounded-circle d-flex align-items-center justify-content-center border shadow-sm bg-body ms-2"
+                        style={{ width: '40px', height: '40px' }}
+                        onClick={onCancel}
+                        title="Geri Dön"
+                    >
+                        <i className="bi bi-arrow-left fs-5"></i>
+                    </Button>
+                </div>
             </div>
 
             <div className="text-body-secondary mx-auto" style={{ maxWidth: '800px' }}>

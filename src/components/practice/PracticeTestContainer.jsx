@@ -10,7 +10,8 @@ const PracticeTestContainer = forwardRef((props, ref) => {
         words, onCancel, savedOptions, onSaveOptions, 
         onUpdateStage, onToggleStar, onDelete, onEdit, 
         initialConfig, onLogTestResults, dailyStats, 
-        practiceTests, onSaveTest, onDeleteTest, onDeleteAllTests 
+        practiceTests, onSaveTest, onDeleteTest, onDeleteAllTests,
+        customLists, onAddWordsToList, onRemoveWordFromList
     } = props;
 
     const [testState, setTestState] = useState('options'); // 'options' | 'running' | 'results'
@@ -440,6 +441,9 @@ const PracticeTestContainer = forwardRef((props, ref) => {
                         testId={activeTestId}
                         initialTestState={initialTestState}
                         onSaveTest={onSaveTest}
+                        customLists={customLists}
+                        onAddWordsToList={onAddWordsToList}
+                        onRemoveWordFromList={onRemoveWordFromList}
                     />
                 )
             )}

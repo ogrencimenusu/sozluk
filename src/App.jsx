@@ -616,11 +616,6 @@ function App() {
       setCustomLists(listsData);
     });
 
-    return () => {
-      unsubscribeWords();
-      unsubscribeLists();
-    };
-
     const qTests = query(collection(db, 'practice_tests'), orderBy('updatedAt', 'desc'));
     const unsubscribeTests = onSnapshot(qTests, (snapshot) => {
       const testsData = snapshot.docs.map(doc => ({
@@ -653,6 +648,7 @@ function App() {
 
     return () => {
       unsubscribeWords();
+      unsubscribeLists();
       unsubscribeStats();
       unsubscribeTests();
       unsubscribeNotes();
@@ -1515,7 +1511,7 @@ function App() {
                   </InputGroup.Text>
                 )}
                 <InputGroup.Text
-                  className="bg-body-secondary border-0 text-muted rounded-end-pill pe-3 d-flex d-md-none"
+                  className="bg-body-secondary border-0 text-muted rounded-end-pill pe-3 d-flex"
                   style={{ cursor: 'pointer' }}
                   onClick={() => setShowFiltersCollapse(!showFiltersCollapse)}
                   title="Filtreler"
@@ -1607,20 +1603,20 @@ function App() {
               </div>
 
               <Collapse in={showFiltersCollapse}>
-                <div className="d-md-none">
-                  <div className="d-flex flex-column gap-2 mt-2">
+                <div className="w-100">
+                  <div className="d-flex flex-wrap gap-2 mt-2">
                     <div className="d-flex gap-2">
-                      <ButtonGroup size="sm" className="shadow-sm rounded-pill w-100">
+                      <ButtonGroup size="sm" className="shadow-sm rounded-pill w-auto">
                         <Button
                           variant={viewMode === 'grid' ? 'primary' : 'outline-primary'}
-                          className={`rounded-start-pill py-2 w-50 ${viewMode === 'grid' ? '' : 'bg-body'}`}
+                          className={`rounded-start-pill py-2 px-3 ${viewMode === 'grid' ? '' : 'bg-body'}`}
                           onClick={() => setViewMode('grid')}
                         >
                           <i className="bi bi-grid-3x3-gap-fill me-2"></i>Klasik Tasarım
                         </Button>
                         <Button
                           variant={viewMode === 'detailed' ? 'primary' : 'outline-primary'}
-                          className={`rounded-end-pill py-2 w-50 ${viewMode === 'detailed' ? '' : 'bg-body'}`}
+                          className={`rounded-end-pill py-2 px-3 ${viewMode === 'detailed' ? '' : 'bg-body'}`}
                           onClick={() => setViewMode('detailed')}
                         >
                           <i className="bi bi-view-list me-2"></i>Detaylı Tasarım
@@ -1628,7 +1624,7 @@ function App() {
                       </ButtonGroup>
                     </div>
 
-                    <Button variant="outline-primary" size="sm" className="rounded-pill px-3 py-2 shadow-sm bg-body fw-medium d-flex align-items-center justify-content-between gap-1" onClick={() => setShowFilterModal(true)}>
+                    <Button variant="outline-primary" size="sm" className="rounded-pill px-3 py-2 shadow-sm bg-body fw-medium d-flex align-items-center gap-2 w-auto" onClick={() => setShowFilterModal(true)}>
                       <div className="d-flex align-items-center gap-2">
                         <i className="bi bi-funnel-fill"></i>
                         <span>Filtrele</span>
@@ -1651,16 +1647,16 @@ function App() {
                       </div>
                     </Button>
 
-                    <Button variant="outline-primary" size="sm" className="rounded-pill px-3 py-2 shadow-sm bg-body fw-medium d-flex align-items-center justify-content-between" onClick={() => setShowSortModal(true)}>
+                    <Button variant="outline-primary" size="sm" className="rounded-pill px-3 py-2 shadow-sm bg-body fw-medium d-flex align-items-center gap-2 w-auto" onClick={() => setShowSortModal(true)}>
                       <div className="d-flex align-items-center gap-2"><i className="bi bi-sort-down"></i> Sırala</div>
                       {sortRules.length > 0 && <Badge bg="primary" className="rounded-pill">{sortRules.length}</Badge>}
                     </Button>
 
-                    <Dropdown onSelect={id => setFilters({ ...filters, listId: id })} className="w-100">
+                    <Dropdown onSelect={id => setFilters({ ...filters, listId: id })} className="w-auto">
                       <Dropdown.Toggle 
                         variant={filters.listId ? "primary" : "outline-primary"} 
                         size="sm" 
-                        className="rounded-pill px-3 py-2 shadow-sm bg-body fw-medium d-flex align-items-center justify-content-between dropdown-toggle-no-caret"
+                        className="rounded-pill px-3 py-2 shadow-sm bg-body fw-medium d-flex align-items-center gap-2 dropdown-toggle-no-caret w-auto"
                         id="quick-list-dropdown-mobile"
                       >
                         <div className="d-flex align-items-center gap-2">
@@ -1696,14 +1692,14 @@ function App() {
                       </Dropdown.Menu>
                     </Dropdown>
 
-                    <Button variant={isSelectionMode ? "primary" : "outline-secondary"} size="sm" className="rounded-pill px-3 py-2 shadow-sm fw-medium d-flex align-items-center justify-content-between" onClick={() => { setIsSelectionMode(!isSelectionMode); setSelectedWords([]); }}>
+                    <Button variant={isSelectionMode ? "primary" : "outline-secondary"} size="sm" className="rounded-pill px-3 py-2 shadow-sm fw-medium d-flex align-items-center gap-2 w-auto" onClick={() => { setIsSelectionMode(!isSelectionMode); setSelectedWords([]); }}>
                       <div className="d-flex align-items-center gap-2"><i className="bi bi-check2-square"></i> Seç</div>
                     </Button>
 
                     <Button
                       variant={showOnlyStarred ? "warning" : "outline-warning"}
                       size="sm"
-                      className="rounded-pill px-3 py-2 shadow-sm fw-medium d-flex align-items-center justify-content-between gap-1"
+                      className="rounded-pill px-3 py-2 shadow-sm fw-medium d-flex align-items-center gap-2 w-auto"
                       onClick={() => setShowOnlyStarred(!showOnlyStarred)}
                       title="Sadece Yıldızlıları Göster"
                     >
@@ -1720,7 +1716,7 @@ function App() {
                           key={status}
                           variant={isActive ? color : `outline-${color}`}
                           size="sm"
-                          className="rounded-pill px-3 py-2 shadow-sm fw-medium d-flex align-items-center justify-content-between gap-1"
+                          className="rounded-pill px-3 py-2 shadow-sm fw-medium d-flex align-items-center gap-2 w-auto"
                           onClick={() => setQuickStatusFilter(isActive ? '' : status)}
                           title={`${status} kelimeler`}
                         >
@@ -1733,139 +1729,6 @@ function App() {
                 </div>
               </Collapse>
 
-              {/* Desktop/Tablet View: Inline Buttons */}
-              <div className="d-none d-md-flex justify-content-between align-items-start mt-2 gap-2 flex-wrap">
-                <div className="d-flex flex-wrap gap-2">
-                  <ButtonGroup size="sm" className="shadow-sm rounded-pill text-nowrap">
-                    <Button
-                      variant={viewMode === 'grid' ? 'primary' : 'outline-primary'}
-                      className={`rounded-start-pill d-flex align-items-center px-3 ${viewMode === 'grid' ? '' : 'bg-body'}`}
-                      onClick={() => setViewMode('grid')}
-                      title="Klasik Tasarım (3 Sütun)"
-                    >
-                      <i className="bi bi-grid-3x3-gap-fill"></i>
-                    </Button>
-                    <Button
-                      variant={viewMode === 'detailed' ? 'primary' : 'outline-primary'}
-                      className={`rounded-end-pill d-flex align-items-center px-3 ${viewMode === 'detailed' ? '' : 'bg-body'}`}
-                      onClick={() => setViewMode('detailed')}
-                      title="Detaylı Tasarım (2 Sütun)"
-                    >
-                      <i className="bi bi-view-list"></i>
-                    </Button>
-                  </ButtonGroup>
-
-                  <Button variant="outline-primary" size="sm" className="rounded-pill px-3 shadow-sm bg-body fw-medium d-flex align-items-center gap-1 text-nowrap" onClick={() => setShowFilterModal(true)}>
-                    <i className="bi bi-funnel-fill"></i>
-                    <span>Filtrele</span>
-                    <Badge bg="primary" className="ms-1 rounded-pill fw-bold">{filteredWords.length}</Badge>
-                    {(Object.values(filters.status).some(x => x) || Object.values(filters.starred).some(x => x) || filters.startDate || filters.endDate) && (
-                      <span
-                        className="ms-1 text-danger fw-bold"
-                        style={{ cursor: 'pointer', fontSize: '14px', lineHeight: 1 }}
-                        title="Filtreyi Sıfırla"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setFilters({ status: { Yeni: false, Öğreniyor: false, Öğrendi: false }, starred: { starred: false, unstarred: false }, startDate: '', endDate: '', listId: '' });
-                        }}
-                      >
-                        <i className="bi bi-x-circle-fill"></i>
-                      </span>
-                    )}
-                  </Button>
-                  <Button variant="outline-primary" size="sm" className="rounded-pill px-3 shadow-sm bg-body fw-medium d-flex align-items-center gap-1 text-nowrap" onClick={() => setShowSortModal(true)}>
-                    <i className="bi bi-sort-down me-1"></i> <span>Sırala</span> {sortRules.length > 0 && <Badge bg="primary" className="ms-1 rounded-pill">{sortRules.length}</Badge>}
-                  </Button>
-
-                  {/* Quick List Switcher (Desktop) */}
-                  <Dropdown onSelect={id => setFilters({ ...filters, listId: id })}>
-                    <Dropdown.Toggle 
-                      variant={filters.listId ? "primary" : "outline-primary"} 
-                      size="sm" 
-                      className="rounded-pill px-3 shadow-sm fw-medium d-flex align-items-center gap-1 text-nowrap dropdown-toggle-no-caret"
-                      id="quick-list-dropdown-desktop"
-                    >
-                      <i className="bi bi-collection-play-fill"></i>
-                      <span>{
-                        filters.listId === 'all_listed' ? 'Tüm Listelerim' : 
-                        filters.listId ? customLists.find(l => l.id === filters.listId)?.name : 
-                        'Listelerim'
-                      }</span>
-                    </Dropdown.Toggle>
-
-                    <Dropdown.Menu className="shadow-lg border-0 rounded-4 mt-2 overflow-hidden animate-fade-in" style={{ minWidth: '220px' }}>
-                      <Dropdown.Item eventKey="" active={!filters.listId} className="py-2">
-                        <i className="bi bi-grid-fill me-2 opacity-50"></i> Tüm Sözlük
-                      </Dropdown.Item>
-                      <Dropdown.Item eventKey="all_listed" active={filters.listId === 'all_listed'} className="py-2 d-flex justify-content-between align-items-center">
-                        <div><i className="bi bi-collection-play-fill me-2 text-primary"></i> Tüm Listelerim</div>
-                        <Badge bg="primary" className="rounded-pill opacity-75" style={{ fontSize: '0.65rem' }}>
-                          {new Set(customLists.flatMap(l => l.wordIds || [])).size}
-                        </Badge>
-                      </Dropdown.Item>
-                      {customLists.length > 0 && <Dropdown.Divider className="my-1 border-opacity-10" />}
-                      <div style={{ maxHeight: '250px', overflowY: 'auto' }}>
-                        {customLists.map(list => (
-                          <Dropdown.Item key={list.id} eventKey={list.id} active={filters.listId === list.id} className="py-2 d-flex justify-content-between align-items-center">
-                            <span>{list.name}</span>
-                            <Badge bg="secondary" className="rounded-pill opacity-50" style={{ fontSize: '0.65rem' }}>{list.wordIds?.length || 0}</Badge>
-                          </Dropdown.Item>
-                        ))}
-                      </div>
-                      {customLists.length === 0 && <Dropdown.Item disabled className="text-muted small py-3 text-center italic">Henüz bir liste yok</Dropdown.Item>}
-                    </Dropdown.Menu>
-                  </Dropdown>
-                  <Button variant={isSelectionMode ? "primary" : "outline-secondary"} size="sm" className="rounded-pill px-3 shadow-sm fw-medium d-flex align-items-center gap-1 text-nowrap" onClick={() => { setIsSelectionMode(!isSelectionMode); setSelectedWords([]); }}>
-                    <i className="bi bi-check2-square me-1"></i> <span>Seç</span>
-                  </Button>
-                  <Button
-                    variant={showOnlyStarred ? "warning" : "outline-warning"}
-                    size="sm"
-                    className="rounded-pill px-3 shadow-sm fw-medium d-flex align-items-center gap-1 text-nowrap"
-                    onClick={() => setShowOnlyStarred(!showOnlyStarred)}
-                    title="Sadece Yıldızlıları Göster"
-                  >
-                    <i className={`bi ${showOnlyStarred ? 'bi-star-fill' : 'bi-star'}`}></i>
-                    <span className="ms-1 fw-bold">{words.filter(w => w.isStarred).length}</span>
-                  </Button>
-
-                  {/* Quick Status Filters */}
-                  {[['Yeni', 'primary'], ['Öğreniyor', 'warning'], ['Öğrendi', 'success']].map(([status, color]) => {
-                    const count = words.filter(w => w.learningStatus === status).length;
-                    const isActive = quickStatusFilter === status;
-                    return (
-                      <Button
-                        key={status}
-                        variant={isActive ? color : `outline-${color}`}
-                        size="sm"
-                        className="rounded-pill px-3 shadow-sm fw-medium d-flex align-items-center gap-1 text-nowrap"
-                        onClick={() => setQuickStatusFilter(isActive ? '' : status)}
-                        title={`${status} kelimeler`}
-                      >
-                        <span className="small">{status}</span>
-                        <Badge bg={isActive ? 'light' : color} text={isActive ? color : 'white'} className="ms-1 rounded-pill fw-bold">{count}</Badge>
-                      </Button>
-                    );
-                  })}
-                </div>
-
-                {isSelectionMode && (
-                  <div className="d-flex gap-2 align-items-center bg-primary bg-opacity-10 px-3 py-1 rounded-pill border border-primary border-opacity-25 animated fadeIn text-nowrap mt-2 mt-md-0">
-                    <Form.Check
-                      type="checkbox"
-                      id="select-all-desktop"
-                      label={<span className="fw-medium small">Tümünü Seç</span>}
-                      onChange={handleSelectAll}
-                      checked={filteredWords.length > 0 && selectedWords.length === filteredWords.length}
-                      className="me-2"
-                    />
-                    <span className="fw-bold text-primary small me-2">{selectedWords.length} Seçili</span>
-                    <Button variant="primary" size="sm" className="rounded-pill px-3" disabled={selectedWords.length === 0} onClick={() => setShowBulkEditModal(true)}>
-                      İşlem Yap
-                    </Button>
-                  </div>
-                )}
-              </div>
 
               <main>
               {loading ? (
@@ -2272,6 +2135,9 @@ function App() {
             onSaveTest={handleSaveTest}
             onDeleteTest={handleDeleteTest}
             onDeleteAllTests={handleDeleteAllTests}
+            customLists={customLists}
+            onAddWordsToList={handleAddWordsToList}
+            onRemoveWordFromList={handleRemoveWordFromList}
           />
         </Container>
       )}

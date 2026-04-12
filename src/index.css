@@ -628,3 +628,8 @@ html, body {
 [data-bs-theme="dark"] .custom-sidebar-scroll:hover::-webkit-scrollbar-thumb {
   background: rgba(111, 66, 193, 0.5);
 }
+
+/* Hide dropdown arrow */
+.no-caret::after {
+  display: none !important;
+}
