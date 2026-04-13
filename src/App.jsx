@@ -304,6 +304,7 @@ function App() {
 
   // Global text-selection tooltip for home page
   const [homeSelectionTooltip, setHomeSelectionTooltip] = useState(null); // { x, y, text, wordId, wordTerm }
+  const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
   const homeTooltipRef = useRef(null);
   const inlineNoteRef = useRef(null);
 
@@ -389,6 +390,19 @@ function App() {
       document.removeEventListener('touchstart', handleGlobalMouseDown);
     };
   }, [handleGlobalMouseUp, handleGlobalMouseDown]);
+
+  // Keyboard detection to hide bottom nav
+  useEffect(() => {
+    if (!window.visualViewport) return;
+
+    const handleResize = () => {
+      const isOpen = window.visualViewport.height < window.innerHeight * 0.75;
+      setIsKeyboardOpen(isOpen);
+    };
+
+    window.visualViewport.addEventListener('resize', handleResize);
+    return () => window.visualViewport.removeEventListener('resize', handleResize);
+  }, []);
 
   const [templateType, setTemplateType] = useState('sablon2');
 
@@ -2232,21 +2246,23 @@ function App() {
       {/* Practice Test Page */}
       {currentView === 'practice-test' && (
         <Container fluid className="main-app-container">
-          <PageHeader 
-            title="Test Çöz" 
-            icon="bi-controller" 
-            onBack={() => {
-              if (practiceTestRef.current) {
-                const handled = practiceTestRef.current.goBack();
-                if (!handled) {
+          <div className="d-none d-md-block">
+            <PageHeader 
+              title="Test Çöz" 
+              icon="bi-controller" 
+              onBack={() => {
+                if (practiceTestRef.current) {
+                  const handled = practiceTestRef.current.goBack();
+                  if (!handled) {
+                    setCurrentView('home');
+                  }
+                } else {
                   setCurrentView('home');
                 }
-              } else {
-                setCurrentView('home');
-              }
-            }} 
-            dailyStats={dailyStats}
-          />
+              }} 
+              dailyStats={dailyStats}
+            />
+          </div>
           <PracticeTestContainer
             ref={practiceTestRef}
             words={directPracticeWords || words}
@@ -2370,7 +2386,8 @@ function App() {
       )}
 
       {/* MOBILE BOTTOM NAVIGATION BAR */}
-      <div className="mobile-bottom-nav d-md-none">
+      {!isKeyboardOpen && (
+        <div className="mobile-bottom-nav d-md-none">
           <button
             className={`mobile-nav-item ${currentView === 'home' ? 'active' : ''}`}
             onClick={() => setCurrentView('home')}
@@ -2446,6 +2463,7 @@ function App() {
             <span className={currentView === 'settings' ? "text-primary fw-bold" : ""}>Ayarlar</span>
           </button>
         </div>
+      )}
 
       
       {/* TEMPLATE EXAMPLE MODAL */}

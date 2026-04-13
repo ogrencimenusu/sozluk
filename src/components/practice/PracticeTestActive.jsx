@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Container, Button, Row, Col, Card, Badge, OverlayTrigger, Popover, Collapse, Modal, Dropdown } from 'react-bootstrap';
+import { Container, Button, Row, Col, Card, Badge, OverlayTrigger, Popover, Collapse, Modal, Dropdown, Offcanvas } from 'react-bootstrap';
 import WordDetailModal from './WordDetailModal';
 import LearningStageBar from '../LearningStageBar';
 import { levenshteinDistance } from '../../utils/stringUtils';
@@ -16,8 +16,7 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
     const [hiddenOptions, setHiddenOptions] = useState(() => initialTestState?.hiddenOptions || {}); // { [questionIdx]: [optionIndex, ...] }
     const [activeQuestionIdx, setActiveQuestionIdx] = useState(() => initialTestState?.activeQuestionIdx || 0);
     const [selectedWordForModal, setSelectedWordForModal] = useState(null);
-    const [mobileNavExpanded, setMobileNavExpanded] = useState(false);
-    const [mobileShowAll, setMobileShowAll] = useState(false);
+    const [showMobileMenu, setShowMobileMenu] = useState(false);
     const [showAnswersSummary, setShowAnswersSummary] = useState(false);
 
     // New States for Gamified Options
@@ -768,6 +767,15 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
         <>
             <Container fluid className="py-4 bg-body">
                 {/* Internal header removed to avoid redundancy with global PageHeader */}
+                <div className="d-md-none">
+                    <button 
+                        className="mobile-nav-toggle-btn"
+                        onClick={() => setShowMobileMenu(true)}
+                        title="Navigasyonu Aç"
+                    >
+                        <i className={`bi bi-chevron-right ${showMobileMenu ? 'rotate-180' : ''}`}></i>
+                    </button>
+                </div>
 
                 <Row className="px-md-4 position-relative">
                     {/* SIDEBAR: Question Navigation Map */}
@@ -871,145 +879,7 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                     <Col md={9} lg={8} className="mx-auto pb-5" >
 
                         {/* MOBILE NAVIGATION: Collapsible and Truncated - Sticky on mobile */}
-                        <div className="d-md-none mb-4 sticky-top" style={{ top: '80px', zIndex: 1010 }}>
-                            <Card className="bg-body-tertiary border-secondary border-opacity-25 rounded-4 overflow-hidden shadow-none text-body">
-                                <div className="p-3 d-flex justify-content-between align-items-center" style={{ cursor: 'pointer' }}>
-                                    <div
-                                        className="d-flex align-items-center gap-2 flex-grow-1"
-                                        onClick={() => setMobileNavExpanded(!mobileNavExpanded)}
-                                    >
-                                        <i className="bi bi-grid-3x3-gap-fill text-primary"></i>
-                                        <span className="fw-bold">{showAnswersSummary ? 'Cevaplarım' : 'Soru Navigasyonu'}</span>
-                                        <Badge bg="primary" className="rounded-pill bg-opacity-10 text-primary border border-primary border-opacity-25 ms-1">
-                                            {getAnsweredCount()}/{questions.length}
-                                        </Badge>
-                                    </div>
-                                    <div className="d-flex align-items-center gap-2">
-                                        <Button
-                                            variant={showAnswersSummary ? "primary" : "outline-primary"}
-                                            size="sm"
-                                            className="rounded-pill d-flex align-items-center px-2 py-1"
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                setShowAnswersSummary(!showAnswersSummary);
-                                                if (!mobileNavExpanded) setMobileNavExpanded(true);
-                                            }}
-                                            title={showAnswersSummary ? 'Soruları Göster' : 'Cevaplarımı Göster'}
-                                        >
-                                            <i className={`bi ${showAnswersSummary ? 'bi-grid-3x3-gap-fill' : 'bi-list-check'}`}></i>
-                                        </Button>
-                                        <i
-                                            className={`bi bi-chevron-${mobileNavExpanded ? 'up' : 'down'} text-body-secondary ms-1 fs-5`}
-                                            onClick={() => setMobileNavExpanded(!mobileNavExpanded)}
-                                        ></i>
-                                    </div>
-                                </div>
-
-                                <Collapse in={mobileNavExpanded}>
-                                    <div>
-                                        <div className="px-3 pb-3 border-top border-secondary border-opacity-10 pt-3">
-                                            {!showAnswersSummary ? (
-                                                <div className="d-flex flex-wrap gap-2 justify-content-start">
-                                                    {questions.slice(0, mobileShowAll ? questions.length : 6).map((q, idx) => {
-                                                        const isAnswered = !!answers[idx] || (q.type === 'written' && (writtenInputs[idx] || '').trim().length > 0);
-                                                        const isActive = activeQuestionIdx === idx;
-
-                                                        let btnClass = "btn btn-sm rounded-circle fw-bold border-secondary border-opacity-50 transition-all ";
-                                                        let btnStyle = { width: '36px', height: '36px', padding: 0 };
-
-                                                        if (completed) {
-                                                            const ans = answers[idx]?.selected;
-                                                            if (ans?.isCorrect) {
-                                                                btnClass += ans.hasTypo ? "bg-warning text-dark border-warning" : "bg-success text-white border-success";
-                                                            } else {
-                                                                btnClass += isAnswered ? "bg-danger text-white border-danger" : "bg-transparent text-body-secondary";
-                                                            }
-                                                        } else {
-                                                            if (isActive) {
-                                                                btnClass += "text-white border-purple shadow-sm";
-                                                                btnStyle.backgroundColor = '#6f42c1';
-                                                                btnStyle.borderColor = '#6f42c1';
-                                                            } else {
-                                                                btnClass += isAnswered ? "bg-info text-dark border-info" : "bg-transparent text-body-secondary";
-                                                            }
-                                                        }
-
-                                                        return (
-                                                            <button
-                                                                key={idx}
-                                                                className={btnClass}
-                                                                style={btnStyle}
-                                                                onClick={() => {
-                                                                    scrollToQuestion(idx);
-                                                                    setMobileNavExpanded(false);
-                                                                }}
-                                                            >
-                                                                {idx + 1}
-                                                            </button>
-                                                        );
-                                                    })}
-
-                                                    {questions.length > 6 && !mobileShowAll && (
-                                                        <Button
-                                                            variant="outline-primary"
-                                                            size="sm"
-                                                            className="rounded-circle fw-bold"
-                                                            style={{ width: '36px', height: '36px', padding: 0 }}
-                                                            onClick={() => setMobileShowAll(true)}
-                                                            title="Daha Fazla Göster"
-                                                        >
-                                                            <i className="bi bi-three-dots"></i>
-                                                        </Button>
-                                                    )}
-
-                                                    {mobileShowAll && (
-                                                        <Button
-                                                            variant="link"
-                                                            size="sm"
-                                                            className="text-decoration-none text-body-secondary p-0 ms-auto pt-2 w-100 text-center"
-                                                            style={{ fontSize: '13px' }}
-                                                            onClick={() => setMobileShowAll(false)}
-                                                        >
-                                                            Daha az göster
-                                                        </Button>
-                                                    )}
-                                                </div>
-                                            ) : (
-                                                <div className="d-flex flex-column gap-2" style={{ maxHeight: '40vh', overflowY: 'auto', scrollbarWidth: 'thin' }}>
-                                                    {questions.map((q, idx) => {
-                                                        const isAnswered = !!answers[idx] || (q.type === 'written' && (writtenInputs[idx] || '').trim().length > 0);
-                                                        let answeredText = 'Boş bırakıldı';
-                                                        if (answers[idx]) {
-                                                            answeredText = answers[idx].selected.text;
-                                                        } else if (q.type === 'written' && (writtenInputs[idx] || '').trim().length > 0) {
-                                                            answeredText = writtenInputs[idx];
-                                                        }
-
-                                                        return (
-                                                            <div
-                                                                key={`mobile-ans-${idx}`}
-                                                                className={`p-2 rounded-3 border ${isAnswered ? (completed ? (answers[idx]?.selected?.isCorrect ? 'border-success bg-success bg-opacity-10' : 'border-danger bg-danger bg-opacity-10') : 'border-primary bg-primary bg-opacity-10') : 'border-secondary bg-body-tertiary'} border-opacity-25 transition-all cursor-pointer`}
-                                                                onClick={() => { setMobileNavExpanded(false); scrollToQuestion(idx); }}
-                                                            >
-                                                                <div className="d-flex justify-content-between align-items-center mb-1">
-                                                                    <Badge bg="secondary" className="rounded-pill px-2" style={{ fontSize: '0.7rem' }}>S. {idx + 1}</Badge>
-                                                                    {completed && isAnswered && (
-                                                                        <i className={`bi ${answers[idx]?.selected?.isCorrect ? 'bi-check-circle-fill text-success' : 'bi-x-circle-fill text-danger'} small`}></i>
-                                                                    )}
-                                                                </div>
-                                                                <div className="fw-bold text-body small text-truncate" style={{ whiteSpace: 'normal', display: '-webkit-box', WebkitLineClamp: '2', WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                                                                    {answeredText}
-                                                                </div>
-                                                            </div>
-                                                        );
-                                                    })}
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                </Collapse>
-                            </Card>
-                        </div>
+                        {/* MOBILE NAVIGATION: Removed from main flow to be in Offcanvas */}
 
                         {/* Results / Score Summary Header */}
                         {completed && (
@@ -1209,7 +1079,7 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                                         const wordObj = (words || []).find(w => w.id === currentQuestion.wordId);
                                                         const stage = wordObj?.learningStage ?? 0;
                                                         return (
-                                                            <div className="d-flex align-items-center gap-2" style={{ minWidth: '110px' }}>
+                                                            <div className="d-none d-md-flex align-items-center gap-2" style={{ minWidth: '110px' }}>
                                                                 {wordObj && onToggleStar && (
                                                                     <button
                                                                         className="btn btn-link p-0 border-0 text-decoration-none"
@@ -1310,17 +1180,17 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                                                         </OverlayTrigger>
                                                                     );
                                                                 })()}
-                                                                {hasMultipleMeanings(idx) && (
+                                                                 {hasMultipleMeanings(idx) && (
                                                                     <Button
                                                                         variant="outline-primary"
                                                                         size="sm"
-                                                                        className="rounded-pill px-3 py-1 d-flex align-items-center gap-1 border-opacity-75"
+                                                                        className="rounded-pill px-3 py-1 d-none d-md-flex align-items-center gap-1 border-opacity-75"
                                                                         onClick={() => handleNextMeaning(idx)}
                                                                         title={canRevealMoreMeanings(idx) ? "Diğer Anlamı Göster" : "Tüm Anlamlar Gösterildi"}
                                                                         disabled={completed || !!answers[idx] || !canRevealMoreMeanings(idx)}
                                                                     >
                                                                         <i className="bi bi-plus-circle"></i>
-                                                                        <span className="d-none d-sm-inline small">Diğer Anlam</span>
+                                                                        <span className="small">Diğer Anlam</span>
                                                                     </Button>
                                                                 )}
                                                                 {wordObj ? (
@@ -1391,21 +1261,82 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                                                             );
                                                                         })()}
 
+                                                                        {/* More Actions Dropdown for Mobile Only */}
+                                                                        <Dropdown align="end" className="d-inline-flex d-md-none">
+                                                                            <Dropdown.Toggle
+                                                                                variant="outline-secondary"
+                                                                                size="sm"
+                                                                                className="rounded-circle px-2 py-1 d-flex align-items-center no-caret border-opacity-75 shadow-sm"
+                                                                                title="Daha Fazla Seçenek"
+                                                                            >
+                                                                                <i className="bi bi-three-dots text-body-secondary"></i>
+                                                                            </Dropdown.Toggle>
+
+                                                                            <Dropdown.Menu className="shadow-lg border-secondary border-opacity-25 bg-body-tertiary rounded-3" style={{ minWidth: '200px' }}>
+                                                                                <div className="d-md-none p-2 border-bottom border-opacity-10 mb-2">
+                                                                                    <div className="small fw-bold text-body-secondary mb-2 px-2">Öğrenme Durumu</div>
+                                                                                    <div className="d-flex align-items-center justify-content-between px-2 gap-3">
+                                                                                        {onToggleStar && (
+                                                                                            <button
+                                                                                                className="btn btn-link p-0 border-0 text-decoration-none"
+                                                                                                onClick={(e) => { e.stopPropagation(); onToggleStar(e, wordObj); }}
+                                                                                            >
+                                                                                                <i className={`fs-5 bi ${wordObj.isStarred ? 'bi-star-fill text-warning' : 'bi-star text-secondary'}`}></i>
+                                                                                            </button>
+                                                                                        )}
+                                                                                        <div className="flex-grow-1">
+                                                                                            <LearningStageBar stage={wordObj?.learningStage || 0} showLabel />
+                                                                                        </div>
+                                                                                    </div>
+                                                                                </div>
+                                                                                
+                                                                                {hasMultipleMeanings(idx) && (
+                                                                                    <Dropdown.Item 
+                                                                                        className="small d-flex align-items-center gap-2 py-2"
+                                                                                        onClick={() => handleNextMeaning(idx)}
+                                                                                        disabled={completed || !!answers[idx] || !canRevealMoreMeanings(idx)}
+                                                                                    >
+                                                                                        <i className="bi bi-plus-circle text-primary"></i> Diğer Anlamı Göster
+                                                                                    </Dropdown.Item>
+                                                                                )}
+
+                                                                                <Dropdown.Item 
+                                                                                    className="small d-flex align-items-center gap-2 py-2"
+                                                                                    onClick={() => setSelectedWordForModal(wordObj)}
+                                                                                >
+                                                                                    <i className="bi bi-info-circle text-secondary"></i> Kelime Detayı
+                                                                                </Dropdown.Item>
+
+                                                                                {onDelete && (
+                                                                                    <>
+                                                                                        <Dropdown.Divider className="opacity-10" />
+                                                                                        <Dropdown.Item 
+                                                                                            className="small d-flex align-items-center gap-2 py-2 text-danger"
+                                                                                            onClick={(e) => onDelete(e, wordObj.id, wordObj.term)}
+                                                                                        >
+                                                                                            <i className="bi bi-trash text-danger"></i> Kelimeyi Sil
+                                                                                        </Dropdown.Item>
+                                                                                    </>
+                                                                                )}
+                                                                            </Dropdown.Menu>
+                                                                        </Dropdown>
+
                                                                         <Button
                                                                             variant="outline-secondary"
                                                                             size="sm"
-                                                                            className="rounded-pill px-3 py-1 d-flex align-items-center gap-1"
+                                                                            className="rounded-pill px-3 py-1 d-none d-md-flex align-items-center gap-1"
                                                                             onClick={() => setSelectedWordForModal(wordObj)}
                                                                             title="Kelime Detayı"
                                                                         >
                                                                             <i className="bi bi-info-circle"></i>
-                                                                            <span className="d-none d-sm-inline small">Detay</span>
+                                                                            <span className="small">Detay</span>
                                                                         </Button>
+
                                                                         {onDelete && (
                                                                             <Button
                                                                                 variant="outline-danger"
                                                                                 size="sm"
-                                                                                className="rounded-circle px-2 py-1 d-flex align-items-center gap-1"
+                                                                                className="rounded-circle px-2 py-1 d-none d-md-flex align-items-center gap-1"
                                                                                 onClick={(e) => onDelete(e, wordObj.id, wordObj.term)}
                                                                                 title="Kelimeyi Sil"
                                                                             >
@@ -1455,9 +1386,6 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                             <div>
                                                 {currentQuestion.type === 'written' ? (
                                                     <div className="mb-3">
-                                                        <span className="text-body-secondary fw-semibold d-block mb-3">
-                                                            Cevabı yazıp Enter'a bas ya da butona tıkla
-                                                        </span>
 
                                                         {initialTestState?.config?.advancedOptions?.missingLetters && !answers[idx] && (
                                                             <div className="mb-3 text-center p-3 rounded-3 border border-info border-opacity-50 bg-info bg-opacity-10">
@@ -1481,8 +1409,8 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                                                     <input
                                                                         id={`written-input-${idx}`}
                                                                         type="text"
-                                                                        className="form-control form-control-lg bg-transparent text-body border-secondary border-opacity-50 rounded-3"
-                                                                        style={{ fontSize: '1.25rem' }}
+                                                                        className="form-control bg-transparent text-body border-secondary border-opacity-50 rounded-3"
+                                                                        style={{ fontSize: '1.1rem' }}
                                                                         placeholder="Cevabınızı yazın..."
                                                                         value={writtenInputs[idx] || ''}
                                                                         autoCapitalize="none"
@@ -1519,12 +1447,12 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                                                     />
                                                                     <Button
                                                                         variant="info"
-                                                                        className="rounded-3 px-4 fw-bold text-dark fs-5"
-                                                                        style={{ backgroundColor: '#4fd1c5', border: 'none', whiteSpace: 'nowrap' }}
+                                                                        className="rounded-3 px-3 fw-bold text-dark d-flex align-items-center justify-content-center"
+                                                                        style={{ backgroundColor: '#4fd1c5', border: 'none', whiteSpace: 'nowrap', width: '46px', height: '46px' }}
                                                                         onClick={() => handleWrittenSubmit(idx, currentQuestion.answer)}
                                                                         disabled={!writtenInputs[idx]?.trim()}
                                                                     >
-                                                                        <i className="bi bi-check-lg"></i> Kontrol
+                                                                        <i className="bi bi-check-lg fs-4"></i>
                                                                     </Button>
                                                                 </div>
                                                                 <small className={`ms-1 ${(writtenInputs[idx] || '').length === (currentQuestion.answer || '').length ? 'text-success' : 'text-danger'}`} style={{ fontSize: '0.75rem', fontWeight: (writtenInputs[idx] || '').length === (currentQuestion.answer || '').length ? 'bold' : 'normal' }}>
@@ -1825,6 +1753,132 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                     onEdit && onEdit(null, word);
                 }}
             />
+
+            {/* MOBILE NAVIGATION SIDEBAR (Offcanvas) */}
+            <Offcanvas 
+                show={showMobileMenu} 
+                onHide={() => setShowMobileMenu(false)} 
+                placement="start"
+                className="bg-body-tertiary border-end border-opacity-10"
+                style={{ width: '280px' }}
+            >
+                <Offcanvas.Header closeButton className="border-bottom border-opacity-10 pb-3">
+                    <Offcanvas.Title className="d-flex align-items-center gap-2">
+                        <i className="bi bi-controller text-primary fs-4"></i>
+                        <span className="fw-bold">Test Çöz</span>
+                    </Offcanvas.Title>
+                </Offcanvas.Header>
+                <Offcanvas.Body className="p-0 d-flex flex-column">
+                    <div className="p-3 border-bottom border-opacity-10 bg-body bg-opacity-50">
+                        <div className="d-flex justify-content-between align-items-center mb-3">
+                            <span className="fw-bold text-body-secondary small text-uppercase letter-spacing-1">Test Durumu</span>
+                            <Badge bg="primary" className="rounded-pill bg-opacity-10 text-primary border border-primary border-opacity-25">
+                                {getAnsweredCount()}/{questions.length} Cevaplandı
+                            </Badge>
+                        </div>
+                        
+                        <Button 
+                            variant="outline-secondary" 
+                            size="sm" 
+                            className="w-100 rounded-pill d-flex align-items-center justify-content-center gap-2 py-2"
+                            onClick={handleClose}
+                        >
+                            <i className="bi bi-arrow-left"></i>
+                            Geri Dön
+                        </Button>
+                    </div>
+
+                    <div className="flex-grow-1 overflow-y-auto p-3">
+                        <div className="d-flex justify-content-between align-items-center mb-3">
+                            <span className="fw-bold">{showAnswersSummary ? 'Cevaplarım' : 'Sorular'}</span>
+                            <Button
+                                variant={showAnswersSummary ? "primary" : "outline-primary"}
+                                size="sm"
+                                className="rounded-pill d-flex align-items-center gap-1"
+                                onClick={() => setShowAnswersSummary(!showAnswersSummary)}
+                            >
+                                <i className={`bi ${showAnswersSummary ? 'bi-grid-3x3-gap-fill' : 'bi-list-check'}`}></i>
+                            </Button>
+                        </div>
+
+                        {!showAnswersSummary ? (
+                            <div className="d-flex flex-wrap gap-2 justify-content-start pb-4">
+                                {questions.map((q, idx) => {
+                                    const isAnswered = !!answers[idx] || (q.type === 'written' && (writtenInputs[idx] || '').trim().length > 0);
+                                    const isActive = activeQuestionIdx === idx;
+
+                                    let btnClass = "btn btn-sm rounded-circle fw-bold border-secondary border-opacity-50 transition-all ";
+                                    let btnStyle = { width: '36px', height: '44px', padding: 0 };
+
+                                    if (completed) {
+                                        const ans = answers[idx]?.selected;
+                                        if (ans?.isCorrect) {
+                                            btnClass += ans.hasTypo ? "bg-warning text-dark border-warning" : "bg-success text-white border-success";
+                                        } else {
+                                            btnClass += isAnswered ? "bg-danger text-white border-danger" : "bg-transparent text-body-secondary";
+                                        }
+                                    } else {
+                                        if (isActive) {
+                                            btnClass += "text-white border-purple shadow-sm";
+                                            btnStyle.backgroundColor = '#6f42c1';
+                                            btnStyle.borderColor = '#6f42c1';
+                                        } else {
+                                            btnClass += isAnswered ? "bg-info text-dark border-info" : "bg-transparent text-body-secondary";
+                                        }
+                                    }
+
+                                    return (
+                                        <button
+                                            key={idx}
+                                            className={btnClass}
+                                            style={btnStyle}
+                                            onClick={() => {
+                                                scrollToQuestion(idx);
+                                                setShowMobileMenu(false);
+                                            }}
+                                        >
+                                            {idx + 1}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        ) : (
+                            <div className="d-flex flex-column gap-2 pb-4">
+                                {questions.map((q, idx) => {
+                                    const isAnswered = !!answers[idx] || (q.type === 'written' && (writtenInputs[idx] || '').trim().length > 0);
+                                    let answeredText = 'Boş bırakıldı';
+                                    if (answers[idx]) {
+                                        answeredText = answers[idx].selected.text;
+                                    } else if (q.type === 'written' && (writtenInputs[idx] || '').trim().length > 0) {
+                                        answeredText = writtenInputs[idx];
+                                    }
+
+                                    return (
+                                        <div
+                                            key={`offcanvas-ans-${idx}`}
+                                            className={`p-2 rounded-3 border ${isAnswered ? (completed ? (answers[idx]?.selected?.isCorrect ? 'border-success bg-success bg-opacity-10' : 'border-danger bg-danger bg-opacity-10') : 'border-primary bg-primary bg-opacity-10') : 'border-secondary bg-body-tertiary'} border-opacity-25 transition-all cursor-pointer`}
+                                            onClick={() => { 
+                                                setShowMobileMenu(false);
+                                                scrollToQuestion(idx); 
+                                            }}
+                                        >
+                                            <div className="d-flex justify-content-between align-items-center mb-1">
+                                                <Badge bg="secondary" className="rounded-pill px-2" style={{ fontSize: '0.7rem' }}>S. {idx + 1}</Badge>
+                                                {completed && isAnswered && (
+                                                    <i className={`bi ${answers[idx]?.selected?.isCorrect ? 'bi-check-circle-fill text-success' : 'bi-x-circle-fill text-danger'} small`}></i>
+                                                )}
+                                            </div>
+                                            <div className="fw-bold text-body small text-truncate" style={{ whiteSpace: 'normal', display: '-webkit-box', WebkitLineClamp: '2', WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                                                {answeredText}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
+                </Offcanvas.Body>
+            </Offcanvas>
 
         </>
     );

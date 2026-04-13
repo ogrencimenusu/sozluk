@@ -602,6 +602,52 @@ mark.sticky-highlight:hover {
   animation: slideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+/* ─── Mobile Nav Toggle Button ─── */
+.mobile-nav-toggle-btn {
+  position: fixed;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 1040;
+  background: white;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-left: none;
+  border-top-right-radius: 12px;
+  border-bottom-right-radius: 12px;
+  width: 32px;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 4px 0 12px rgba(0, 0, 0, 0.1);
+  color: var(--bs-primary);
+  transition: all 0.2s ease;
+}
+
+[data-bs-theme="dark"] .mobile-nav-toggle-btn {
+  background: #1e293b;
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow: 4px 0 12px rgba(0, 0, 0, 0.3);
+}
+
+.mobile-nav-toggle-btn:active {
+  width: 40px;
+}
+
+.mobile-nav-toggle-btn i {
+  font-size: 1.2rem;
+  transition: transform 0.2s ease;
+}
+
+/* ─── Transitions ─── */
+.mobile-bottom-nav-wrap {
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.mobile-bottom-nav-hidden {
+  transform: translateY(100%);
+}
+
 /* Custom Scrollbar for premium feel */
 ::-webkit-scrollbar {
   width: 8px;
@@ -641,6 +687,10 @@ mark.sticky-highlight:hover {
     padding-left: 30px !important;
     padding-right: 30px !important;
   }
+}
+
+.rotate-180 {
+  transform: rotate(180deg);
 }
 
 html, body {
