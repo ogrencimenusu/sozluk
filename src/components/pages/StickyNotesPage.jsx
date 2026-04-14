@@ -97,17 +97,12 @@ const StickyNotesPage = ({
                 />
                 <div className="d-flex flex-column flex-sm-row gap-3 align-items-start align-items-sm-center">
                   <Form.Control
-                    type="text"
+                    as="textarea"
                     placeholder="Kelime bağlamı olmadan genel bir not ekleyin..."
                     value={manualNoteText}
                     onChange={(e) => setManualNoteText(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        handleAddNote(null, null, manualNoteText, manualNoteTitle);
-                      }
-                    }}
-                    className="bg-body-secondary border-0 shadow-none px-4 py-3 rounded-pill flex-grow-1"
+                    className="bg-body-secondary border-0 shadow-none px-4 py-3 rounded-4 flex-grow-1"
+                    style={{ resize: 'none', height: '100px' }}
                   />
                   <Button
                     variant="primary"
@@ -196,10 +191,7 @@ const StickyNotesPage = ({
                                           e.target.style.height = e.target.scrollHeight + 'px';
                                         }}
                                         onKeyDown={(e) => {
-                                          if (e.key === 'Enter' && !e.shiftKey) {
-                                            e.preventDefault();
-                                            handleUpdateWithFeedback(note.id, inlineEditingText, inlineEditingTitle);
-                                          } else if (e.key === 'Escape') {
+                                          if (e.key === 'Escape') {
                                             setEditingNoteId(null);
                                           }
                                         }}
@@ -239,7 +231,7 @@ const StickyNotesPage = ({
                                       }}
                                     >
                                       {note.title && (
-                                        <div className={`sticky-note-list-title h6 fw-bold mb-2 ${note.isCompleted ? 'text-decoration-line-through opacity-50' : 'text-body'}`}>
+                                        <div className={`sticky-note-list-title h6 fw-bold mb-2 ${note.isCompleted ? 'opacity-50' : 'text-body'}`}>
                                           {note.title}
                                         </div>
                                       )}

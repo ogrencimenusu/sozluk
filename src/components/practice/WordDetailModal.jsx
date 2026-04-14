@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Modal, Button, Row, Col, Badge } from 'react-bootstrap';
+import { Modal, Button, Row, Col, Badge, Dropdown } from 'react-bootstrap';
 
 /**
  * Splits `text` into segments, wrapping matches from `highlights` in
@@ -36,7 +36,11 @@ function highlightText(text, highlights) {
  *   onOpenNotesModal  – () => void  open sticky notes list modal on highlight click
  *   stickyHighlights – string[] of saved note texts for THIS word (for highlighting)
  */
-function WordDetailModal({ word, onHide, onSpeak, onEdit, stickyNotes = [], onAddNote, onDeleteNote, stickyHighlights = [], onOpenNotesModal }) {
+function WordDetailModal({ 
+    word, onHide, onSpeak, onEdit, onToggleStar, onAddToList, 
+    customLists = [], onAddWordsToList, onRemoveWordFromList,
+    stickyNotes = [], onAddNote, onDeleteNote, stickyHighlights = [], onOpenNotesModal 
+}) {
     const [selectionTooltip, setSelectionTooltip] = useState(null); // { x, y, text }
     const [savedNoteFlash, setSavedNoteFlash] = useState(false);
     const modalBodyRef = useRef(null);
@@ -197,8 +201,103 @@ function WordDetailModal({ word, onHide, onSpeak, onEdit, stickyNotes = [], onAd
                 contentClassName="bg-body-tertiary border border-opacity-25 rounded-4 shadow-lg"
             >
                 <Modal.Header className="border-bottom border-opacity-10 align-items-center py-3 px-4 px-md-5 bg-body-tertiary">
-                    <Modal.Title className="display-6 fw-bold m-0 me-3">{word.term}</Modal.Title>
+                    <div className="d-flex align-items-center gap-3">
+                        <i
+                            className={`bi ${word.isStarred ? 'bi-star-fill text-warning' : 'bi-star text-muted'} fs-3`}
+                            style={{ cursor: 'pointer', transition: 'all 0.2s ease-in-out' }}
+                            onClick={(e) => onToggleStar && onToggleStar(e, word)}
+                            title={word.isStarred ? "Yıldızı Kaldır" : "Yıldızla"}
+                            onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.1)'}
+                            onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+                        ></i>
+                        <Modal.Title className="display-6 fw-bold m-0">{word.term}</Modal.Title>
+                    </div>
                     <div className="ms-auto d-flex align-items-center gap-2">
+                        {(() => {
+                            const listsWithWord = customLists?.filter(l => l.wordIds?.includes(word.id)) || [];
+                            const listCount = listsWithWord.length;
+                            return (
+                                <Dropdown align="end" className="d-inline-flex">
+                                    <Dropdown.Toggle
+                                        variant={listCount > 0 ? "info" : "outline-info"}
+                                        size="sm"
+                                        className="rounded-pill px-3 shadow-sm bg-body d-flex align-items-center gap-2 no-caret position-relative"
+                                        title="Listeye Ekle/Çıkar"
+                                    >
+                                        <i className="bi bi-collection-play-fill"></i>
+                                        <span className="d-none d-md-inline">Listeye Ekle</span>
+                                        {listCount > 0 && (
+                                            <Badge 
+                                                bg="danger" 
+                                                pill 
+                                                className="position-absolute top-0 start-100 translate-middle border border-2 border-white"
+                                                style={{ fontSize: '10px', padding: '0.25em 0.5em', minWidth: '18px' }}
+                                            >
+                                                {listCount}
+                                            </Badge>
+                                        )}
+                                    </Dropdown.Toggle>
+
+                                    <Dropdown.Menu 
+                                        className="shadow-lg border-secondary border-opacity-25 bg-body-tertiary rounded-3" 
+                                        style={{ minWidth: '220px', maxHeight: '350px', overflowY: 'auto' }}
+                                        popperConfig={{
+                                            modifiers: [
+                                                {
+                                                    name: 'preventOverflow',
+                                                    options: {
+                                                        boundary: 'viewport',
+                                                    },
+                                                },
+                                                {
+                                                    name: 'flip',
+                                                    options: {
+                                                        fallbackPlacements: ['top', 'bottom'],
+                                                    },
+                                                },
+                                            ],
+                                        }}
+                                    >
+                                        <Dropdown.Header className="small fw-bold text-primary border-bottom border-opacity-10 mb-1 d-flex justify-content-between align-items-center">
+                                            <span>Listelere Ekle</span>
+                                            {listCount > 0 && <span className="badge bg-primary bg-opacity-10 text-primary fw-normal px-2">{listCount} Liste</span>}
+                                        </Dropdown.Header>
+                                        {customLists && customLists.length > 0 ? (
+                                            customLists.slice().sort((a,b) => {
+                                                const orderA = a.order ?? Number.MAX_SAFE_INTEGER;
+                                                const orderB = b.order ?? Number.MAX_SAFE_INTEGER;
+                                                if (orderA !== orderB) return orderA - orderB;
+                                                return new Date(b.createdAt) - new Date(a.createdAt);
+                                            }).map(list => {
+                                                const isInList = list.wordIds?.includes(word.id);
+                                                return (
+                                                    <Dropdown.Item 
+                                                        key={list.id} 
+                                                        className={`small d-flex align-items-center justify-content-between gap-2 py-2 ${isInList ? 'bg-primary bg-opacity-10' : ''}`}
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            if (isInList) {
+                                                                onRemoveWordFromList && onRemoveWordFromList(list.id, word.id);
+                                                            } else {
+                                                                onAddWordsToList && onAddWordsToList(list.id, [word.id]);
+                                                            }
+                                                        }}
+                                                    >
+                                                        <div className="d-flex align-items-center gap-2">
+                                                            <i className={`bi ${isInList ? 'bi-collection-play-fill text-primary' : 'bi-collection-play opacity-50'}`}></i> 
+                                                            <span className={isInList ? 'fw-bold text-primary' : ''}>{list.name}</span>
+                                                        </div>
+                                                        {isInList && <i className="bi bi-check2 text-primary fw-bold"></i>}
+                                                    </Dropdown.Item>
+                                                );
+                                            })
+                                        ) : (
+                                            <Dropdown.Item disabled className="small text-muted py-2 text-center italic">Henüz liste yok</Dropdown.Item>
+                                        )}
+                                    </Dropdown.Menu>
+                                </Dropdown>
+                            );
+                        })()}
                         <Button
                             variant="outline-primary"
                             size="sm"

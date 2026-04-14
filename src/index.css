@@ -27,11 +27,13 @@ body {
 
 /* Custom styles complementing Bootstrap */
 .interactive-card {
-  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  transition: transform 0.2s ease, top 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  position: relative;
+  top: 0;
 }
 
 .interactive-card:hover {
-  transform: translateY(-4px);
+  top: -4px;
   box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1) !important;
   border-color: rgba(99, 102, 241, 0.5) !important;
 }
@@ -449,7 +451,6 @@ mark.sticky-highlight:hover {
 }
 
 .sticky-note-list-item.completed .sticky-note-list-text {
-  text-decoration: line-through;
   opacity: 0.6;
 }
 

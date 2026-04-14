@@ -953,13 +953,6 @@ function App() {
             wordIds: updatedWordIds
           });
           const listName = listDoc.data().name;
-          Swal.fire({
-            icon: 'success',
-            title: 'Başarılı',
-            text: `${wordIds.length} kelime "${listName}" listesine eklendi.`,
-            timer: 1500,
-            showConfirmButton: false
-          });
         }
       } else {
         setCustomLists(prev => prev.map(l => {
@@ -1883,11 +1876,11 @@ function App() {
                       <Card
                         className={`h-100 interactive-card border ${isSelectionMode && selectedWords.includes(word.id) ? 'border-primary border-2 bg-primary bg-opacity-10' : 'border-opacity-25'} bg-body-tertiary shadow-sm`}
                         onClick={(e) => isSelectionMode && handleSelectWord(e, word.id)}
-                        style={{ cursor: isSelectionMode ? 'pointer' : 'default' }}
+                        style={{ cursor: isSelectionMode ? 'pointer' : 'default', overflow: 'visible' }}
                         data-word-id={word.id}
                         data-word-term={word.term}
                       >
-                        <Card.Body className="d-flex flex-column">
+                        <Card.Body className="d-flex flex-column" style={{ overflow: 'visible' }}>
                           <div className="d-flex justify-content-between align-items-center mb-2">
                             <div className="d-flex align-items-center gap-2">
                               {isSelectionMode && (
@@ -1937,6 +1930,91 @@ function App() {
                                 </div>
                               )}
                             </div>
+                            {(() => {
+                              const listsWithWord = customLists?.filter(l => l.wordIds?.includes(word.id)) || [];
+                              const listCount = listsWithWord.length;
+                              return (
+                                <div onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()} className="ms-auto">
+                                  <Dropdown align="end" className="d-inline-flex">
+                                    <Dropdown.Toggle
+                                      variant="link"
+                                      className="p-1 text-primary opacity-50 hover-opacity-100 transition-all border-0 shadow-none d-flex align-items-center no-caret position-relative"
+                                      title="Listeye Ekle/Çıkar"
+                                    >
+                                      <i className="bi bi-collection-play-fill" style={{ fontSize: '18px' }}></i>
+                                      {listCount > 0 && (
+                                        <Badge 
+                                          bg="danger" 
+                                          pill 
+                                          className="position-absolute top-0 start-100 translate-middle border border-2 border-white"
+                                          style={{ fontSize: '10px', padding: '0.25em 0.5em', minWidth: '18px' }}
+                                        >
+                                          {listCount}
+                                        </Badge>
+                                      )}
+                                    </Dropdown.Toggle>
+
+                                    <Dropdown.Menu 
+                                      className="shadow-lg border-secondary border-opacity-25 bg-body-tertiary rounded-3" 
+                                      style={{ minWidth: '220px', maxHeight: '350px', overflowY: 'auto' }}
+                                      popperConfig={{
+                                        modifiers: [
+                                          {
+                                            name: 'preventOverflow',
+                                            options: {
+                                              boundary: 'viewport',
+                                            },
+                                          },
+                                          {
+                                            name: 'flip',
+                                            options: {
+                                              fallbackPlacements: ['top', 'bottom'],
+                                            },
+                                          },
+                                        ],
+                                      }}
+                                    >
+                                      <Dropdown.Header className="small fw-bold text-primary border-bottom border-opacity-10 mb-1 d-flex justify-content-between align-items-center">
+                                        <span>Listelere Ekle</span>
+                                        {listCount > 0 && <span className="badge bg-primary bg-opacity-10 text-primary fw-normal px-2">{listCount} Liste</span>}
+                                      </Dropdown.Header>
+                                      {customLists && customLists.length > 0 ? (
+                                        customLists.slice().sort((a,b) => {
+                                          const orderA = a.order ?? Number.MAX_SAFE_INTEGER;
+                                          const orderB = b.order ?? Number.MAX_SAFE_INTEGER;
+                                          if (orderA !== orderB) return orderA - orderB;
+                                          return new Date(b.createdAt) - new Date(a.createdAt);
+                                        }).map(list => {
+                                          const isInList = list.wordIds?.includes(word.id);
+                                          return (
+                                            <Dropdown.Item 
+                                              key={list.id} 
+                                              className={`small d-flex align-items-center justify-content-between gap-2 py-2 ${isInList ? 'bg-primary bg-opacity-10' : ''}`}
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                if (isInList) {
+                                                  handleRemoveWordFromList(list.id, word.id);
+                                                } else {
+                                                  handleAddWordsToList(list.id, [word.id]);
+                                                }
+                                              }}
+                                            >
+                                              <div className="d-flex align-items-center gap-2">
+                                                <i className={`bi ${isInList ? 'bi-collection-play-fill text-primary' : 'bi-collection-play opacity-50'}`}></i> 
+                                                <span className={isInList ? 'fw-bold text-primary' : ''}>{list.name}</span>
+                                              </div>
+                                              {isInList && <i className="bi bi-check2 text-primary fw-bold"></i>}
+                                            </Dropdown.Item>
+                                          );
+                                        })
+                                      ) : (
+                                        <Dropdown.Item disabled className="small text-muted py-2 text-center italic">Henüz liste yok</Dropdown.Item>
+                                      )}
+                                    </Dropdown.Menu>
+                                  </Dropdown>
+                                </div>
+                              );
+                            })()}
                           </div>
 
 
@@ -2396,24 +2474,6 @@ function App() {
             <span className={currentView === 'home' ? "text-primary fw-bold" : ""}>Ana Sayfa</span>
           </button>
           
-          <button 
-            className={`mobile-nav-item ${currentView === 'practice-test' ? 'active' : ''}`} 
-            onClick={() => setCurrentView('practice-test')}
-          >
-            <i className={currentView === 'practice-test' ? "bi bi-controller text-primary" : "bi bi-controller"}></i>
-            <span className={currentView === 'practice-test' ? "text-primary fw-bold" : ""}>Test Çöz</span>
-          </button>
-
-          <button 
-            className="mobile-nav-center-btn" 
-            onClick={() => {
-              setCurrentView('add-word');
-              setEditingWordId(null);
-              setTermText('');
-            }}
-          >
-            <i className="bi bi-plus-lg"></i>
-          </button>
 
           <button 
             className={`mobile-nav-item position-relative ${currentView === 'sticky-notes' ? 'active' : ''}`} 
@@ -2433,6 +2493,13 @@ function App() {
                 {stickyNotes.length > 99 ? '99+' : stickyNotes.length}
               </span>
             )}
+          </button>
+
+          <button 
+            className="mobile-nav-center-btn" 
+            onClick={() => setCurrentView('practice-test')}
+          >
+            <i className="bi bi-controller"></i>
           </button>
 
           <button 
@@ -2501,6 +2568,11 @@ function App() {
         onHide={() => setSelectedWord(null)}
         onSpeak={handleSpeak}
         onEdit={(word) => handleEdit(null, word)}
+        onToggleStar={(e, word) => handleToggleStar(e, word)}
+        onAddToList={(e, word) => handleOpenAddToList(e, word)}
+        customLists={customLists}
+        onAddWordsToList={handleAddWordsToList}
+        onRemoveWordFromList={handleRemoveWordFromList}
         stickyNotes={stickyNotes}
         onAddNote={handleAddNote}
         onDeleteNote={handleDeleteNote}
