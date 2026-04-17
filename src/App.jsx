@@ -10,9 +10,13 @@ import {
   updateDoc,
   setDoc,
   getDoc,
-  getDocs
+  getDocs,
+  where,
+  writeBatch
 } from 'firebase/firestore';
-import { db } from './firebase';
+import { db, auth } from './firebase';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
+import LoginPage from './components/pages/LoginPage';
 
 import { Container, Row, Col, Card, Navbar, Form, Button, InputGroup, Modal, Badge, Spinner, ButtonGroup, Dropdown, Collapse } from 'react-bootstrap';
 import PracticeTestContainer from './components/practice/PracticeTestContainer';
@@ -27,7 +31,7 @@ import CustomListsPage from './components/pages/CustomListsPage';
 import ListDetailPage from './components/pages/ListDetailPage';
 import Swal from 'sweetalert2';
 
-const isConfigMissing = db._app.options.apiKey === "YOUR_API_KEY";
+const isConfigMissing = false; // Config is now in .env
 
 const parseTemplate = (text) => {
   const lines = text.split('\n').map(l => l.trim()).filter(l => l);
@@ -217,6 +221,8 @@ function highlightText(text, highlights, onClick) {
 }
 
 function App() {
+  const [authUser, setAuthUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
   const [currentView, setCurrentView] = useState('home');
   const [words, setWords] = useState([]);
   const [practiceTests, setPracticeTests] = useState([]);
@@ -304,6 +310,61 @@ function App() {
   const [currentListId, setCurrentListId] = useState(null);
   const [bulkListId, setBulkListId] = useState('');
   const [newListName, setNewListName] = useState('');
+  const [isMigrating, setIsMigrating] = useState(false);
+
+  // Authentication Observer
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setAuthUser(user);
+      setAuthLoading(false);
+      if (user) {
+        checkAndMigrateData(user);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const checkAndMigrateData = async (user) => {
+    const migrationKey = `migrated_${user.uid}`;
+    if (localStorage.getItem(migrationKey)) return;
+
+    setIsMigrating(true);
+    try {
+      const collectionsToMigrate = ['words', 'customLists', 'practice_tests', 'daily_stats', 'sticky_notes'];
+      for (const collName of collectionsToMigrate) {
+        const q = query(collection(db, collName));
+        const snap = await getDocs(q);
+        const batch = writeBatch(db);
+        let count = 0;
+        
+        snap.docs.forEach(docSnap => {
+          if (!docSnap.data().userId) {
+            batch.update(doc(db, collName, docSnap.id), { userId: user.uid });
+            count++;
+          }
+        });
+        
+        if (count > 0) await batch.commit();
+      }
+      localStorage.setItem(migrationKey, 'true');
+    } catch (err) {
+      console.error("Migration error:", err);
+    } finally {
+      setIsMigrating(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      setWords([]);
+      setPracticeTests([]);
+      setStickyNotes([]);
+      setCustomLists([]);
+    } catch (err) {
+      console.error("Logout error:", err);
+    }
+  };
 
   // Global text-selection tooltip for home page
   const [homeSelectionTooltip, setHomeSelectionTooltip] = useState(null); // { x, y, text, wordId, wordTerm }
@@ -647,20 +708,21 @@ function App() {
   };
 
   useEffect(() => {
-    if (isConfigMissing) {
-      setWords(mockData);
-      setLoading(false);
-      const localStats = JSON.parse(localStorage.getItem('dailyStats') || '{}');
-      setDailyStats(localStats);
-      return;
-    }
+    if (!authUser) return;
 
-    const q = query(collection(db, 'words'), orderBy('createdAt', 'desc'));
+    const q = query(
+      collection(db, 'words'),
+      where('userId', '==', authUser.uid)
+    );
     const unsubscribeWords = onSnapshot(q, (snapshot) => {
       const wordsData = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
-      }));
+      })).sort((a, b) => {
+        const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
+        const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
+        return dateB - dateA;
+      });
       setWords(wordsData);
       setLoading(false);
     }, (error) => {
@@ -668,7 +730,8 @@ function App() {
       setLoading(false);
     });
 
-    const unsubscribeLists = onSnapshot(collection(db, 'customLists'), (snapshot) => {
+    const qLists = query(collection(db, 'customLists'), where('userId', '==', authUser.uid));
+    const unsubscribeLists = onSnapshot(qLists, (snapshot) => {
       const listsData = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
@@ -676,31 +739,48 @@ function App() {
       setCustomLists(listsData);
     });
 
-    const qTests = query(collection(db, 'practice_tests'), orderBy('updatedAt', 'desc'));
+    const qTests = query(
+      collection(db, 'practice_tests'),
+      where('userId', '==', authUser.uid)
+    );
     const unsubscribeTests = onSnapshot(qTests, (snapshot) => {
       const testsData = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
-      }));
+      })).sort((a, b) => {
+        const dateA = a.updatedAt?.toDate ? a.updatedAt.toDate() : new Date(a.updatedAt || 0);
+        const dateB = b.updatedAt?.toDate ? b.updatedAt.toDate() : new Date(b.updatedAt || 0);
+        return dateB - dateA;
+      });
       setPracticeTests(testsData);
     }, (error) => {
       console.error("Firestore tests error:", error);
     });
 
-    const qStats = query(collection(db, 'daily_stats'));
+    const qStats = query(collection(db, 'daily_stats'), where('userId', '==', authUser.uid));
     const unsubscribeStats = onSnapshot(qStats, (snapshot) => {
       const stats = {};
       snapshot.forEach(doc => {
-        stats[doc.id] = doc.data(); // store entire document { correctCount, words }
+        stats[doc.id] = doc.data();
       });
       setDailyStats(stats);
     }, (error) => {
       console.error("Firestore stats error:", error);
     });
 
-    const qNotes = query(collection(db, 'sticky_notes'), orderBy('createdAt', 'desc'));
+    const qNotes = query(
+      collection(db, 'sticky_notes'),
+      where('userId', '==', authUser.uid)
+    );
     const unsubscribeNotes = onSnapshot(qNotes, (snapshot) => {
-      const notesData = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      const notesData = snapshot.docs.map(d => ({ 
+        id: d.id, 
+        ...d.data() 
+      })).sort((a, b) => {
+        const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
+        const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
+        return dateB - dateA;
+      });
       setStickyNotes(notesData);
     }, (error) => {
       console.error("Firestore sticky_notes error:", error);
@@ -713,7 +793,7 @@ function App() {
       unsubscribeTests();
       unsubscribeNotes();
     };
-  }, []);
+  }, [authUser]);
 
   const handleLogTestResults = async (correctDelta, wordStats) => {
     if (correctDelta === 0 && (!wordStats || Object.keys(wordStats).length === 0)) return;
@@ -737,14 +817,19 @@ function App() {
       }
     }
 
-    if (isConfigMissing) {
+    if (isConfigMissing || !authUser) {
       const newStats = { ...dailyStats, [localToday]: { correctCount: newCount, words: newWords } };
       setDailyStats(newStats);
       localStorage.setItem('dailyStats', JSON.stringify(newStats));
     } else {
-      const docRef = doc(db, 'daily_stats', localToday);
+      // Find the document ID for this day/user. Using a composite ID or searching.
+      // For simplicity, let's keep the localToday as doc ID but add userId field.
+      // NOTE: This assumes one doc per day globally, which is wrong for multi-user.
+      // Better: doc ID should be localToday + "_" + authUser.uid
+      const statsDocId = `${localToday}_${authUser.uid}`;
+      const docRef = doc(db, 'daily_stats', statsDocId);
       try {
-        await setDoc(docRef, { correctCount: newCount, words: newWords }, { merge: true });
+        await setDoc(docRef, { correctCount: newCount, words: newWords, userId: authUser.uid, date: localToday }, { merge: true });
       } catch (e) {
         console.error('Failed to update daily stats', e);
       }
@@ -752,13 +837,18 @@ function App() {
   };
 
   const handleSaveTest = async (testId, testData) => {
-    if (isConfigMissing) return testId;
+    if (isConfigMissing || !authUser) return testId;
     try {
       if (testId) {
         await updateDoc(doc(db, 'practice_tests', testId), { ...testData, updatedAt: new Date() });
         return testId;
       } else {
-        const docRef = await addDoc(collection(db, 'practice_tests'), { ...testData, createdAt: new Date(), updatedAt: new Date() });
+        const docRef = await addDoc(collection(db, 'practice_tests'), { 
+          ...testData, 
+          userId: authUser.uid,
+          createdAt: new Date(), 
+          updatedAt: new Date() 
+        });
         return docRef.id;
       }
     } catch (error) {
@@ -770,13 +860,14 @@ function App() {
   const handleAddNote = async (wordId, wordTerm, text, title = '') => {
     if (!text || !text.trim()) return;
     try {
-      if (!isConfigMissing) {
+      if (!isConfigMissing && authUser) {
         await addDoc(collection(db, 'sticky_notes'), {
           wordId: wordId || null,
           wordTerm: wordTerm || 'Manuel Not',
           text,
           title: title || '',
           isCompleted: false,
+          userId: authUser.uid,
           createdAt: new Date()
         });
       } else {
@@ -1607,7 +1698,32 @@ function App() {
     return true;
   }).length;
 
+  if (authLoading) {
+    return (
+      <div className="d-flex align-items-center justify-content-center min-vh-100 bg-body">
+        <div className="text-center">
+          <Spinner animation="border" variant="primary" className="mb-3" />
+          <p className="text-muted fw-medium">Oturum kontrol ediliyor...</p>
+        </div>
+      </div>
+    );
+  }
 
+  if (!authUser) {
+    return <LoginPage theme={theme} />;
+  }
+
+  if (isMigrating) {
+    return (
+      <div className="d-flex align-items-center justify-content-center min-vh-100 bg-body">
+        <div className="text-center p-5 rounded-5 glass-card shadow-lg" style={{ maxWidth: '400px' }}>
+          <Spinner animation="grow" variant="primary" className="mb-4" />
+          <h4 className="fw-bold mb-2">Verileriniz Taşınıyor</h4>
+          <p className="text-muted small">Eski verileriniz yeni hesabınıza güvenli bir şekilde aktarılıyor. Lütfen pencereyi kapatmayın...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-vh-100 py-4">
@@ -1757,6 +1873,9 @@ function App() {
                       {uncompletedNotesCount > 99 ? '99+' : uncompletedNotesCount}
                     </span>
                   )}
+                </Button>
+                <Button variant="outline-danger" className="rounded-circle d-flex align-items-center justify-content-center border-0 bg-danger bg-opacity-10 text-danger" style={{ width: '40px', height: '40px', minWidth: '40px' }} onClick={handleLogout} title="Çıkış Yap">
+                  <i className="bi bi-box-arrow-right" style={{ fontSize: '20px' }}></i>
                 </Button>
                 <Button variant="outline-secondary" className="rounded-circle d-flex align-items-center justify-content-center border-0 bg-body-secondary text-body" style={{ width: '40px', height: '40px', minWidth: '40px' }} onClick={() => setCurrentView('settings')} title="Ayarlar">
                   <i className="bi bi-gear-fill" style={{ fontSize: '20px' }}></i>
@@ -3141,7 +3260,6 @@ function App() {
           </Modal.Footer>
         </Form>
       </Modal>
-
     </div>
   );
 }
