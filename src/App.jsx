@@ -221,6 +221,9 @@ function App() {
   const [words, setWords] = useState([]);
   const [practiceTests, setPracticeTests] = useState([]);
   const [stickyNotes, setStickyNotes] = useState([]);
+  const uncompletedNotesCount = useMemo(() => {
+    return stickyNotes.filter(note => !note.isCompleted).length;
+  }, [stickyNotes]);
   const [templates, setTemplates] = useState([
     {
       id: 'standart',
@@ -1742,7 +1745,7 @@ function App() {
                   title="Sticky Notlarım"
                 >
                   <i className="bi bi-pin-angle-fill" style={{ fontSize: '18px', color: '#f59e0b' }}></i>
-                  {stickyNotes.length > 0 && (
+                  {uncompletedNotesCount > 0 && (
                     <span
                       className="position-absolute top-0 end-0 text-white fw-bold d-flex align-items-center justify-content-center"
                       style={{
@@ -1751,7 +1754,7 @@ function App() {
                         transform: 'translate(2px, -2px)'
                       }}
                     >
-                      {stickyNotes.length > 99 ? '99+' : stickyNotes.length}
+                      {uncompletedNotesCount > 99 ? '99+' : uncompletedNotesCount}
                     </span>
                   )}
                 </Button>
@@ -2395,7 +2398,7 @@ function App() {
       {/* Practice Test Page */}
       {currentView === 'practice-test' && (
         <Container fluid className="main-app-container">
-          <div className="d-none d-md-block">
+          <div className="d-none d-md-block sticky-top" style={{ zIndex: 1021, top: '0', backgroundColor: 'transparent' }}>
             <PageHeader 
               title="Test Çöz" 
               icon="bi-controller" 
@@ -2553,7 +2556,7 @@ function App() {
           >
             <i className={currentView === 'sticky-notes' ? "bi bi-pin-angle-fill text-primary" : "bi bi-pin-angle"} style={{ color: currentView === 'sticky-notes' ? '' : '#f59e0b' }}></i>
             <span className={currentView === 'sticky-notes' ? "text-primary fw-bold" : ""}>Notlarım</span>
-            {stickyNotes.length > 0 && (
+            {uncompletedNotesCount > 0 && (
               <span
                 className="position-absolute top-0 end-0 text-white fw-bold d-flex align-items-center justify-content-center"
                 style={{
@@ -2562,7 +2565,7 @@ function App() {
                   transform: 'translate(2px, 0px)'
                 }}
               >
-                {stickyNotes.length > 99 ? '99+' : stickyNotes.length}
+                {uncompletedNotesCount > 99 ? '99+' : uncompletedNotesCount}
               </span>
             )}
           </button>

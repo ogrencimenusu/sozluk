@@ -24,6 +24,7 @@ const StickyNotesPage = ({
 }) => {
   const [justUpdatedNoteId, setJustUpdatedNoteId] = useState(null);
   const [expandedDates, setExpandedDates] = useState([]);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const handleToggleExpand = (dateLabel) => {
     setExpandedDates(prev =>
@@ -40,9 +41,19 @@ const StickyNotesPage = ({
     setEditingNoteId(null);
   };
 
+  const filteredNotes = useMemo(() => {
+    if (!searchQuery.trim()) return stickyNotes;
+    const query = searchQuery.toLowerCase();
+    return stickyNotes.filter(n =>
+      (n.title && n.title.toLowerCase().includes(query)) ||
+      (n.text && n.text.toLowerCase().includes(query)) ||
+      (n.wordTerm && n.wordTerm.toLowerCase().includes(query))
+    );
+  }, [stickyNotes, searchQuery]);
+
   const groupedNotes = useMemo(() => {
     const groups = {};
-    const sortedNotes = [...stickyNotes].sort((a, b) => {
+    const sortedNotes = [...filteredNotes].sort((a, b) => {
       const aVal = a.createdAt ? (a.createdAt.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt).getTime()) : 0;
       const bVal = b.createdAt ? (b.createdAt.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt).getTime()) : 0;
       return bVal - aVal;
@@ -67,7 +78,37 @@ const StickyNotesPage = ({
     });
 
     return groups;
-  }, [stickyNotes]);
+  }, [filteredNotes]);
+
+  const renderHighlightedText = (text, query) => {
+    if (!query || !text) return text;
+    const parts = text.split(new RegExp(`(${query})`, 'gi'));
+    return parts.map((part, i) =>
+      part.toLowerCase() === query.toLowerCase()
+        ? <mark key={i} style={{ backgroundColor: '#f59e0b', color: 'white', borderRadius: '3px', padding: '0 2px' }}>{part}</mark>
+        : part
+    );
+  };
+
+  const scrollToNote = (id) => {
+    const element = document.getElementById(`note-${id}`);
+    if (element) {
+      const offset = 100; // Account for sticky header
+      const bodyRect = document.body.getBoundingClientRect().top;
+      const elementRect = element.getBoundingClientRect().top;
+      const elementPosition = elementRect - bodyRect;
+      const offsetPosition = elementPosition - offset;
+
+      window.scrollTo({
+        top: offsetPosition,
+        behavior: 'smooth'
+      });
+
+      // Briefly highlight the jumped note
+      element.classList.add('jump-highlight');
+      setTimeout(() => element.classList.remove('jump-highlight'), 2000);
+    }
+  };
 
   return (
     <Container fluid className="main-app-container animation-fade-in" style={{ animation: 'fadeIn 0.3s ease-in-out' }}>
@@ -78,8 +119,66 @@ const StickyNotesPage = ({
         dailyStats={dailyStats}
       />
 
-      <Row className="justify-content-center mx-0">
-        <Col md={10} lg={8}>
+      <Row className="g-4">
+        {/* Sol Kolon: Başlık Listesi Sidebar - Desktop'ta solda, Mobil'de altta */}
+        <Col xs={12} md={5} lg={4} className="order-2 order-md-1">
+          <Card className="border-0 shadow-sm rounded-4 h-100 bg-body-tertiary">
+            <Card.Header className="bg-transparent border-0 pt-4 pb-2 px-4">
+              <h5 className="fw-bold m-0 d-flex align-items-center gap-2 text-primary">
+                <i className="bi bi-list-ul"></i> Not Başlıkları
+              </h5>
+            </Card.Header>
+            <Card.Body className="p-0">
+              {Object.keys(groupedNotes).length === 0 ? (
+                <div className="text-muted text-center p-4">Not bulunamadı.</div>
+              ) : (
+                <div className="d-flex flex-column gap-3 p-4 pt-1">
+                  {Object.entries(groupedNotes).map(([dateLabel, items], idx) => (
+                    <div key={idx}>
+                      <div className="small fw-bold text-muted mb-2 ps-2" style={{ letterSpacing: '0.5px' }}>{dateLabel}</div>
+                      <div className="d-flex flex-column gap-2">
+                        {items.slice(0, expandedDates.includes(dateLabel) ? items.length : 4).map((note, i) => (
+                          <div
+                            key={note.id}
+                            className="bg-body shadow-sm p-3 rounded-4 d-flex align-items-center gap-3 interactive-card"
+                            style={{ cursor: 'pointer' }}
+                            onClick={() => scrollToNote(note.id)}
+                          >
+                            <div 
+                              className={`fw-bold fs-6 flex-grow-1 text-truncate ${note.isCompleted ? 'text-success opacity-75' : ''}`}
+                              style={!note.isCompleted ? { color: '#f59e0b' } : {}}
+                            >
+                              {i + 1}. {note.title || (note.text ? note.text.substring(0, 30) + '...' : 'Başlıksız Not')}
+                            </div>
+                            {note.isCompleted && <i className="bi bi-check-circle-fill text-success opacity-50"></i>}
+                          </div>
+                        ))}
+                        {items.length > 4 && (
+                          <div className="text-center mt-1">
+                            <span
+                              className="text-primary small fw-medium"
+                              style={{ cursor: 'pointer' }}
+                              onClick={() => handleToggleExpand(dateLabel)}
+                            >
+                              {expandedDates.includes(dateLabel) ? (
+                                <><i className="bi bi-chevron-up"></i> Daha az göster</>
+                              ) : (
+                                <>({items.length - 4} adet not daha) <i className="bi bi-chevron-down"></i></>
+                              )}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card.Body>
+          </Card>
+        </Col>
+
+        {/* Sağ Kolon: Form ve Liste */}
+        <Col xs={12} md={7} lg={8} className="order-1 order-md-2">
           {/* Yeni Not Ekleme Alanı */}
           <Card className="border-0 shadow-sm rounded-4 mb-4 bg-body-tertiary">
             <Card.Body className="p-4">
@@ -119,20 +218,35 @@ const StickyNotesPage = ({
           {/* Not Listesi */}
           <Card className="border-0 shadow-sm rounded-4 bg-body-tertiary">
             <Card.Body className="p-0">
-              <div className="d-flex align-items-center justify-content-between p-4 border-bottom border-opacity-10">
+              <div className="d-flex flex-column flex-sm-row align-items-sm-center justify-content-between p-4 border-bottom border-opacity-10 gap-3">
                 <h6 className="fw-bold m-0 text-secondary d-flex align-items-center gap-2">
                   <i className="bi bi-card-text"></i> Kaydedilen Notlar
                 </h6>
-                <span className="badge bg-primary bg-opacity-10 text-primary rounded-pill px-3 py-2 fw-bold">
-                  {stickyNotes.length} Not
-                </span>
+                
+                <div className="d-flex align-items-center gap-3">
+                  <div className="position-relative">
+                    <i className="bi bi-search position-absolute top-50 start-0 translate-middle-y ms-3 text-muted"></i>
+                    <Form.Control
+                      type="text"
+                      placeholder="Notlarda ara..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="bg-body-secondary border-0 shadow-none ps-5 pe-4 py-2 rounded-pill small"
+                      style={{ width: '200px', fontSize: '0.9rem' }}
+                    />
+                  </div>
+                  <span className="badge bg-primary bg-opacity-10 text-primary rounded-pill px-3 py-2 fw-bold">
+                    {filteredNotes.length} Not
+                  </span>
+                </div>
               </div>
 
               <div className="p-4">
-                {stickyNotes.length === 0 ? (
+                {filteredNotes.length === 0 ? (
                   <div className="text-center text-muted py-5">
                     <i className="bi bi-pin-angle fs-1 opacity-25 mb-3 d-block"></i>
-                    Henüz hiç sticky note eklemediniz.<br />Kelimeleri seçerek detayından not ekleyebilirsiniz.
+                    {searchQuery ? 'Arama sonucu bulunamadı.' : 'Henüz hiç sticky note eklemediniz.'}<br />
+                    {!searchQuery && 'Kelimeleri seçerek detayından not ekleyebilirsiniz.'}
                   </div>
                 ) : (
                   <div className="d-flex flex-column gap-5">
@@ -142,14 +256,15 @@ const StickyNotesPage = ({
                           <i className="bi bi-calendar-event opacity-50"></i> {dateLabel}
                         </div>
                         <div className="d-flex flex-column gap-3">
-                          {items.slice(0, expandedDates.includes(dateLabel) ? items.length : 4).map((note) => {
+                          {items.map((note) => {
                             const noteDate = note.createdAt?.toDate ? note.createdAt.toDate() : new Date(note.createdAt);
                             const isValidDate = noteDate instanceof Date && !isNaN(noteDate);
 
                             return (
                               <div
                                 key={note.id}
-                                className={`sticky-note-list-item d-flex align-items-start gap-3 p-3 overflow-hidden ${justUpdatedNoteId === note.id ? 'just-updated' : ''} ${note.isCompleted ? 'completed' : ''}`}
+                                id={`note-${note.id}`}
+                                className={`sticky-note-list-item d-flex align-items-start gap-3 p-3 overflow-hidden transition-all ${justUpdatedNoteId === note.id ? 'just-updated' : ''} ${note.isCompleted ? 'completed' : ''}`}
                               >
                                 <div className={`sticky-note-list-pin flex-shrink-0 ${note.isCompleted ? 'text-success' : ''}`}>
                                   <i className={`bi ${note.isCompleted ? 'bi-check-circle-fill' : 'bi-pin-angle-fill'}`}></i>
@@ -158,7 +273,9 @@ const StickyNotesPage = ({
                                   {note.wordTerm && (
                                     <div className="sticky-note-list-word-tag mb-2">
                                       <i className="bi bi-link-45deg me-1 opacity-50" style={{ fontSize: '0.8rem' }}></i>
-                                      {(note.wordTerm === 'Manuel Not' || note.wordTerm === 'MANUEL NOT' || !note.wordTerm) ? 'Not' : `İlişkili Kelime: ${note.wordTerm}`}
+                                      {(note.wordTerm === 'Manuel Not' || note.wordTerm === 'MANUEL NOT' || !note.wordTerm) 
+                                        ? 'Not' 
+                                        : <>İlişkili Kelime: {renderHighlightedText(note.wordTerm, searchQuery)}</>}
                                     </div>
                                   )}
 
@@ -231,7 +348,7 @@ const StickyNotesPage = ({
                                     >
                                       {note.title && (
                                         <div className={`sticky-note-list-title h6 fw-bold mb-2 ${note.isCompleted ? 'opacity-50' : 'text-body'}`}>
-                                          {note.title}
+                                          {renderHighlightedText(note.title, searchQuery)}
                                         </div>
                                       )}
 
@@ -243,7 +360,7 @@ const StickyNotesPage = ({
                                           wordBreak: 'break-word'
                                         }}
                                       >
-                                        {note.text}
+                                        {renderHighlightedText(note.text, searchQuery)}
                                       </div>
                                     </div>
                                   )}
@@ -275,21 +392,6 @@ const StickyNotesPage = ({
                               </div>
                             );
                           })}
-                          {items.length > 4 && (
-                            <div className="text-center mt-2">
-                              <span
-                                className="text-primary small fw-semibold"
-                                style={{ cursor: 'pointer', letterSpacing: '0.3px' }}
-                                onClick={() => handleToggleExpand(dateLabel)}
-                              >
-                                {expandedDates.includes(dateLabel) ? (
-                                  <><i className="bi bi-chevron-up me-1"></i> Daha az göster</>
-                                ) : (
-                                  <><i className="bi bi-chevron-down me-1"></i> ({items.length - 4} adet not daha)</>
-                                )}
-                              </span>
-                            </div>
-                          )}
                         </div>
                       </div>
                     ))}

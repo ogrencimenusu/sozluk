@@ -571,10 +571,11 @@ mark.sticky-highlight:hover {
 /* Adjust page padding for mobile bottom nav */
 @media (max-width: 767.98px) {
   .main-app-container {
-  padding-left: 15px !important;
-  padding-right: 15px !important;
-  padding-bottom: 90px !important;
-  transition: all 0.3s ease;
+    padding-left: 15px !important;
+    padding-right: 15px !important;
+    padding-bottom: 90px !important;
+    transition: all 0.3s ease;
+  }
 }
 
 @media (min-width: 768px) {
@@ -582,7 +583,6 @@ mark.sticky-highlight:hover {
     padding-left: 30px !important;
     padding-right: 30px !important;
   }
-}
 }
 /* ─── Animations ─── */
 @keyframes fadeIn {
@@ -727,4 +727,15 @@ html, body {
 /* Hide dropdown arrow */
 .no-caret::after {
   display: none !important;
+}
+
+/* ─── Jump Highlight ─── */
+.jump-highlight {
+  animation: jumpHighlightPulse 2s ease-out;
+}
+
+@keyframes jumpHighlightPulse {
+  0% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.4); background-color: rgba(245, 158, 11, 0.1); }
+  50% { box-shadow: 0 0 0 10px rgba(245, 158, 11, 0); background-color: rgba(245, 158, 11, 0.2); }
+  100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); background-color: transparent; }
 }
