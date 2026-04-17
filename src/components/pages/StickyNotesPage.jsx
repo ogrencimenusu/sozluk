@@ -19,7 +19,6 @@ const StickyNotesPage = ({
   setInlineEditingTitle,
   handleUpdateNote,
   theme,
-  toggleTheme,
   setCurrentView,
   dailyStats
 }) => {

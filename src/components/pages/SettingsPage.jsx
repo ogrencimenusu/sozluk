@@ -3,7 +3,7 @@ import { Container, Row, Col, Card, Button } from 'react-bootstrap';
 import PageHeader from '../layout/PageHeader';
 import Swal from 'sweetalert2';
 
-const SettingsPage = ({ theme, toggleTheme, viewMode, setViewMode, wordsPerPage, setWordsPerPage, setCurrentView, dailyStats }) => {
+const SettingsPage = ({ theme, setTheme, viewMode, setViewMode, wordsPerPage, setWordsPerPage, setCurrentView, dailyStats }) => {
   const handleClearCache = async () => {
     const result = await Swal.fire({
       title: 'Önbelleği Temizle',
@@ -81,43 +81,29 @@ const SettingsPage = ({ theme, toggleTheme, viewMode, setViewMode, wordsPerPage,
                 <div className="d-flex align-items-center justify-content-between mb-4 border-bottom border-opacity-10 pb-4">
                   <div>
                     <h6 className="fw-semibold mb-1">Tema Seçimi</h6>
-                    <p className="text-muted small mb-0">Uygulamanın genel renk temasını değiştirin (Açık/Koyu).</p>
-                  </div>
-                  <div
-                    className="d-flex align-items-center justify-content-between p-1 rounded-pill"
-                    style={{ backgroundColor: theme === 'light' ? '#e2e8f0' : '#1e293b', width: '80px', cursor: 'pointer', transition: 'all 0.3s ease' }}
-                    onClick={toggleTheme}
-                  >
-                    <div className={`rounded-circle d-flex align-items-center justify-content-center transition-all ${theme === 'light' ? 'bg-white shadow-sm' : 'text-muted'}`} style={{ width: '36px', height: '36px' }}>
-                      <i className="bi bi-sun-fill" style={{ color: theme === 'light' ? '#f59e0b' : 'inherit' }}></i>
-                    </div>
-                    <div className={`rounded-circle d-flex align-items-center justify-content-center transition-all ${theme === 'dark' ? 'bg-dark bg-opacity-50 text-white shadow-sm' : 'text-muted'}`} style={{ width: '36px', height: '36px' }}>
-                      <i className="bi bi-moon-fill" style={{ color: theme === 'dark' ? '#fbbf24' : 'inherit' }}></i>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="d-flex align-items-center justify-content-between mb-4">
-                  <div>
-                    <h6 className="fw-semibold mb-1">Varsayılan Görünüm</h6>
-                    <p className="text-muted small mb-0">Kelime listesinin ana sayfadaki varsayılan dizilimi.</p>
+                    <p className="text-muted small mb-0">Uygulamanın genel renk temasını değiştirin.</p>
                   </div>
                   <div className="d-flex gap-2">
                     <button
-                      className={`btn rounded-3 d-flex flex-column align-items-center justify-content-center p-3 transition-all ${viewMode === 'grid' ? 'btn-primary shadow-sm' : 'btn-outline-secondary border-opacity-25'}`}
-                      style={{ width: '80px' }}
-                      onClick={() => setViewMode('grid')}
+                      className={`btn btn-sm rounded-pill px-3 transition-all ${theme === 'light' ? 'btn-primary shadow-sm' : 'btn-outline-secondary border-opacity-25'}`}
+                      onClick={() => setTheme('light')}
+                      title="Açık Tema"
                     >
-                      <i className="bi bi-grid-3x3-gap-fill mb-1 fs-5"></i>
-                      <span style={{ fontSize: '11px', fontWeight: '500' }}>Klasik</span>
+                      <i className="bi bi-sun-fill me-1"></i> Açık
                     </button>
                     <button
-                      className={`btn rounded-3 d-flex flex-column align-items-center justify-content-center p-3 transition-all ${viewMode === 'detailed' ? 'btn-primary shadow-sm' : 'btn-outline-secondary border-opacity-25'}`}
-                      style={{ width: '80px' }}
-                      onClick={() => setViewMode('detailed')}
+                      className={`btn btn-sm rounded-pill px-3 transition-all ${theme === 'dark' ? 'btn-primary shadow-sm' : 'btn-outline-secondary border-opacity-25'}`}
+                      onClick={() => setTheme('dark')}
+                      title="Koyu Tema"
                     >
-                      <i className="bi bi-view-list mb-1 fs-5"></i>
-                      <span style={{ fontSize: '11px', fontWeight: '500' }}>Detaylı</span>
+                      <i className="bi bi-moon-fill me-1"></i> Koyu
+                    </button>
+                    <button
+                      className={`btn btn-sm rounded-pill px-3 transition-all ${theme === 'system' ? 'btn-primary shadow-sm' : 'btn-outline-secondary border-opacity-25'}`}
+                      onClick={() => setTheme('system')}
+                      title="Sistem Teması"
+                    >
+                      <i className="bi bi-laptop me-1"></i> Sistem
                     </button>
                   </div>
                 </div>

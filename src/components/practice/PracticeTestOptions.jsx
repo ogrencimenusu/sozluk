@@ -290,7 +290,7 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
 
                 <div className="mb-4 pb-3 border-bottom border-secondary border-opacity-25">
                     <h6 className="text-body fw-bold mb-3">Test Uzunluğu</h6>
-                    <div className="d-flex justify-content-between align-items-center">
+                    <div className="d-flex justify-content-between align-items-start">
                         <div>
                             <span className="text-body small fw-medium">Soru Sayısı</span>
                             <div className="text-muted mt-0" style={{ fontSize: '12px' }}>
@@ -300,26 +300,42 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
                                 )}
                             </div>
                         </div>
-                        <div className="d-flex align-items-center gap-2">
-                            <Form.Control
-                                type="number"
-                                value={questionCount}
-                                onChange={e => setQuestionCount(Math.max(1, parseInt(e.target.value) || 1))}
-                                max={Math.max(1, maxSelectableCount)}
-                                min={1}
-                                className="bg-transparent text-body text-center border-secondary border-opacity-50 rounded-pill"
-                                style={{ width: '65px', fontSize: '13px', height: '32px' }}
-                            />
-                            <Button
-                                variant="outline-secondary"
-                                size="sm"
-                                className="rounded-pill px-2 border-opacity-50 d-flex align-items-center justify-content-center"
-                                onClick={() => setQuestionCount(maxSelectableCount)}
-                                style={{ height: '31px', width: '31px' }}
-                                title="Tümünü Seç"
-                            >
-                                <i className="bi bi-check-all fs-5"></i>
-                            </Button>
+                        <div className="d-flex flex-column align-items-end gap-2">
+                            <div className="d-flex align-items-center gap-2">
+                                <Form.Control
+                                    type="number"
+                                    value={questionCount}
+                                    onChange={e => setQuestionCount(Math.max(1, parseInt(e.target.value) || 1))}
+                                    max={Math.max(1, maxSelectableCount)}
+                                    min={1}
+                                    className="bg-transparent text-body text-center border-secondary border-opacity-50 rounded-pill"
+                                    style={{ width: '65px', fontSize: '13px', height: '32px' }}
+                                />
+                                <Button
+                                    variant="outline-secondary"
+                                    size="sm"
+                                    className="rounded-pill px-2 border-opacity-50 d-flex align-items-center justify-content-center"
+                                    onClick={() => setQuestionCount(maxSelectableCount)}
+                                    style={{ height: '31px', width: '31px' }}
+                                    title="Tümünü Seç"
+                                >
+                                    <i className="bi bi-check-all fs-5"></i>
+                                </Button>
+                            </div>
+                            <div className="d-flex gap-2">
+                                {[5, 10, 15].map(val => (
+                                    <Button
+                                        key={val}
+                                        variant={questionCount === val ? 'primary' : 'outline-secondary'}
+                                        size="sm"
+                                        className="rounded-pill px-3 py-0 border-opacity-50 shadow-none d-flex align-items-center justify-content-center"
+                                        onClick={() => setQuestionCount(Math.min(val, maxSelectableCount))}
+                                        style={{ fontSize: '11px', height: '22px', fontWeight: '500' }}
+                                    >
+                                        {val}
+                                    </Button>
+                                ))}
+                            </div>
                         </div>
                     </div>
                 </div>

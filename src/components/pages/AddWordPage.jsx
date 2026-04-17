@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Container, Row, Col, Card, Form, Button, Spinner } from 'react-bootstrap';
+import { Container, Row, Col, Card, Form, Button, Spinner, Dropdown, Badge } from 'react-bootstrap';
 import PageHeader from '../layout/PageHeader';
 
 const AddWordPage = ({
@@ -19,11 +19,13 @@ const AddWordPage = ({
   handleSubmit,
   editingWordId,
   theme,
-  toggleTheme,
   setCurrentView,
   closeModal,
   onWordClick,
-  dailyStats
+  dailyStats,
+  customLists,
+  selectedListIds,
+  setSelectedListIds
 }) => {
   const [expandedDates, setExpandedDates] = useState([]);
 
@@ -179,6 +181,67 @@ const AddWordPage = ({
                       className="bg-body-secondary border-0 px-3 py-2 rounded-3 shadow-none w-100"
                     />
                   </div>
+                </Form.Group>
+
+                <Form.Group className="mb-4">
+                  <Form.Label className="mb-1 fw-semibold text-muted">Özel Listeler</Form.Label>
+                  <Dropdown className="d-block shadow-sm rounded-3">
+                    <Dropdown.Toggle 
+                      variant="link" 
+                      className="w-100 bg-body-secondary border-0 px-3 py-2 rounded-3 shadow-none text-start d-flex align-items-center justify-content-between no-caret"
+                      id="add-word-list-dropdown"
+                    >
+                      <div className="d-flex align-items-center gap-2">
+                        <i className="bi bi-collection-play-fill text-primary" style={{ fontSize: '18px' }}></i>
+                        <span className="text-body fw-medium">{selectedListIds.length > 0 ? `${selectedListIds.length} Liste Seçili` : 'Listelere Ekle'}</span>
+                      </div>
+                      <div className="d-flex align-items-center gap-2">
+                        {selectedListIds.length > 0 && (
+                          <Badge bg="primary" pill style={{ fontSize: '11px' }}>
+                            {selectedListIds.length}
+                          </Badge>
+                        )}
+                        <i className="bi bi-chevron-down text-muted small opacity-50"></i>
+                      </div>
+                    </Dropdown.Toggle>
+
+                    <Dropdown.Menu className="w-100 shadow-lg border-secondary border-opacity-25 bg-body-tertiary rounded-3 mt-1" style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                      <Dropdown.Header className="small fw-bold text-primary border-bottom border-opacity-10 mb-1">Listelerim</Dropdown.Header>
+                      {(customLists || []).slice().sort((a,b) => {
+                        const orderA = a.order ?? Number.MAX_SAFE_INTEGER;
+                        const orderB = b.order ?? Number.MAX_SAFE_INTEGER;
+                        if (orderA !== orderB) return orderA - orderB;
+                        const dateA = a.createdAt ? (a.createdAt.toDate ? a.createdAt.toDate() : new Date(a.createdAt)) : 0;
+                        const dateB = b.createdAt ? (b.createdAt.toDate ? b.createdAt.toDate() : new Date(b.createdAt)) : 0;
+                        return dateB - dateA;
+                      }).map(list => {
+                        const isInList = (selectedListIds || []).includes(list.id);
+                        return (
+                          <Dropdown.Item 
+                            key={list.id} 
+                            className={`small d-flex align-items-center justify-content-between gap-2 py-2 ${isInList ? 'bg-primary bg-opacity-10' : ''}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (isInList) {
+                                setSelectedListIds(prev => prev.filter(id => id !== list.id));
+                              } else {
+                                setSelectedListIds(prev => [...prev, list.id]);
+                              }
+                            }}
+                          >
+                            <div className="d-flex align-items-center gap-2">
+                              <i className={`bi ${isInList ? 'bi-collection-play-fill text-primary' : 'bi-collection-play opacity-50'}`}></i> 
+                              <span className={isInList ? 'fw-bold text-primary' : ''}>{list.name}</span>
+                            </div>
+                            {isInList && <i className="bi bi-check2 text-primary fw-bold"></i>}
+                          </Dropdown.Item>
+                        );
+                      })}
+                      {(!customLists || customLists.length === 0) && (
+                        <Dropdown.Item disabled className="small text-muted py-2 text-center italic">Henüz liste yok</Dropdown.Item>
+                      )}
+                    </Dropdown.Menu>
+                  </Dropdown>
                 </Form.Group>
 
                 <Form.Group className="mb-2">

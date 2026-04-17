@@ -210,7 +210,17 @@ function WordDetailModal({
                             onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.1)'}
                             onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
                         ></i>
-                        <Modal.Title className="display-6 fw-bold m-0">{word.term}</Modal.Title>
+                        <div className="d-flex align-items-center flex-wrap gap-2">
+                            <Modal.Title className="display-6 fw-bold m-0 text-break text-body">{word.term}</Modal.Title>
+                            <Badge 
+                                bg={word.learningStatus === 'Öğrendi' ? 'success' : word.learningStatus === 'Öğreniyor' ? 'warning' : 'info'} 
+                                pill 
+                                className="ms-md-2 px-3 py-2 fw-bold shadow-sm"
+                                style={{ fontSize: '0.8rem', letterSpacing: '0.5px' }}
+                            >
+                                {word.learningStatus || 'Yeni'}
+                            </Badge>
+                        </div>
                     </div>
                     <div className="ms-auto d-flex align-items-center gap-2">
                         {(() => {

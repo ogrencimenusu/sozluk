@@ -405,6 +405,7 @@ function App() {
   }, []);
 
   const [templateType, setTemplateType] = useState('sablon2');
+  const [selectedListIds, setSelectedListIds] = useState([]);
 
   const parsedPreview = useMemo(() => {
     if (!termText.trim()) return [];
@@ -510,7 +511,6 @@ function App() {
           if (data.filters) setFilters(data.filters);
           if (data.theme) {
             setTheme(data.theme);
-            document.documentElement.setAttribute('data-bs-theme', data.theme);
             localStorage.setItem('theme', data.theme);
           }
           if (data.wordsPerPage) {
@@ -554,12 +554,28 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Save theme to Firestore when it changes
+  // Handle theme application and storage
   useEffect(() => {
-    document.documentElement.setAttribute('data-bs-theme', theme);
+    const applyTheme = (t) => {
+      let activeTheme = t;
+      if (t === 'system') {
+        activeTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      }
+      document.documentElement.setAttribute('data-bs-theme', activeTheme);
+    };
+
+    applyTheme(theme);
     localStorage.setItem('theme', theme);
+    
     if (!isConfigMissing && settingsLoaded.current) {
       setDoc(doc(db, 'settings', 'app'), { theme }, { merge: true }).catch(() => { });
+    }
+
+    if (theme === 'system') {
+      const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+      const listener = () => applyTheme('system');
+      mediaQuery.addEventListener('change', listener);
+      return () => mediaQuery.removeEventListener('change', listener);
     }
   }, [theme]);
 
@@ -594,9 +610,7 @@ function App() {
     }
   }, [practiceOptions]);
 
-  const toggleTheme = () => {
-    setTheme(prev => prev === 'light' ? 'dark' : 'light');
-  };
+
 
   const handleSpeak = (text) => {
     if (!('speechSynthesis' in window)) return;
@@ -1061,6 +1075,12 @@ function App() {
     setEditingWordId(word.id);
     setTermText(word.raw || '');
     setLearningStatus(word.learningStatus || 'Yeni');
+    
+    // Initialize selected lists
+    const initialListIds = (customLists || [])
+      .filter(l => l.wordIds?.includes(word.id))
+      .map(l => l.id);
+    setSelectedListIds(initialListIds);
 
     if (word.createdAt) {
       const dateObj = word.createdAt.toDate ? word.createdAt.toDate() : new Date(word.createdAt);
@@ -1102,6 +1122,8 @@ function App() {
       const dateParts = selectedDate.split('-');
       const customDate = new Date(dateParts[0], dateParts[1] - 1, dateParts[2]);
 
+      let savedWordIds = [];
+
       if (editingWordId) {
         const newWordData = {
           ...parsedItems[0],
@@ -1110,8 +1132,10 @@ function App() {
         };
         if (isConfigMissing) {
           setWords(words.map(w => w.id === editingWordId ? { ...w, ...newWordData } : w));
+          savedWordIds = [editingWordId];
         } else {
           await updateDoc(doc(db, 'words', editingWordId), newWordData);
+          savedWordIds = [editingWordId];
         }
       } else {
         const newWords = parsedItems.map((parsedData) => ({
@@ -1125,8 +1149,46 @@ function App() {
         if (isConfigMissing) {
           const newWordsWithIds = newWords.map((w, i) => ({ id: (Date.now() + i).toString(), ...w }));
           setWords(prev => [...newWordsWithIds, ...prev]);
+          savedWordIds = newWordsWithIds.map(w => w.id);
         } else {
-          await Promise.all(newWords.map(w => addDoc(collection(db, 'words'), w)));
+          const docs = await Promise.all(newWords.map(w => addDoc(collection(db, 'words'), w)));
+          savedWordIds = docs.map(d => d.id);
+        }
+      }
+
+      // Sync custom lists
+      if (selectedListIds !== undefined) {
+        if (!isConfigMissing) {
+          for (const list of customLists) {
+            const isSelected = selectedListIds.includes(list.id);
+            const hasAnySavedWord = list.wordIds?.some(id => savedWordIds.includes(id));
+
+            if (isSelected) {
+              const idsToAdd = savedWordIds.filter(id => !list.wordIds?.includes(id));
+              if (idsToAdd.length > 0) {
+                await updateDoc(doc(db, 'customLists', list.id), {
+                  wordIds: [...(list.wordIds || []), ...idsToAdd]
+                });
+              }
+            } else if (editingWordId && hasAnySavedWord) {
+              await updateDoc(doc(db, 'customLists', list.id), {
+                wordIds: list.wordIds.filter(id => !savedWordIds.includes(id))
+              });
+            }
+          }
+        } else {
+          setCustomLists(prev => prev.map(l => {
+            const isSelected = selectedListIds.includes(l.id);
+            const hasAnySavedWord = l.wordIds?.some(id => savedWordIds.includes(id));
+
+            if (isSelected) {
+              const idsToAdd = savedWordIds.filter(id => !l.wordIds?.includes(id));
+              return { ...l, wordIds: [...(l.wordIds || []), ...idsToAdd] };
+            } else if (editingWordId && hasAnySavedWord) {
+              return { ...l, wordIds: l.wordIds.filter(id => !savedWordIds.includes(id)) };
+            }
+            return l;
+          }));
         }
       }
 
@@ -1169,6 +1231,7 @@ function App() {
     setSelectedDate(new Date().toISOString().split('T')[0]);
     setEditingWordId(null);
     setLearningStatus('Yeni');
+    setSelectedListIds([]);
   };
 
   const handleToggleStar = async (e, word) => {
@@ -1184,6 +1247,11 @@ function App() {
         });
       } else {
         setWords(words.map(w => w.id === word.id ? { ...w, isStarred: !word.isStarred } : w));
+      }
+      
+      // Modal state sync
+      if (selectedWord && selectedWord.id === word.id) {
+        setSelectedWord({ ...selectedWord, isStarred: !word.isStarred });
       }
     } catch (error) {
       console.error("Yıldız güncellenirken hata:", error);
@@ -1449,6 +1517,9 @@ function App() {
         } else if (rule.field === 'learningStage') {
           aVal = aVal ?? 0;
           bVal = bVal ?? 0;
+        } else if (typeof aVal === 'boolean') {
+          aVal = aVal ? 1 : 0;
+          bVal = bVal ? 1 : 0;
         } else if (typeof aVal === 'string') {
           aVal = aVal.toLowerCase();
           bVal = (bVal || '').toLowerCase();
@@ -2388,11 +2459,13 @@ function App() {
           handleSubmit={handleSubmit}
           editingWordId={editingWordId}
           theme={theme}
-          toggleTheme={toggleTheme}
           setCurrentView={setCurrentView}
           closeModal={closeModal}
           onWordClick={setSelectedWord}
           dailyStats={dailyStats}
+          customLists={customLists}
+          selectedListIds={selectedListIds}
+          setSelectedListIds={setSelectedListIds}
         />
       )}
 
@@ -2415,7 +2488,6 @@ function App() {
           setInlineEditingTitle={setInlineEditingTitle}
           handleUpdateNote={handleUpdateNote}
           theme={theme}
-          toggleTheme={toggleTheme}
           setCurrentView={setCurrentView}
           dailyStats={dailyStats}
         />
@@ -2425,7 +2497,7 @@ function App() {
       {currentView === 'settings' && (
         <SettingsPage 
           theme={theme}
-          toggleTheme={toggleTheme}
+          setTheme={setTheme}
           viewMode={viewMode}
           setViewMode={setViewMode}
           wordsPerPage={wordsPerPage}
@@ -2785,6 +2857,7 @@ function App() {
                 <option value="term">Kelime (A-Z)</option>
                 <option value="createdAt">Eklenme Tarihi</option>
                 <option value="learningStage">Öğrenme Aşaması</option>
+                <option value="isStarred">Yıldızlı Durumu</option>
               </Form.Select>
               <Form.Select
                 value={rule.direction}
@@ -2821,7 +2894,7 @@ function App() {
       </Modal>
 
       {/* BULK EDIT MODAL */}
-      <Modal show={showBulkEditModal} onHide={() => setShowBulkEditModal(false)} centered>
+      <Modal show={showBulkEditModal} onHide={() => setShowBulkEditModal(false)} centered size="lg">
         <Form onSubmit={applyBulkAction}>
           <Modal.Header closeButton className="border-bottom border-opacity-10">
             <Modal.Title className="fs-5 fw-bold">
@@ -2833,7 +2906,7 @@ function App() {
 
             {/* Action Type Selector */}
             <p className="fw-medium text-muted small text-uppercase letter-spacing-1 mb-2">İşlem Türü</p>
-            <div className="d-flex gap-2 mb-4 flex-wrap">
+            <div className="d-flex gap-2 mb-4">
               {[
                 { key: 'status', icon: 'bi-mortarboard', label: 'Öğrenme' },
                 { key: 'practice', icon: 'bi-controller', label: 'Test Çöz' },
