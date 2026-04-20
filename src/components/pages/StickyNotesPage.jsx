@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Container, Row, Col, Card, Form, Button } from 'react-bootstrap';
 import PageHeader from '../layout/PageHeader';
 
@@ -25,6 +25,7 @@ const StickyNotesPage = ({
   const [justUpdatedNoteId, setJustUpdatedNoteId] = useState(null);
   const [expandedDates, setExpandedDates] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [saveStatus, setSaveStatus] = useState('idle'); // 'idle', 'saving', 'saved'
 
   const handleToggleExpand = (dateLabel) => {
     setExpandedDates(prev =>
@@ -34,12 +35,40 @@ const StickyNotesPage = ({
     );
   };
 
-  const handleUpdateWithFeedback = (noteId, text, title) => {
-    handleUpdateNote(noteId, text, title);
-    setJustUpdatedNoteId(noteId);
-    setTimeout(() => setJustUpdatedNoteId(null), 3000);
-    setEditingNoteId(null);
-  };
+  const autoSaveTimerRef = useRef(null);
+
+  // Auto-save logic
+  useEffect(() => {
+    if (!editingNoteId) {
+      setSaveStatus('idle');
+      return;
+    }
+
+    // Clear existing timer
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+    }
+
+    // Don't save if text is empty
+    if (!inlineEditingText || !inlineEditingText.trim()) return;
+
+    // Set status to saving
+    setSaveStatus('saving');
+
+    // Set new timer for auto-save
+    autoSaveTimerRef.current = setTimeout(() => {
+      handleUpdateNote(editingNoteId, inlineEditingText, inlineEditingTitle);
+      setJustUpdatedNoteId(editingNoteId);
+      setSaveStatus('saved');
+      setTimeout(() => setJustUpdatedNoteId(null), 2000);
+    }, 1000); // 1 second debounce
+
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+      }
+    };
+  }, [inlineEditingText, inlineEditingTitle, editingNoteId, handleUpdateNote]);
 
   const filteredNotes = useMemo(() => {
     if (!searchQuery.trim()) return stickyNotes;
@@ -311,6 +340,20 @@ const StickyNotesPage = ({
                                             setEditingNoteId(null);
                                           }
                                         }}
+                                        onBlur={(e) => {
+                                          // Small delay to allow clicking between title and text without closing
+                                          setTimeout(() => {
+                                            const activeElement = document.activeElement;
+                                            if (
+                                              activeElement && 
+                                              (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA') && 
+                                              activeElement.closest('.sticky-note-list-item')
+                                            ) {
+                                              return;
+                                            }
+                                            setEditingNoteId(null);
+                                          }, 200);
+                                        }}
                                         ref={(tag) => {
                                           if (tag) {
                                             tag.style.height = 'auto';
@@ -318,23 +361,14 @@ const StickyNotesPage = ({
                                           }
                                         }}
                                       />
-                                      <div className="d-flex justify-content-end gap-2">
-                                        <Button
-                                          variant="outline-secondary"
-                                          size="sm"
-                                          className="rounded-pill px-3 fw-semibold"
-                                          onClick={() => setEditingNoteId(null)}
-                                        >
-                                          Vazgeç
-                                        </Button>
-                                        <Button
-                                          variant="warning"
-                                          size="sm"
-                                          className="rounded-pill px-4 fw-bold text-dark shadow-sm"
-                                          onClick={() => handleUpdateWithFeedback(note.id, inlineEditingText, inlineEditingTitle)}
-                                        >
-                                          Kaydet
-                                        </Button>
+                                      <div className="d-flex justify-content-end mt-1">
+                                        <small className={`transition-all ${saveStatus === 'saved' ? 'text-success' : 'text-muted'} opacity-75`} style={{ fontSize: '0.75rem', fontWeight: '500' }}>
+                                          {saveStatus === 'saving' ? (
+                                            <><i className="bi bi-cloud-arrow-up-fill me-1"></i> Otomatik kaydediliyor...</>
+                                          ) : saveStatus === 'saved' ? (
+                                            <><i className="bi bi-cloud-check-fill me-1"></i> Düzenleme Kaydedildi</>
+                                          ) : null}
+                                        </small>
                                       </div>
                                     </div>
                                   ) : (

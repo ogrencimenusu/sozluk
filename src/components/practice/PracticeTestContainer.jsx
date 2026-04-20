@@ -109,6 +109,7 @@ const PracticeTestContainer = forwardRef((props, ref) => {
             
             let exampleSentence = null;
             let sentenceContext = null;
+            let turkishTranslation = null;
 
             if (isFormatExample) {
                 const candidates = [];
@@ -135,14 +136,15 @@ const PracticeTestContainer = forwardRef((props, ref) => {
                         const termToMatch = targetWord.term.toLowerCase().slice(0, Math.max(3, targetWord.term.length - 2));
                         
                         if (m.definition && m.definition.toLowerCase().includes(termToMatch)) {
-                            candidates.push({ text: m.definition, context: m.context });
+                            candidates.push({ text: m.definition, context: m.context, translation: null });
                         }
                         if (m.examples) {
                             for (const ex of m.examples) {
                                 const match = ex.match(/^(.*?)(\([^)]+\))?$/);
                                 let engPart = match ? match[1].trim() : ex;
+                                let trPart = match && match[2] ? match[2].trim() : null;
                                 if (engPart && engPart.toLowerCase().includes(termToMatch)) {
-                                    candidates.push({ text: engPart, context: m.context });
+                                    candidates.push({ text: engPart, context: m.context, translation: trPart });
                                 }
                             }
                         }
@@ -154,6 +156,7 @@ const PracticeTestContainer = forwardRef((props, ref) => {
                     const chosen = candidates[Math.floor(Math.random() * candidates.length)];
                     exampleSentence = chosen.text;
                     sentenceContext = chosen.context;
+                    turkishTranslation = chosen.translation;
                 } else {
                     isFormatExample = false;
                     isFormatDefinition = true;
@@ -217,8 +220,9 @@ const PracticeTestContainer = forwardRef((props, ref) => {
                     questionContext: displayContext,
                     answer: correctAnswerText,
                     type: 'flashcard',
-                    format: activeFormat,
-                    pronunciation: targetWord.pronunciation
+                    format: isFormatExample ? 'example' : activeFormat,
+                    pronunciation: targetWord.pronunciation, // pass pronunciation
+                    turkishTranslation: turkishTranslation
                 };
             } else if (qType === 'written') {
                 // Written Answer — user types the answer
@@ -228,8 +232,9 @@ const PracticeTestContainer = forwardRef((props, ref) => {
                     questionContext: displayContext,
                     answer: correctAnswerText,
                     type: 'written',
-                    format: activeFormat,
-                    pronunciation: targetWord.pronunciation
+                    format: isFormatExample ? 'example' : activeFormat,
+                    pronunciation: targetWord.pronunciation, // pass pronunciation
+                    turkishTranslation: turkishTranslation
                 };
             } else if (qType === 'tf') {
                 // True / False Question
@@ -267,9 +272,10 @@ const PracticeTestContainer = forwardRef((props, ref) => {
                     questionContext: displayContext,
                     displayedAnswerText, // The text to show for "Is this correct?"
                     type: 'tf',
-                    format: activeFormat,
+                    format: isFormatExample ? 'example' : activeFormat,
                     options,
-                    pronunciation // pass the appropriate pronunciation
+                    pronunciation, // pass the appropriate pronunciation
+                    turkishTranslation: turkishTranslation
                 };
             } else {
                 // Multiple Choice Question (MCQ) - Default fallback
@@ -347,9 +353,10 @@ const PracticeTestContainer = forwardRef((props, ref) => {
                     prompt,
                     questionContext: displayContext,
                     type: 'mcq',
-                    format: activeFormat,
+                    format: isFormatExample ? 'example' : activeFormat,
                     options,
-                    pronunciation: targetWord.pronunciation // pass pronunciation
+                    pronunciation: targetWord.pronunciation, // pass pronunciation
+                    turkishTranslation: turkishTranslation
                 };
             }
         });

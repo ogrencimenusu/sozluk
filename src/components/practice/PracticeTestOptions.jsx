@@ -54,12 +54,12 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
     });
 
     // Track if we've already loaded saved options to avoid re-loading on every savedOptions update
-    const hasLoaded = React.useRef(false);
-
+    const [hasLoaded, setHasLoaded] = useState(false);
+ 
     // Load saved options only once on mount if available
     useEffect(() => {
-        if (savedOptions && !hasLoaded.current) {
-            hasLoaded.current = true;
+        if (savedOptions && !hasLoaded) {
+            setHasLoaded(true);
             if (savedOptions.questionCount !== undefined) setQuestionCount(savedOptions.questionCount);
             if (savedOptions.onlyStarred !== undefined) setOnlyStarred(savedOptions.onlyStarred);
             if (savedOptions.questionFormat !== undefined) setQuestionFormat(savedOptions.questionFormat);
@@ -78,11 +78,30 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
                 }
             }
         }
-    }, [savedOptions, availableContexts]);
+    }, [savedOptions, availableContexts, hasLoaded]);
 
+    // Cleanup selectedLists when customLists change (e.g. if a list was deleted)
+    useEffect(() => {
+        if (!customLists || !hasLoaded) return;
+        const validIds = new Set(customLists.map(l => l.id));
+        let changed = false;
+        const updatedSelected = { ...selectedLists };
+
+        Object.keys(updatedSelected).forEach(id => {
+            if (updatedSelected[id] && !validIds.has(id)) {
+                delete updatedSelected[id];
+                changed = true;
+            }
+        });
+
+        if (changed) {
+            setSelectedLists(updatedSelected);
+        }
+    }, [customLists, hasLoaded, selectedLists]);
+ 
     // Save options when they change (onSaveOptions is a stable setter, excluded from deps intentionally)
     useEffect(() => {
-        if (!onSaveOptions || !hasLoaded.current) return;
+        if (!onSaveOptions || !hasLoaded) return;
         onSaveOptions({
             questionCount,
             onlyStarred,
@@ -95,7 +114,7 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
             selectedContexts
         });
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [questionCount, onlyStarred, questionFormat, shuffle, learningStatus, questionTypes, advancedOptions, selectedLists, selectedContexts]);
+    }, [hasLoaded, questionCount, onlyStarred, questionFormat, shuffle, learningStatus, questionTypes, advancedOptions, selectedLists, selectedContexts]);
 
     // Calculate available questions based on current filters
     const availableWordsCount = (words || []).filter(w => {

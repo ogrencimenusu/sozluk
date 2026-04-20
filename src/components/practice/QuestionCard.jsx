@@ -343,20 +343,27 @@ const QuestionCard = memo(({
                             </Badge>
                         </div>
                     )}
-                    <div className="d-flex align-items-center gap-3 flex-wrap">
-                        <h6 className="text-body fw-medium lh-base m-0">
-                            {currentQuestion.format === 'definition' ? displayMeaning(currentQuestion.prompt, idx) : currentQuestion.prompt}
-                        </h6>
-                        {/* Show pronunciation + speech button next to the prompt — only when prompt is English (format=term) */}
-                        {currentQuestion.format === 'term' && currentQuestion.pronunciation && (
-                            <div
-                                className="d-flex align-items-center gap-1 text-primary bg-primary bg-opacity-10 px-2 py-1 rounded-pill"
-                                onClick={() => handleSpeak(currentQuestion.prompt)}
-                                title="Sesli Okunuş"
-                                style={{ cursor: 'pointer' }}
-                            >
-                                <i className="bi bi-volume-up-fill fs-5"></i>
-                                <span className="small fw-semibold mx-1">/{currentQuestion.pronunciation}/</span>
+                    <div className="d-flex flex-column gap-2">
+                        <div className="d-flex align-items-center gap-3 flex-wrap">
+                            <h6 className="text-body fw-medium lh-base m-0">
+                                {currentQuestion.format === 'definition' ? displayMeaning(currentQuestion.prompt, idx) : currentQuestion.prompt}
+                            </h6>
+                            {/* Show pronunciation + speech button next to the prompt — only when prompt is English (format=term) */}
+                            {currentQuestion.format === 'term' && currentQuestion.pronunciation && (
+                                <div
+                                    className="d-flex align-items-center gap-1 text-primary bg-primary bg-opacity-10 px-2 py-1 rounded-pill"
+                                    onClick={() => handleSpeak(currentQuestion.prompt)}
+                                    title="Sesli Okunuş"
+                                    style={{ cursor: 'pointer' }}
+                                >
+                                    <i className="bi bi-volume-up-fill fs-5"></i>
+                                    <span className="small fw-semibold mx-1">/{currentQuestion.pronunciation}/</span>
+                                </div>
+                            )}
+                        </div>
+                        {currentQuestion.turkishTranslation && (
+                            <div className="text-muted fst-italic ps-2 border-start border-2 border-primary ms-1" style={{ fontSize: '0.85rem' }}>
+                                {currentQuestion.turkishTranslation}
                             </div>
                         )}
                     </div>

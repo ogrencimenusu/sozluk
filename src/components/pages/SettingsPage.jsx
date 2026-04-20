@@ -3,7 +3,7 @@ import { Container, Row, Col, Card, Button } from 'react-bootstrap';
 import PageHeader from '../layout/PageHeader';
 import Swal from 'sweetalert2';
 
-const SettingsPage = ({ theme, setTheme, viewMode, setViewMode, wordsPerPage, setWordsPerPage, setCurrentView, dailyStats }) => {
+const SettingsPage = ({ theme, setTheme, viewMode, setViewMode, wordsPerPage, setWordsPerPage, setCurrentView, dailyStats, authUser, onLogout }) => {
   const handleClearCache = async () => {
     const result = await Swal.fire({
       title: 'Önbelleği Temizle',
@@ -70,6 +70,35 @@ const SettingsPage = ({ theme, setTheme, viewMode, setViewMode, wordsPerPage, se
       <Container className="py-4 px-2 px-md-4" style={{ maxWidth: "100%", overflowX: "hidden" }}>
         <Row className="justify-content-center">
           <Col md={10} lg={8}>
+            {/* Hesap Bilgileri */}
+            <Card className="border-0 shadow-sm rounded-4 mb-4 bg-body-tertiary">
+              <Card.Body className="p-4 p-md-5">
+                <div className="d-flex align-items-center justify-content-between flex-wrap gap-4">
+                  <div className="d-flex align-items-center gap-3">
+                    <div className="bg-primary bg-opacity-10 rounded-circle d-flex align-items-center justify-content-center shadow-sm" style={{ width: '64px', height: '64px', minWidth: '64px' }}>
+                      {authUser?.photoURL ? (
+                        <img src={authUser.photoURL} alt="Profil" className="rounded-circle w-100 h-100" style={{ objectFit: 'cover' }} />
+                      ) : (
+                        <i className="bi bi-person-fill text-primary fs-2"></i>
+                      )}
+                    </div>
+                    <div style={{ wordBreak: 'break-all' }}>
+                      <h5 className="fw-bold mb-0 text-body">{authUser?.displayName || 'Kullanıcı'}</h5>
+                      <p className="text-muted small mb-0">{authUser?.email}</p>
+                    </div>
+                  </div>
+                  <Button
+                    variant="outline-danger"
+                    className="rounded-pill px-4 py-2 fw-bold d-flex align-items-center gap-2 shadow-sm transition-all ms-auto ms-md-0"
+                    onClick={onLogout}
+                    style={{ fontSize: '14px' }}
+                  >
+                    <i className="bi bi-box-arrow-right"></i>
+                    <span>Çıkış Yap</span>
+                  </Button>
+                </div>
+              </Card.Body>
+            </Card>
             {/* Görünüm Ayarları */}
             <Card className="border-0 shadow-sm rounded-4 mb-4 bg-body-tertiary">
               <Card.Body className="p-4 p-md-5">
@@ -140,7 +169,7 @@ const SettingsPage = ({ theme, setTheme, viewMode, setViewMode, wordsPerPage, se
                   <img src="/iconv2.png" alt="Logo" style={{ width: '56px', height: '56px', objectFit: 'contain', marginBottom: '12px' }} />
                   <h5 className="fw-bold mb-1">Sözlük Projesi</h5>
                   <p className="text-muted small mb-0 flex-grow-1">Bireysel Kelime Öğrenme Asistanı</p>
-                  <div className="mt-3 badge bg-primary bg-opacity-10 text-primary px-3 py-2 rounded-pill">Sürüm v3.3</div>
+                  <div className="mt-3 badge bg-primary bg-opacity-10 text-primary px-3 py-2 rounded-pill">Sürüm v1.0.1</div>
                 </div>
               </Card.Body>
             </Card>

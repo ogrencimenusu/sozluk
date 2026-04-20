@@ -563,12 +563,15 @@ function App() {
   // Flag to prevent saving before settings are loaded from Firestore
   const settingsLoaded = React.useRef(false);
 
-  // Load settings from Firestore on mount
+  // Load settings from Firestore when authUser changes
   useEffect(() => {
-    if (isConfigMissing) { settingsLoaded.current = true; return; }
+    if (isConfigMissing || !authUser) { 
+      if (isConfigMissing) settingsLoaded.current = true;
+      return; 
+    }
     const loadSettings = async () => {
       try {
-        const snap = await getDoc(doc(db, 'settings', 'app'));
+        const snap = await getDoc(doc(db, 'users', authUser.uid, 'settings', 'app'));
         if (snap.exists()) {
           const data = snap.data();
           if (data.sortRules) setSortRules(data.sortRules);
@@ -583,11 +586,16 @@ function App() {
           }
           if (data.practiceOptions) {
             setPracticeOptions(data.practiceOptions);
+          } else {
+            setPracticeOptions({});
           }
+        } else {
+          setPracticeOptions({});
         }
       } catch (e) {
         console.warn('Ayarlar yüklenemedi:', e);
       } finally {
+        setPracticeOptions(prev => prev || {});
         settingsLoaded.current = true;
       }
     };
@@ -616,7 +624,7 @@ function App() {
     };
     loadTemplates();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [authUser]);
 
   // Handle theme application and storage
   useEffect(() => {
@@ -631,8 +639,8 @@ function App() {
     applyTheme(theme);
     localStorage.setItem('theme', theme);
     
-    if (!isConfigMissing && settingsLoaded.current) {
-      setDoc(doc(db, 'settings', 'app'), { theme }, { merge: true }).catch(() => { });
+    if (!isConfigMissing && settingsLoaded.current && authUser) {
+      setDoc(doc(db, 'users', authUser.uid, 'settings', 'app'), { theme }, { merge: true }).catch(() => { });
     }
 
     if (theme === 'system') {
@@ -646,31 +654,31 @@ function App() {
   // Save wordsPerPage to Firestore and localStorage
   useEffect(() => {
     localStorage.setItem('wordsPerPage', wordsPerPage.toString());
-    if (!isConfigMissing && settingsLoaded.current) {
-      setDoc(doc(db, 'settings', 'app'), { wordsPerPage }, { merge: true }).catch(() => { });
+    if (!isConfigMissing && settingsLoaded.current && authUser) {
+      setDoc(doc(db, 'users', authUser.uid, 'settings', 'app'), { wordsPerPage }, { merge: true }).catch(() => { });
     }
   }, [wordsPerPage]);
 
   // Save sortRules to Firestore when they change
   useEffect(() => {
-    if (!isConfigMissing && settingsLoaded.current) {
-      setDoc(doc(db, 'settings', 'app'), { sortRules }, { merge: true }).catch(() => { });
+    if (!isConfigMissing && settingsLoaded.current && authUser) {
+      setDoc(doc(db, 'users', authUser.uid, 'settings', 'app'), { sortRules }, { merge: true }).catch(() => { });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sortRules]);
 
   // Save filters to Firestore when they change
   useEffect(() => {
-    if (!isConfigMissing && settingsLoaded.current) {
-      setDoc(doc(db, 'settings', 'app'), { filters }, { merge: true }).catch(() => { });
+    if (!isConfigMissing && settingsLoaded.current && authUser) {
+      setDoc(doc(db, 'users', authUser.uid, 'settings', 'app'), { filters }, { merge: true }).catch(() => { });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters]);
 
   // Save practiceOptions to Firestore when they change
   useEffect(() => {
-    if (!isConfigMissing && settingsLoaded.current && practiceOptions) {
-      setDoc(doc(db, 'settings', 'app'), { practiceOptions }, { merge: true }).catch(() => { });
+    if (!isConfigMissing && settingsLoaded.current && practiceOptions && authUser) {
+      setDoc(doc(db, 'users', authUser.uid, 'settings', 'app'), { practiceOptions }, { merge: true }).catch(() => { });
     }
   }, [practiceOptions]);
 
@@ -761,7 +769,10 @@ function App() {
     const unsubscribeStats = onSnapshot(qStats, (snapshot) => {
       const stats = {};
       snapshot.forEach(doc => {
-        stats[doc.id] = doc.data();
+        const data = doc.data();
+        // Use the date field as the key if available, otherwise fallback to doc.id
+        const key = data.date || doc.id;
+        stats[key] = data;
       });
       setDailyStats(stats);
     }, (error) => {
@@ -959,6 +970,7 @@ function App() {
           name: name.trim(),
           wordIds: [],
           createdAt: new Date().toISOString(),
+          userId: authUser.uid,
           order: (customLists && customLists.length) ? customLists.length : 0
         });
         return docRef.id;
@@ -1222,7 +1234,8 @@ function App() {
         const newWordData = {
           ...parsedItems[0],
           createdAt: customDate,
-          learningStatus: learningStatus
+          learningStatus: learningStatus,
+          userId: authUser.uid
         };
         if (isConfigMissing) {
           setWords(words.map(w => w.id === editingWordId ? { ...w, ...newWordData } : w));
@@ -1237,7 +1250,8 @@ function App() {
           createdAt: customDate,
           learningStatus: learningStatus,
           learningStage: 0,
-          isStarred: false
+          isStarred: false,
+          userId: authUser.uid
         }));
 
         if (isConfigMissing) {
@@ -1713,18 +1727,6 @@ function App() {
     return <LoginPage theme={theme} />;
   }
 
-  if (isMigrating) {
-    return (
-      <div className="d-flex align-items-center justify-content-center min-vh-100 bg-body">
-        <div className="text-center p-5 rounded-5 glass-card shadow-lg" style={{ maxWidth: '400px' }}>
-          <Spinner animation="grow" variant="primary" className="mb-4" />
-          <h4 className="fw-bold mb-2">Verileriniz Taşınıyor</h4>
-          <p className="text-muted small">Eski verileriniz yeni hesabınıza güvenli bir şekilde aktarılıyor. Lütfen pencereyi kapatmayın...</p>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="min-vh-100 py-4">
       {/* Global sticky note tooltip for homepage text selection */}
@@ -1873,9 +1875,6 @@ function App() {
                       {uncompletedNotesCount > 99 ? '99+' : uncompletedNotesCount}
                     </span>
                   )}
-                </Button>
-                <Button variant="outline-danger" className="rounded-circle d-flex align-items-center justify-content-center border-0 bg-danger bg-opacity-10 text-danger" style={{ width: '40px', height: '40px', minWidth: '40px' }} onClick={handleLogout} title="Çıkış Yap">
-                  <i className="bi bi-box-arrow-right" style={{ fontSize: '20px' }}></i>
                 </Button>
                 <Button variant="outline-secondary" className="rounded-circle d-flex align-items-center justify-content-center border-0 bg-body-secondary text-body" style={{ width: '40px', height: '40px', minWidth: '40px' }} onClick={() => setCurrentView('settings')} title="Ayarlar">
                   <i className="bi bi-gear-fill" style={{ fontSize: '20px' }}></i>
@@ -2626,6 +2625,8 @@ function App() {
           setWordsPerPage={setWordsPerPage}
           setCurrentView={setCurrentView}
           dailyStats={dailyStats}
+          authUser={authUser}
+          onLogout={handleLogout}
         />
       )}
 
