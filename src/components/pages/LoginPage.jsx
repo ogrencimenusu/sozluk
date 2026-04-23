@@ -190,7 +190,7 @@ const LoginPage = ({ theme: initialTheme }) => {
                       color: '#3b82f6',
                       fontSize: '0.75rem',
                       fontWeight: '700'
-                    }}>VERSION 1.0</span>
+                    }}>VERSION 1.0.2</span>
                     <span className="badge px-3 py-2 rounded-pill" style={{ 
                       background: isDark ? 'rgba(16, 185, 129, 0.1)' : '#ecfdf5', 
                       color: '#10b981',

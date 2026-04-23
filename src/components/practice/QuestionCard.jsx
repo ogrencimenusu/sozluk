@@ -2,16 +2,16 @@ import React, { memo } from 'react';
 import { Button, Row, Col, Card, Badge, OverlayTrigger, Popover, Dropdown } from 'react-bootstrap';
 import LearningStageBar from '../LearningStageBar';
 
-const QuestionCard = memo(({ 
-    idx, 
-    currentQuestion, 
-    wordObj, 
-    answer, 
-    writtenInput, 
-    completed, 
-    hintsUsedCount, 
-    revealedHintIndices, 
-    hiddenOptionIndices, 
+const QuestionCard = memo(({
+    idx,
+    currentQuestion,
+    wordObj,
+    answer,
+    writtenInput,
+    completed,
+    hintsUsedCount,
+    revealedHintIndices,
+    hiddenOptionIndices,
     isActive,
     initialTestState,
     customLists,
@@ -84,7 +84,7 @@ const QuestionCard = memo(({
     );
 
     return (
-        <div 
+        <div
             style={
                 !completed && isActive
                     ? { borderRadius: '1rem', border: '2px solid #6f42c1', boxShadow: '0 0 0 5px rgba(111,66,193,0.2)', transition: 'border-color 0.2s ease, box-shadow 0.2s ease' }
@@ -187,9 +187,9 @@ const QuestionCard = memo(({
                                                         >
                                                             <i className="bi bi-collection-play-fill text-white"></i>
                                                             {listCount > 0 && (
-                                                                <Badge 
-                                                                    bg="danger" 
-                                                                    pill 
+                                                                <Badge
+                                                                    bg="danger"
+                                                                    pill
                                                                     className="position-absolute top-0 start-100 translate-middle border border-2 border-white"
                                                                     style={{ fontSize: '10px', padding: '0.25em 0.5em', minWidth: '18px' }}
                                                                 >
@@ -204,7 +204,7 @@ const QuestionCard = memo(({
                                                                 {listCount > 0 && <span className="badge bg-primary bg-opacity-10 text-primary fw-normal px-2">{listCount} Liste</span>}
                                                             </Dropdown.Header>
                                                             {customLists && customLists.length > 0 ? (
-                                                                customLists.slice().sort((a,b) => {
+                                                                customLists.slice().sort((a, b) => {
                                                                     const orderA = a.order ?? Number.MAX_SAFE_INTEGER;
                                                                     const orderB = b.order ?? Number.MAX_SAFE_INTEGER;
                                                                     if (orderA !== orderB) return orderA - orderB;
@@ -212,8 +212,8 @@ const QuestionCard = memo(({
                                                                 }).map(list => {
                                                                     const isInList = list.wordIds?.includes(wordObj.id);
                                                                     return (
-                                                                        <Dropdown.Item 
-                                                                            key={list.id} 
+                                                                        <Dropdown.Item
+                                                                            key={list.id}
                                                                             className={`small d-flex align-items-center justify-content-between gap-2 py-2 ${isInList ? 'bg-primary bg-opacity-10' : ''}`}
                                                                             onClick={(e) => {
                                                                                 e.stopPropagation();
@@ -225,7 +225,7 @@ const QuestionCard = memo(({
                                                                             }}
                                                                         >
                                                                             <div className="d-flex align-items-center gap-2">
-                                                                                <i className={`bi ${isInList ? 'bi-collection-play-fill text-primary' : 'bi-collection-play opacity-50'}`}></i> 
+                                                                                <i className={`bi ${isInList ? 'bi-collection-play-fill text-primary' : 'bi-collection-play opacity-50'}`}></i>
                                                                                 <span className={isInList ? 'fw-bold text-primary' : ''}>{list.name}</span>
                                                                             </div>
                                                                             {isInList && <i className="bi bi-check2 text-primary fw-bold"></i>}
@@ -268,9 +268,9 @@ const QuestionCard = memo(({
                                                             </div>
                                                         </div>
                                                     </div>
-                                                    
+
                                                     {hasMultipleMeanings(idx) && (
-                                                        <Dropdown.Item 
+                                                        <Dropdown.Item
                                                             className="small d-flex align-items-center gap-2 py-2"
                                                             onClick={() => onNextMeaning(idx)}
                                                             disabled={completed || !!answer || !canRevealMoreMeanings(idx)}
@@ -279,7 +279,7 @@ const QuestionCard = memo(({
                                                         </Dropdown.Item>
                                                     )}
 
-                                                    <Dropdown.Item 
+                                                    <Dropdown.Item
                                                         className="small d-flex align-items-center gap-2 py-2"
                                                         onClick={() => setSelectedWordForModal(wordObj)}
                                                     >
@@ -289,7 +289,7 @@ const QuestionCard = memo(({
                                                     {onDelete && (
                                                         <>
                                                             <Dropdown.Divider className="opacity-10" />
-                                                            <Dropdown.Item 
+                                                            <Dropdown.Item
                                                                 className="small d-flex align-items-center gap-2 py-2 text-danger"
                                                                 onClick={(e) => onDelete(e, wordObj.id, wordObj.term)}
                                                             >
@@ -335,7 +335,7 @@ const QuestionCard = memo(({
                     </div>
                 </div>
 
-                <div className="mb-3 pb-3">
+                <div className="mb-1">
                     {currentQuestion.format === 'example' && currentQuestion.questionContext && (
                         <div className="mb-2">
                             <Badge bg="info" className="bg-opacity-25 text-info-emphasis px-2 py-1 rounded-pill">
@@ -372,15 +372,11 @@ const QuestionCard = memo(({
                 <div>
                     {currentQuestion.type === 'written' ? (
                         <div className="mb-3">
-
                             {initialTestState?.config?.advancedOptions?.missingLetters && !answer && (
-                                <div className="mb-3 text-center p-3 rounded-3 border border-info border-opacity-50 bg-info bg-opacity-10">
-                                    <div className="small text-info fw-bold mb-2">
-                                        <i className="bi bi-alphabet me-1"></i> Eksik Harfler İpucu
-                                    </div>
-                                    <div className="fs-3 font-monospace fw-bold text-body letter-spacing-2" style={{ letterSpacing: '4px' }}>
+                                <div className="mb-2 text-center py-2 px-3 rounded-3 border border-info border-opacity-50 bg-info bg-opacity-10 shadow-sm">
+                                    <div className="fs-4 font-monospace fw-bold text-body" style={{ letterSpacing: '4px' }}>
                                         {currentQuestion.answer.split('').map((char, i) => {
-                                            if (char === ' ') return <span key={i} className="mx-3"></span>;
+                                            if (char === ' ') return <span key={i} className="mx-2"></span>;
                                             const revealed = revealedHintIndices || [];
                                             const show = revealed.includes(i);
                                             return <span key={i} className={show ? "text-primary" : "text-body-tertiary"}>{show ? char : '_'}</span>;
@@ -406,7 +402,7 @@ const QuestionCard = memo(({
                                                     e.preventDefault();
 
                                                     let nextUnansweredIdx = questions.findIndex((q, i) => i > idx && !questions[i].isAnswered && !(q.type === 'written' && (questions[i].writtenInput || '').trim().length > 0));
-                                                    
+
                                                     // In PracticeTestActive, we use the state. This logic needs to be careful.
                                                     // For now, let's keep the core Enter logic but it might need refinement if it loses access to 'answers' state
                                                     // Actually, we can pass a callback 'onEnter'
@@ -429,7 +425,7 @@ const QuestionCard = memo(({
                                         </Button>
                                     </div>
                                     <small className={`ms-1 ${(writtenInput || '').length === (currentQuestion.answer || '').length ? 'text-success' : 'text-danger'}`} style={{ fontSize: '0.75rem', fontWeight: (writtenInput || '').length === (currentQuestion.answer || '').length ? 'bold' : 'normal' }}>
-                                        {(writtenInput || '').length} harf
+                                        {(writtenInput || '').length} / {(currentQuestion.answer || '').length} harf
                                     </small>
                                 </div>
                             ) : (

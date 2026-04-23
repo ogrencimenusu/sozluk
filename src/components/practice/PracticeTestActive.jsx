@@ -40,6 +40,10 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
         return initial;
     });
 
+    // States for Bulk Actions Progress
+    const [bulkActionStatus, setBulkActionStatus] = useState(null); // 'removing-stars' | 'starring-errors'
+    const [bulkProgress, setBulkProgress] = useState(0);
+
     const getParsedMeaningsWithNumbers = (text) => {
         if (typeof text !== 'string') return [{ number: 1, text: text }];
         const regex = /(?:^|\s)(\d+)\.\s+/g;
@@ -745,6 +749,26 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
     const skippedCount = completed ? questions.filter((q, idx) => answers[idx]?.selected?.text === 'Boş bırakıldı').length : 0;
     const incorrectCount = completed ? (questions.length - correctCount - skippedCount) : 0;
 
+    const errorQuestions = completed ? questions.filter((q, idx) => {
+        const ans = answers[idx]?.selected;
+        return !ans?.isCorrect || ans?.hasTypo || ans?.text === 'Boş bırakıldı';
+    }) : [];
+    const errorWordsUniqueCount = new Set(errorQuestions.map(q => q.wordId)).size;
+    
+    const testWordIds = React.useMemo(() => new Set(questions.map(q => q.wordId)), [questions]);
+    const starredWordsInTestCount = words.filter(w => testWordIds.has(w.id) && w.isStarred).length;
+
+    const blankQuestions = errorQuestions.filter(q => answers[questions.indexOf(q)]?.selected?.text === 'Boş bırakıldı');
+    const wrongQuestions = errorQuestions.filter(q => {
+        const ans = answers[questions.indexOf(q)]?.selected;
+        return ans && !ans.isCorrect && ans.text !== 'Boş bırakıldı';
+    });
+    const typoQuestions = questions.filter(q => answers[questions.indexOf(q)]?.selected?.hasTypo);
+
+    const blankCount = new Set(blankQuestions.map(q => q.wordId)).size;
+    const wrongCount = new Set(wrongQuestions.map(q => q.wordId)).size;
+    const typoCount = new Set(typoQuestions.map(q => q.wordId)).size;
+
     // Kademeli İpucu: Calculate score percent, deducting points for hints if enabled
     const scorePercent = React.useMemo(() => {
         if (!completed || questions.length === 0) return 0;
@@ -1008,7 +1032,199 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                                 <div className="bg-body rounded-circle d-flex align-items-center justify-content-center border shadow-sm flex-shrink-0" style={{ width: 36, height: 36 }}><i className="bi bi-arrow-right fw-bold text-body fs-5"></i></div>
                                             </Button>
 
+                                            <Row className="g-2 mt-2">
+                                                <Col sm={6}>
+                                                    <Button 
+                                                        variant="outline-danger" 
+                                                        className="w-100 d-flex align-items-center justify-content-center gap-2 rounded-4 py-2 border-2 transition-all hover-opacity-75 position-relative overflow-hidden" 
+                                                        style={{ borderRadius: '12px' }}
+                                                        onClick={async () => {
+                                                            const starredWordsInTest = words.filter(w => testWordIds.has(w.id) && w.isStarred);
+                                                            if (starredWordsInTest.length === 0) return;
 
+                                                            const result = await Swal.fire({
+                                                                title: 'Emin misiniz?',
+                                                                text: `Bu testteki (${starredWordsInTest.length}) yıldızlı kelimenin yıldızını kaldırmak istediğinize emin misiniz?`,
+                                                                icon: 'warning',
+                                                                showCancelButton: true,
+                                                                confirmButtonColor: '#d33',
+                                                                confirmButtonText: 'Evet, kaldır',
+                                                                cancelButtonText: 'İptal'
+                                                            });
+
+                                                            if (result.isConfirmed) {
+                                                                setBulkActionStatus('removing-stars');
+                                                                setBulkProgress(0);
+                                                                for (let i = 0; i < starredWordsInTest.length; i++) {
+                                                                    await onToggleStar(null, starredWordsInTest[i]);
+                                                                    setBulkProgress(Math.round(((i + 1) / starredWordsInTest.length) * 100));
+                                                                }
+                                                                setTimeout(() => {
+                                                                    setBulkActionStatus(null);
+                                                                    setBulkProgress(0);
+                                                                }, 1000);
+                                                            }
+                                                        }}
+                                                        disabled={bulkActionStatus !== null || starredWordsInTestCount === 0}
+                                                    >
+                                                        {bulkActionStatus === 'removing-stars' ? (
+                                                            <>
+                                                                <div className="position-absolute top-0 start-0 h-100 bg-danger transition-all opacity-25" style={{ width: `${bulkProgress}%` }}></div>
+                                                                <span className="position-relative fw-bold small">%{bulkProgress} Kaldırılıyor</span>
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <i className="bi bi-star"></i>
+                                                                <span className="small fw-bold">Yıldızlıları Kaldır ({starredWordsInTestCount})</span>
+                                                            </>
+                                                        )}
+                                                    </Button>
+                                                </Col>
+                                                <Col sm={6}>
+                                                    <Button 
+                                                        variant="outline-warning" 
+                                                        className="w-100 d-flex align-items-center justify-content-center gap-2 rounded-4 py-2 border-2 transition-all hover-opacity-75 position-relative overflow-hidden" 
+                                                        style={{ borderRadius: '12px' }}
+                                                        onClick={async () => {
+                                                            const errorWordIds = Array.from(new Set(errorQuestions.map(q => q.wordId)));
+                                                            const unstarredErrorWords = errorWordIds
+                                                                .map(id => words.find(w => w.id === id))
+                                                                .filter(w => w && !w.isStarred);
+
+                                                            if (unstarredErrorWords.length === 0) {
+                                                                Swal.fire({
+                                                                    icon: 'info',
+                                                                    title: 'Bilgi',
+                                                                    text: 'Hata yapılan kelimeler zaten yıldızlı veya hata yapılmadı.',
+                                                                    confirmButtonText: 'Tamam'
+                                                                });
+                                                                return;
+                                                            }
+
+                                                            setBulkActionStatus('starring-errors');
+                                                            setBulkProgress(0);
+                                                            for (let i = 0; i < unstarredErrorWords.length; i++) {
+                                                                await onToggleStar(null, unstarredErrorWords[i]);
+                                                                setBulkProgress(Math.round(((i + 1) / unstarredErrorWords.length) * 100));
+                                                            }
+                                                            
+                                                            setTimeout(() => {
+                                                                setBulkActionStatus(null);
+                                                                setBulkProgress(0);
+                                                            }, 1000);
+                                                        }}
+                                                        disabled={bulkActionStatus !== null || errorWordsUniqueCount === 0}
+                                                    >
+                                                        {bulkActionStatus === 'starring-errors' ? (
+                                                            <>
+                                                                <div className="position-absolute top-0 start-0 h-100 bg-warning transition-all opacity-25" style={{ width: `${bulkProgress}%` }}></div>
+                                                                <span className="position-relative fw-bold small text-warning-emphasis">%{bulkProgress} Yıldızlanıyor</span>
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <i className="bi bi-star-fill text-warning"></i>
+                                                                <span className="small fw-bold">Hataları Yıldızla ({errorWordsUniqueCount})</span>
+                                                            </>
+                                                        )}
+                                                    </Button>
+                                                </Col>
+                                            </Row>
+
+                                            <Row className="g-2 mt-2">
+                                                <Col sm={4}>
+                                                    <Button 
+                                                        variant="outline-secondary" 
+                                                        className="w-100 d-flex flex-column align-items-center justify-content-center gap-1 rounded-4 py-2 border-2 transition-all hover-opacity-75 position-relative overflow-hidden" 
+                                                        style={{ borderRadius: '12px' }}
+                                                        onClick={async () => {
+                                                            const ids = Array.from(new Set(blankQuestions.map(q => q.wordId)));
+                                                            const targets = ids.map(id => words.find(w => w.id === id)).filter(w => w && !w.isStarred);
+                                                            if (targets.length === 0) return;
+                                                            setBulkActionStatus('starring-blanks');
+                                                            setBulkProgress(0);
+                                                            for (let i = 0; i < targets.length; i++) {
+                                                                await onToggleStar(null, targets[i]);
+                                                                setBulkProgress(Math.round(((i + 1) / targets.length) * 100));
+                                                            }
+                                                            setTimeout(() => { setBulkActionStatus(null); setBulkProgress(0); }, 1000);
+                                                        }}
+                                                        disabled={bulkActionStatus !== null || blankCount === 0}
+                                                    >
+                                                        {bulkActionStatus === 'starring-blanks' ? (
+                                                            <>
+                                                                <div className="position-absolute top-0 start-0 h-100 bg-secondary transition-all opacity-25" style={{ width: `${bulkProgress}%` }}></div>
+                                                                <span className="position-relative fw-bold small">%{bulkProgress}</span>
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <span className="small fw-bold">Boşlar ({blankCount})</span>
+                                                            </>
+                                                        )}
+                                                    </Button>
+                                                </Col>
+                                                <Col sm={4}>
+                                                    <Button 
+                                                        variant="outline-danger" 
+                                                        className="w-100 d-flex flex-column align-items-center justify-content-center gap-1 rounded-4 py-2 border-2 transition-all hover-opacity-75 position-relative overflow-hidden" 
+                                                        style={{ borderRadius: '12px' }}
+                                                        onClick={async () => {
+                                                            const ids = Array.from(new Set(wrongQuestions.map(q => q.wordId)));
+                                                            const targets = ids.map(id => words.find(w => w.id === id)).filter(w => w && !w.isStarred);
+                                                            if (targets.length === 0) return;
+                                                            setBulkActionStatus('starring-wrongs');
+                                                            setBulkProgress(0);
+                                                            for (let i = 0; i < targets.length; i++) {
+                                                                await onToggleStar(null, targets[i]);
+                                                                setBulkProgress(Math.round(((i + 1) / targets.length) * 100));
+                                                            }
+                                                            setTimeout(() => { setBulkActionStatus(null); setBulkProgress(0); }, 1000);
+                                                        }}
+                                                        disabled={bulkActionStatus !== null || wrongCount === 0}
+                                                    >
+                                                        {bulkActionStatus === 'starring-wrongs' ? (
+                                                            <>
+                                                                <div className="position-absolute top-0 start-0 h-100 bg-danger transition-all opacity-25" style={{ width: `${bulkProgress}%` }}></div>
+                                                                <span className="position-relative fw-bold small">%{bulkProgress}</span>
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <span className="small fw-bold">Yanlışlar ({wrongCount})</span>
+                                                            </>
+                                                        )}
+                                                    </Button>
+                                                </Col>
+                                                <Col sm={4}>
+                                                    <Button 
+                                                        variant="outline-warning" 
+                                                        className="w-100 d-flex flex-column align-items-center justify-content-center gap-1 rounded-4 py-2 border-2 transition-all hover-opacity-75 position-relative overflow-hidden" 
+                                                        style={{ borderRadius: '12px' }}
+                                                        onClick={async () => {
+                                                            const ids = Array.from(new Set(typoQuestions.map(q => q.wordId)));
+                                                            const targets = ids.map(id => words.find(w => w.id === id)).filter(w => w && !w.isStarred);
+                                                            if (targets.length === 0) return;
+                                                            setBulkActionStatus('starring-typos');
+                                                            setBulkProgress(0);
+                                                            for (let i = 0; i < targets.length; i++) {
+                                                                await onToggleStar(null, targets[i]);
+                                                                setBulkProgress(Math.round(((i + 1) / targets.length) * 100));
+                                                            }
+                                                            setTimeout(() => { setBulkActionStatus(null); setBulkProgress(0); }, 1000);
+                                                        }}
+                                                        disabled={bulkActionStatus !== null || typoCount === 0}
+                                                    >
+                                                        {bulkActionStatus === 'starring-typos' ? (
+                                                            <>
+                                                                <div className="position-absolute top-0 start-0 h-100 bg-warning transition-all opacity-25" style={{ width: `${bulkProgress}%` }}></div>
+                                                                <span className="position-relative fw-bold small text-warning-emphasis">%{bulkProgress}</span>
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <span className="small fw-bold">Hatalar ({typoCount})</span>
+                                                            </>
+                                                        )}
+                                                    </Button>
+                                                </Col>
+                                            </Row>
                                         </div>
                                     </Col>
                                 </Row>
