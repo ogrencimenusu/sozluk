@@ -12,7 +12,8 @@ import {
   getDoc,
   getDocs,
   where,
-  writeBatch
+  writeBatch,
+  arrayUnion
 } from 'firebase/firestore';
 import { db, auth } from './firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
@@ -533,6 +534,7 @@ function App() {
   const [bulkStatusValue, setBulkStatusValue] = useState('Yeni');
   const [bulkStarValue, setBulkStarValue] = useState('starred');
   const [bulkDateValue, setBulkDateValue] = useState(new Date().toISOString().split('T')[0]);
+  const [bulkResetLearningValue, setBulkResetLearningValue] = useState(0);
 
   // Bulk Practice State
   const [bulkPracticeTypes, setBulkPracticeTypes] = useState({ mcq: true, written: false, tf: false, flashcard: false });
@@ -540,6 +542,8 @@ function App() {
   const [bulkPracticeShuffle, setBulkPracticeShuffle] = useState(true);
   const [directPracticeConfig, setDirectPracticeConfig] = useState(null);
   const [directPracticeWords, setDirectPracticeWords] = useState(null);
+  const [bulkActionStatus, setBulkActionStatus] = useState('idle'); // idle, processing, completed
+  const [bulkProgress, setBulkProgress] = useState(0);
 
   const [theme, setTheme] = useState(() => {
     return localStorage.getItem('theme') || 'dark';
@@ -756,6 +760,8 @@ function App() {
         id: doc.id,
         ...doc.data()
       })).sort((a, b) => {
+        if (a.isPinned && !b.isPinned) return -1;
+        if (!a.isPinned && b.isPinned) return 1;
         const dateA = a.updatedAt?.toDate ? a.updatedAt.toDate() : new Date(a.updatedAt || 0);
         const dateB = b.updatedAt?.toDate ? b.updatedAt.toDate() : new Date(b.updatedAt || 0);
         return dateB - dateA;
@@ -1157,15 +1163,29 @@ function App() {
     }
   };
 
-  const handleDeleteAllTests = async () => {
+  const handleTogglePinTest = async (testId, isPinned) => {
     if (isConfigMissing) {
-      setPracticeTests([]);
+      setPracticeTests(prev => prev.map(t => t.id === testId ? { ...t, isPinned } : t));
       return;
     }
     try {
-      const q = query(collection(db, 'practice_tests'));
+      await updateDoc(doc(db, 'practice_tests', testId), { isPinned });
+    } catch (error) {
+      console.error('Failed to toggle pin', error);
+    }
+  };
+
+  const handleDeleteAllTests = async () => {
+    if (isConfigMissing) {
+      setPracticeTests(prev => prev.filter(test => test.isPinned));
+      return;
+    }
+    try {
+      const q = query(collection(db, 'practice_tests'), where('userId', '==', authUser.uid));
       const snapshot = await getDocs(q);
-      const deletePromises = snapshot.docs.map(docSnapshot => deleteDoc(doc(db, 'practice_tests', docSnapshot.id)));
+      const deletePromises = snapshot.docs
+        .filter(docSnap => !docSnap.data().isPinned)
+        .map(docSnapshot => deleteDoc(doc(db, 'practice_tests', docSnapshot.id)));
       await Promise.all(deletePromises);
     } catch (error) {
       console.error('Failed to delete all tests', error);
@@ -1409,8 +1429,8 @@ function App() {
   };
 
   const applyBulkAction = async (e) => {
-    e.preventDefault();
-    if (!selectedWords.length) return;
+    if (e && e.preventDefault) e.preventDefault();
+    if (bulkActionStatus === 'processing') return;
 
     if (bulkActionType === 'delete') {
       const result = await Swal.fire({
@@ -1425,13 +1445,28 @@ function App() {
       });
 
       if (result.isConfirmed) {
+        setBulkActionStatus('processing');
+        setBulkProgress(0);
         try {
-          if (!isConfigMissing) await Promise.all(selectedWords.map(id => deleteDoc(doc(db, 'words', id))));
-          else setWords(words.filter(w => !selectedWords.includes(w.id)));
-          setSelectedWords([]);
-          setIsSelectionMode(false);
-          setShowBulkEditModal(false);
+          if (!isConfigMissing) {
+            for (let i = 0; i < selectedWords.length; i++) {
+              await deleteDoc(doc(db, 'words', selectedWords[i]));
+              setBulkProgress(((i + 1) / selectedWords.length) * 100);
+            }
+          } else {
+            setWords(words.filter(w => !selectedWords.includes(w.id)));
+            setBulkProgress(100);
+          }
+          setBulkActionStatus('completed');
+          setTimeout(() => {
+            setBulkActionStatus('idle');
+            setBulkProgress(0);
+            setSelectedWords([]);
+            setIsSelectionMode(false);
+            setShowBulkEditModal(false);
+          }, 1500);
         } catch (error) {
+          setBulkActionStatus('idle');
           Swal.fire({ icon: 'error', title: 'Hata', text: 'Toplu silme sırasında hata oluştu.', confirmButtonText: 'Tamam' });
         }
       }
@@ -1439,20 +1474,32 @@ function App() {
     }
 
     if (bulkActionType === 'practice') {
+      setBulkActionStatus('processing');
+      setBulkProgress(0);
+      
       const config = {
         questionCount: selectedWords.length,
         questionTypes: bulkPracticeTypes,
         questionFormat: bulkPracticeFormat,
         shuffle: bulkPracticeShuffle,
-        onlyStarred: false, // Selected explicitly
-        learningStatus: null // Selected explicitly
+        onlyStarred: false,
+        learningStatus: null
       };
 
       const wordsToPractice = words.filter(w => selectedWords.includes(w.id));
 
+      // Simulate quick progress for UI feel
+      for (let p = 0; p <= 100; p += 10) {
+        setBulkProgress(p);
+        await new Promise(r => setTimeout(r, 30));
+      }
+
       setDirectPracticeConfig(config);
       setDirectPracticeWords(wordsToPractice);
       setCurrentView('practice-test');
+      
+      setBulkActionStatus('idle');
+      setBulkProgress(0);
       setShowBulkEditModal(false);
       setSelectedWords([]);
       setIsSelectionMode(false);
@@ -1464,32 +1511,85 @@ function App() {
         Swal.fire({ icon: 'warning', title: 'Uyarı', text: 'Lütfen bir liste seçin veya yeni bir tane oluşturun.' });
         return;
       }
-      await handleAddWordsToList(bulkListId, selectedWords);
-      setSelectedWords([]);
-      setIsSelectionMode(false);
-      setShowBulkEditModal(false);
+      setBulkActionStatus('processing');
+      setBulkProgress(0);
+      
+      try {
+        if (!isConfigMissing) {
+          const listDoc = await getDoc(doc(db, 'customLists', bulkListId));
+          if (listDoc.exists()) {
+            const currentWordIds = listDoc.data().wordIds || [];
+            const idsToAdd = selectedWords.filter(id => !currentWordIds.includes(id));
+            
+            for (let i = 0; i < idsToAdd.length; i++) {
+              // Note: For large lists, single updates are slow. 
+              // But for UI feedback we update in chunks or one by one.
+              // A better way would be using writeBatch but here we want progress animation
+              await updateDoc(doc(db, 'customLists', bulkListId), {
+                wordIds: arrayUnion(idsToAdd[i])
+              });
+              setBulkProgress(((i + 1) / idsToAdd.length) * 100);
+            }
+          }
+        } else {
+          setCustomLists(prev => prev.map(l => {
+            if (l.id === bulkListId) {
+              const updatedWordIds = [...new Set([...l.wordIds, ...selectedWords])];
+              return { ...l, wordIds: updatedWordIds };
+            }
+            return l;
+          }));
+          setBulkProgress(100);
+        }
+        
+        setBulkActionStatus('completed');
+        setTimeout(() => {
+          setBulkActionStatus('idle');
+          setBulkProgress(0);
+          setSelectedWords([]);
+          setIsSelectionMode(false);
+          setShowBulkEditModal(false);
+        }, 1500);
+      } catch (err) {
+        setBulkActionStatus('idle');
+        console.error("Bulk list error:", err);
+      }
       return;
     }
 
     try {
+      setBulkActionStatus('processing');
+      setBulkProgress(0);
+      
       const updates = {};
       if (bulkActionType === 'status') updates.learningStatus = bulkStatusValue;
       if (bulkActionType === 'star') updates.isStarred = bulkStarValue === 'starred';
+      if (bulkActionType === 'reset_learning') updates.learningStage = bulkResetLearningValue;
       if (bulkActionType === 'date') {
         const dateParts = bulkDateValue.split('-');
         updates.createdAt = new Date(dateParts[0], dateParts[1] - 1, dateParts[2]);
       }
 
       if (!isConfigMissing) {
-        await Promise.all(selectedWords.map(id => updateDoc(doc(db, 'words', id), updates)));
+        for (let i = 0; i < selectedWords.length; i++) {
+          await updateDoc(doc(db, 'words', selectedWords[i]), updates);
+          setBulkProgress(((i + 1) / selectedWords.length) * 100);
+        }
       } else {
         setWords(words.map(w => selectedWords.includes(w.id) ? { ...w, ...updates } : w));
+        setBulkProgress(100);
       }
 
-      setShowBulkEditModal(false);
-      setSelectedWords([]);
-      setIsSelectionMode(false);
+      setBulkActionStatus('completed');
+      setTimeout(() => {
+        setBulkActionStatus('idle');
+        setBulkProgress(0);
+        setShowBulkEditModal(false);
+        setSelectedWords([]);
+        setIsSelectionMode(false);
+      }, 1500);
     } catch (err) {
+      setBulkActionStatus('idle');
       Swal.fire({ icon: 'error', title: 'Hata', text: 'Toplu güncelleme hatası', confirmButtonText: 'Tamam' });
     }
   };
@@ -2554,6 +2654,7 @@ function App() {
             onSaveTest={handleSaveTest}
             onDeleteTest={handleDeleteTest}
             onDeleteAllTests={handleDeleteAllTests}
+            onTogglePinTest={handleTogglePinTest}
             customLists={customLists}
             onAddWordsToList={handleAddWordsToList}
             onRemoveWordFromList={handleRemoveWordFromList}
@@ -3034,6 +3135,7 @@ function App() {
                 { key: 'status', icon: 'bi-mortarboard', label: 'Öğrenme' },
                 { key: 'practice', icon: 'bi-controller', label: 'Test Çöz' },
                 { key: 'star', icon: 'bi-star', label: 'Yıldız' },
+                { key: 'reset_learning', icon: 'bi-arrow-counterclockwise', label: 'Sıfırla' },
                 { key: 'list', icon: 'bi-collection-play', label: 'Listeye Ekle' },
                 { key: 'date', icon: 'bi-calendar', label: 'Tarih' },
                 { key: 'delete', icon: 'bi-trash', label: 'Sil', danger: true },
@@ -3236,6 +3338,36 @@ function App() {
               </>
             )}
 
+            {/* Reset Learning */}
+            {bulkActionType === 'reset_learning' && (
+              <div className="py-2">
+                <p className="fw-medium text-muted small text-uppercase letter-spacing-1 mb-3">Yeni Öğrenme Aşaması (0-10)</p>
+                <div className="px-2">
+                   <div className="d-flex justify-content-between mb-2 align-items-center">
+                      <span className="badge bg-primary bg-opacity-10 text-primary px-3 py-2 rounded-pill fw-bold fs-6 shadow-sm border border-primary border-opacity-10">
+                        {bulkResetLearningValue} / 10 <span className="small opacity-75 ms-1">Aşama</span>
+                      </span>
+                      <span className="text-muted small fw-medium">
+                        {bulkResetLearningValue === 0 ? "⚠️ Sıfırla (Başlangıç)" : bulkResetLearningValue === 10 ? "✅ Tam Öğrenildi" : "Geliştiriliyor..."}
+                      </span>
+                   </div>
+                   <Form.Range 
+                      min={0} 
+                      max={10} 
+                      step={1} 
+                      value={bulkResetLearningValue} 
+                      onChange={e => setBulkResetLearningValue(parseInt(e.target.value))}
+                      className="py-3"
+                   />
+                   <div className="d-flex justify-content-between text-muted small px-1">
+                      <span>0</span>
+                      <span>5</span>
+                      <span>10</span>
+                   </div>
+                </div>
+              </div>
+            )}
+
             {/* Delete */}
             {bulkActionType === 'delete' && (
               <div className="rounded-3 border border-danger border-opacity-50 bg-danger bg-opacity-10 p-4 text-center">
@@ -3250,12 +3382,42 @@ function App() {
             <div className="d-flex gap-3 w-100">
               <Button variant="outline-secondary" className="flex-grow-1 rounded-pill" type="button" onClick={() => setShowBulkEditModal(false)}>İptal</Button>
               <Button
-                variant={bulkActionType === 'delete' ? 'danger' : 'primary'}
-                className="flex-grow-1 rounded-pill fw-bold"
+                variant={bulkActionStatus === 'processing' ? 'secondary' : (bulkActionType === 'delete' ? 'danger' : 'primary')}
+                className="flex-grow-1 rounded-pill fw-bold overflow-hidden position-relative border-0 shadow-sm transition-all"
                 type="submit"
-                disabled={bulkActionType === 'practice' && !Object.values(bulkPracticeTypes).some(Boolean)}
+                disabled={bulkActionStatus === 'processing' || bulkActionStatus === 'completed' || (bulkActionType === 'practice' && !Object.values(bulkPracticeTypes).some(Boolean))}
+                style={{
+                  minHeight: '48px',
+                  backgroundColor: bulkActionStatus === 'processing' ? '#cbd5e1' : undefined
+                }}
               >
-                {bulkActionType === 'delete' ? 'Evet, Sil' : bulkActionType === 'practice' ? 'Testi Başlat' : 'Uygula'}
+                {bulkActionStatus === 'processing' && (
+                  <div 
+                    className={`position-absolute top-0 start-0 h-100 transition-all ${bulkActionType === 'delete' ? 'bg-danger' : 'bg-primary'}`} 
+                    style={{ width: `${bulkProgress}%`, opacity: '0.6', transition: 'width 0.3s ease-out' }} 
+                  />
+                )}
+                
+                <div className="d-flex align-items-center justify-content-center gap-2 position-relative" style={{ zIndex: 1 }}>
+                  {bulkActionStatus === 'processing' ? (
+                    <span className="fw-bold fs-6" style={{ color: bulkProgress > 50 ? '#fff' : 'inherit' }}>
+                      {Math.round(bulkProgress)}%
+                    </span>
+                  ) : bulkActionStatus === 'completed' ? (
+                    <span className="animated fadeIn d-flex align-items-center gap-2">
+                       <i className="bi bi-check-circle-fill"></i>
+                       <span>Tamamlandı</span>
+                    </span>
+                  ) : (
+                    <>
+                      {bulkActionType === 'delete' && <i className="bi bi-trash-fill"></i>}
+                      {bulkActionType === 'practice' && <i className="bi bi-play-fill fs-5"></i>}
+                      <span>
+                        {bulkActionType === 'delete' ? 'Evet, Sil' : bulkActionType === 'practice' ? 'Testi Başlat' : 'Uygula'}
+                      </span>
+                    </>
+                  )}
+                </div>
               </Button>
             </div>
           </Modal.Footer>

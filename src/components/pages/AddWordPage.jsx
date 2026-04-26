@@ -89,7 +89,7 @@ const AddWordPage = ({
               {Object.keys(groupedWords).length === 0 ? (
                 <div className="text-muted text-center p-4">Henüz kelime eklenmemiş.</div>
               ) : (
-                <div className="d-flex flex-column gap-3 p-4 pt-1">
+                <div className="d-flex flex-column gap-3 p-4 pt-1" style={{ maxHeight: 'calc(100vh - 250px)', overflowY: 'auto', overflowX: 'hidden' }}>
                   {Object.entries(groupedWords).map(([dateLabel, items], idx) => (
                     <div key={idx}>
                       <div className="small fw-bold text-muted mb-2 ps-2" style={{ letterSpacing: '0.5px' }}>{dateLabel}</div>

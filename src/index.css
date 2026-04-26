@@ -175,15 +175,23 @@ body {
   cursor: pointer;
 }
 
+.custom-switch-md .form-check-input {
+  width: 2.5rem;
+  height: 1.25rem;
+  cursor: pointer;
+}
+
 /* Light theme default: Dark background, light thumb */
-.custom-switch-lg .form-check-input:checked {
+.custom-switch-lg .form-check-input:checked,
+.custom-switch-md .form-check-input:checked {
   background-color: #1a202c;
   border-color: #1a202c;
   background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='3' fill='%23ffffff'/%3e%3c/svg%3e");
 }
 
 /* Dark theme: White background, dark thumb */
-[data-bs-theme="dark"] .custom-switch-lg .form-check-input:checked {
+[data-bs-theme="dark"] .custom-switch-lg .form-check-input:checked,
+[data-bs-theme="dark"] .custom-switch-md .form-check-input:checked {
   background-color: #ffffff;
   border-color: #ffffff;
   background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='3' fill='%230f172a'/%3e%3c/svg%3e");

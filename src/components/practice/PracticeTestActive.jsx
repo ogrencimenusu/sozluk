@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Container, Button, Row, Col, Card, Badge, OverlayTrigger, Popover, Collapse, Modal, Dropdown, Offcanvas } from 'react-bootstrap';
+import { Container, Button, Row, Col, Card, Badge, OverlayTrigger, Popover, Collapse, Modal, Dropdown, Offcanvas, FormCheck } from 'react-bootstrap';
 import WordDetailModal from './WordDetailModal';
 import QuestionCard from './QuestionCard';
 import LearningStageBar from '../LearningStageBar';
@@ -43,6 +43,14 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
     // States for Bulk Actions Progress
     const [bulkActionStatus, setBulkActionStatus] = useState(null); // 'removing-stars' | 'starring-errors'
     const [bulkProgress, setBulkProgress] = useState(0);
+    const [resultQuestionTypes, setResultQuestionTypes] = useState(() => initialTestState?.config?.questionTypes || { mcq: true, written: false, tf: false, flashcard: false });
+
+    // New State for Live Helps
+    const [testHelps, setTestHelps] = useState(() => initialTestState?.config?.testHelps || {
+        showLetterCounter: true,
+        colorOnLengthMatch: true,
+        colorOnExactMatch: true
+    });
 
     const getParsedMeaningsWithNumbers = (text) => {
         if (typeof text !== 'string') return [{ number: 1, text: text }];
@@ -835,7 +843,42 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                 <Row className="px-md-4 position-relative">
                     {/* SIDEBAR: Question Navigation Map */}
                     <Col md={3} lg={2} className="p-0 mb-4 mb-md-0 d-none d-md-block" style={{ position: 'sticky', top: '100px', height: 'fit-content', zIndex: 100 }}>
-                        <Card className="bg-body-tertiary border-secondary border-opacity-25 rounded-4 p-3 shadow-none text-body d-flex flex-column" style={{ maxHeight: 'calc(100vh - 140px)' }}>
+                        <Card className="bg-body-tertiary border-secondary border-opacity-25 rounded-4 p-3 shadow-none text-body mb-3">
+                            <h6 className="fw-bold mb-3">Seçenekler</h6>
+                            <div className="d-flex flex-column gap-3">
+                                <div className="d-flex justify-content-between align-items-center text-body small">
+                                    <span>Harf Sayacı</span>
+                                    <FormCheck 
+                                        type="switch"
+                                        id="active-help-counter"
+                                        className="custom-switch-md"
+                                        checked={testHelps.showLetterCounter}
+                                        onChange={(e) => setTestHelps(prev => ({ ...prev, showLetterCounter: e.target.checked }))}
+                                    />
+                                </div>
+                                <div className="d-flex justify-content-between align-items-center text-body small">
+                                    <span>Uzunluk Rengi</span>
+                                    <FormCheck 
+                                        type="switch"
+                                        id="active-help-green"
+                                        className="custom-switch-md"
+                                        checked={testHelps.colorOnLengthMatch}
+                                        onChange={(e) => setTestHelps(prev => ({ ...prev, colorOnLengthMatch: e.target.checked }))}
+                                    />
+                                </div>
+                                <div className="d-flex justify-content-between align-items-center text-body small">
+                                    <span>Tam Eşleşme Rengi</span>
+                                    <FormCheck 
+                                        type="switch"
+                                        id="active-help-blue"
+                                        className="custom-switch-md"
+                                        checked={testHelps.colorOnExactMatch}
+                                        onChange={(e) => setTestHelps(prev => ({ ...prev, colorOnExactMatch: e.target.checked }))}
+                                    />
+                                </div>
+                            </div>
+                        </Card>
+                        <Card className="bg-body-tertiary border-secondary border-opacity-25 rounded-4 p-3 shadow-none text-body d-flex flex-column" style={{ maxHeight: 'calc(100vh - 300px)' }}>
                             <div className="d-flex justify-content-between align-items-center mb-4 flex-shrink-0">
                                 <span className="fw-bold">{showAnswersSummary ? 'Cevaplarım' : 'Sorular'}</span>
                                 <Button
@@ -938,210 +981,208 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
 
                         {/* Results / Score Summary Header */}
                         {completed && (
-                            <Card className="bg-body-tertiary border-secondary border-opacity-25 rounded-4 p-4 shadow-sm mb-5 text-start" style={{ borderTop: '4px solid #198754' }}>
-                                <Row className="align-items-center">
-                                    <Col lg={5} className="d-flex flex-column gap-3">
-                                        <h5 className="fw-bold text-body mb-0">Test Başarı Oranı</h5>
+                            <Card className="bg-body-tertiary border-0 rounded-4 p-4 shadow-sm mb-5 text-start overflow-hidden position-relative">
+                                {/* Decorative background accent */}
+                                <div className="position-absolute top-0 end-0 p-4 opacity-10">
+                                    <i className="bi bi-trophy-fill" style={{ fontSize: '120px' }}></i>
+                                </div>
+                                
+                                <Row className="g-4 mb-4" style={{ zIndex: 1 }}>
+                                    {/* Success Rate Chart Section */}
+                                    <Col lg={6} className="d-flex flex-column gap-3">
+                                        <h5 className="fw-bold text-body mb-3">Test Başarı Oranı</h5>
                                         <div className="d-flex align-items-center gap-4">
                                             {/* Circular Progress */}
-                                            <div className="position-relative flex-shrink-0" style={{ width: '130px', height: '130px' }}>
-                                                <svg width="130" height="130" viewBox="0 0 130 130">
-                                                    <circle cx="65" cy="65" r="52" fill="transparent" stroke="var(--bs-secondary-bg)" strokeWidth="10" />
-                                                    <circle cx="65" cy="65" r="52" fill="transparent" stroke="#20c997" strokeWidth="10" strokeDasharray={2 * Math.PI * 52} strokeDashoffset={2 * Math.PI * 52 - (scorePercent / 100) * (2 * Math.PI * 52)} strokeLinecap="round" style={{ transform: 'rotate(-90deg)', transformOrigin: '50% 50%', transition: 'stroke-dashoffset 1s ease-in-out' }} />
+                                            <div className="position-relative flex-shrink-0" style={{ width: '140px', height: '140px' }}>
+                                                <svg width="140" height="140" viewBox="0 0 140 140">
+                                                    <circle cx="70" cy="70" r="58" fill="transparent" stroke="var(--bs-secondary-bg)" strokeWidth="12" />
+                                                    <circle cx="70" cy="70" r="58" fill="transparent" stroke={scorePercent >= 70 ? "#20c997" : (scorePercent >= 40 ? "#ffc107" : "#dc3545")} strokeWidth="12" strokeDasharray={2 * Math.PI * 58} strokeDashoffset={2 * Math.PI * 58 - (scorePercent / 100) * (2 * Math.PI * 58)} strokeLinecap="round" style={{ transform: 'rotate(-90deg)', transformOrigin: '50% 50%', transition: 'stroke-dashoffset 1s ease-in-out' }} />
                                                 </svg>
-                                                <div className="position-absolute top-50 start-50 translate-middle fw-bold display-6 text-body">
-                                                    {scorePercent}%
+                                                <div className="position-absolute top-50 start-50 translate-middle text-center">
+                                                    <div className="fw-bold display-6 text-body" style={{ lineHeight: 1 }}>{scorePercent}%</div>
+                                                    <div className="text-muted small fw-bold text-uppercase mt-1" style={{ fontSize: '0.65rem', letterSpacing: '1px' }}>Başarı</div>
                                                 </div>
                                             </div>
 
                                             {/* Metrics list */}
-                                            <div className="d-flex flex-column gap-2 flex-grow-1">
-                                                <div className="d-flex align-items-center gap-2">
-                                                    <div className="rounded-circle bg-success bg-opacity-25 text-success d-flex align-items-center justify-content-center fw-bold" style={{ width: '28px', height: '28px', fontSize: '13px' }}>{correctCount}</div>
-                                                    <span className="fw-medium text-body-secondary">Doğru</span>
+                                            <div className="d-flex flex-column gap-3 flex-grow-1">
+                                                <div className="d-flex align-items-center justify-content-between border-start border-success border-4 ps-3 py-1">
+                                                    <span className="fw-medium text-body-secondary small">Doğru</span>
+                                                    <span className="fw-bold text-success fs-5">{correctCount}</span>
                                                 </div>
-                                                <div className="d-flex align-items-center gap-2">
-                                                    <div className="rounded-circle bg-danger bg-opacity-25 text-danger d-flex align-items-center justify-content-center fw-bold" style={{ width: '28px', height: '28px', fontSize: '13px' }}>{incorrectCount}</div>
-                                                    <span className="fw-medium text-body-secondary">Yanlış</span>
+                                                <div className="d-flex align-items-center justify-content-between border-start border-danger border-4 ps-3 py-1">
+                                                    <span className="fw-medium text-body-secondary small">Yanlış</span>
+                                                    <span className="fw-bold text-danger fs-5">{incorrectCount}</span>
                                                 </div>
-                                                <div className="d-flex align-items-center gap-2">
-                                                    <div className="rounded-circle bg-secondary bg-opacity-25 text-secondary d-flex align-items-center justify-content-center fw-bold" style={{ width: '28px', height: '28px', fontSize: '13px' }}>{skippedCount}</div>
-                                                    <span className="fw-medium text-body-secondary">Boş bırakıldı</span>
+                                                <div className="d-flex align-items-center justify-content-between border-start border-secondary border-4 ps-3 py-1">
+                                                    <span className="fw-medium text-body-secondary small">Boş</span>
+                                                    <span className="fw-bold text-secondary fs-5">{skippedCount}</span>
                                                 </div>
                                             </div>
                                         </div>
+                                        
                                         {/* Gamification Results Summary */}
                                         {(initialTestState?.config?.advancedOptions?.comboStreak || initialTestState?.config?.advancedOptions?.timeSurvival || initialTestState?.config?.advancedOptions?.progressiveHint) && (
-                                            <div className="mt-4 pt-3 border-top border-secondary border-opacity-25 d-flex gap-3 flex-wrap">
+                                            <div className="mt-2 pt-3 border-top border-secondary border-opacity-10 d-flex gap-3 flex-wrap">
                                                 {initialTestState?.config?.advancedOptions?.comboStreak && (
                                                     <div className="d-flex align-items-center gap-2">
-                                                        <div className="bg-warning bg-opacity-10 text-warning rounded-circle d-flex align-items-center justify-content-center" style={{ width: 36, height: 36 }}><i className="bi bi-fire fs-5"></i></div>
-                                                        <div>
-                                                            <div className="fw-bold text-body" style={{ lineHeight: 1.2 }}>En Yüksek Seri</div>
-                                                            <div className="small text-muted">{maxStreak}x Combo</div>
-                                                        </div>
+                                                        <div className="bg-warning bg-opacity-10 text-warning rounded-circle d-flex align-items-center justify-content-center" style={{ width: 32, height: 32 }}><i className="bi bi-fire fs-6"></i></div>
+                                                        <div className="small fw-bold text-muted">{maxStreak}x Combo</div>
                                                     </div>
                                                 )}
                                                 {initialTestState?.config?.advancedOptions?.timeSurvival && (
                                                     <div className="d-flex align-items-center gap-2">
-                                                        <div className="bg-success bg-opacity-10 text-success rounded-circle d-flex align-items-center justify-content-center" style={{ width: 36, height: 36 }}><i className="bi bi-stopwatch-fill fs-5"></i></div>
-                                                        <div>
-                                                            <div className="fw-bold text-body" style={{ lineHeight: 1.2 }}>Kalan Süre</div>
-                                                            <div className="small text-muted">{timeLeft} Saniye</div>
-                                                        </div>
-                                                    </div>
-                                                )}
-                                                {initialTestState?.config?.advancedOptions?.progressiveHint && Object.values(hintsUsed).some(v => v > 0) && (
-                                                    <div className="d-flex align-items-center gap-2">
-                                                        <div className="bg-danger bg-opacity-10 text-danger rounded-circle d-flex align-items-center justify-content-center" style={{ width: 36, height: 36 }}><i className="bi bi-graph-down-arrow fs-5"></i></div>
-                                                        <div>
-                                                            <div className="fw-bold text-body" style={{ lineHeight: 1.2 }}>İpucu Bedeli</div>
-                                                            <div className="small text-danger fw-bold">Kesilen Kat: -{Math.round(Object.values(hintsUsed).reduce((acc, curr) => acc + (curr * 0.3), 0) * 100) / 100} Puan</div>
-                                                        </div>
+                                                        <div className="bg-success bg-opacity-10 text-success rounded-circle d-flex align-items-center justify-content-center" style={{ width: 32, height: 32 }}><i className="bi bi-stopwatch-fill fs-6"></i></div>
+                                                        <div className="small fw-bold text-muted">{timeLeft}s Kaldı</div>
                                                     </div>
                                                 )}
                                             </div>
                                         )}
                                     </Col>
 
-                                    <Col lg={7} className="border-start-lg border-secondary border-opacity-25 ps-lg-4 mt-4 mt-lg-0">
-                                        <div className="d-flex flex-column gap-2 mt-2">
-                                            <Button variant="outline-success" className="d-flex justify-content-between align-items-center rounded-3 p-3 text-start bg-success bg-opacity-10 border-success border-opacity-50 border-2 transition-all hover-opacity-75" onClick={onRetakeSame}>
+                                    {/* Primary Test Actions */}
+                                    <Col lg={6} className="border-start-lg border-secondary border-opacity-10 ps-lg-4">
+                                        <h5 className="fw-bold text-body mb-3">Hızlı Tekrarla</h5>
+                                        <div className="d-flex flex-column gap-2">
+                                            <Button variant="outline-success" className="d-flex justify-content-between align-items-center rounded-3 p-3 text-start bg-success bg-opacity-10 border-success border-opacity-50 border-2 transition-all hover-opacity-75" onClick={() => onRetakeSame(resultQuestionTypes)}>
                                                 <div>
                                                     <div className="fw-bold text-success mb-1">Aynı testi yeniden çöz</div>
-                                                    <small className="text-body-secondary">Mevcut testi birebir baştan tekrarla.</small>
+                                                    <small className="text-body-secondary">Aynı kelimelerle testi tekrarla.</small>
                                                 </div>
-                                                <div className="bg-body rounded-circle d-flex align-items-center justify-content-center border shadow-sm flex-shrink-0" style={{ width: 36, height: 36 }}><i className="bi bi-arrow-right fw-bold text-body fs-5"></i></div>
+                                                <div className="bg-body rounded-circle d-flex align-items-center justify-content-center border shadow-sm flex-shrink-0" style={{ width: 32, height: 32 }}><i className="bi bi-arrow-right fw-bold text-body fs-6"></i></div>
                                             </Button>
 
                                             {missedQuestions.length > 0 && (
                                                 <Button variant="outline-warning" className="d-flex justify-content-between align-items-center rounded-3 p-3 text-start bg-warning bg-opacity-10 border-warning border-opacity-50 border-2 transition-all hover-opacity-75" onClick={() => onRetakeMissed(missedQuestions)}>
                                                     <div>
-                                                        <div className="fw-bold text-warning-emphasis mb-1">Yanlış cevapları tekrarla</div>
-                                                        <small className="text-body-secondary">Sadece {missedQuestions.length} yanlış ve boş soruyu çöz.</small>
+                                                        <div className="fw-bold text-warning-emphasis mb-1">Sadece hataları çöz</div>
+                                                        <small className="text-body-secondary">{missedQuestions.length} soruyu tekrarla.</small>
                                                     </div>
-                                                    <div className="bg-body rounded-circle d-flex align-items-center justify-content-center border shadow-sm flex-shrink-0" style={{ width: 36, height: 36 }}><i className="bi bi-arrow-right fw-bold text-body fs-5"></i></div>
+                                                    <div className="bg-body rounded-circle d-flex align-items-center justify-content-center border shadow-sm flex-shrink-0" style={{ width: 32, height: 32 }}><i className="bi bi-arrow-right fw-bold text-body fs-6"></i></div>
                                                 </Button>
                                             )}
 
-                                            <Button variant="outline-primary" className="d-flex justify-content-between align-items-center rounded-3 p-3 text-start bg-body-secondary border-secondary border-opacity-25 border-2 transition-all hover-opacity-75" onClick={onRetakeNew}>
+                                            <Button variant="outline-primary" className="d-flex justify-content-between align-items-center rounded-3 p-3 text-start bg-body-secondary border-secondary border-opacity-25 border-2 transition-all hover-opacity-75" onClick={() => onRetakeNew(resultQuestionTypes)}>
                                                 <div>
                                                     <div className="fw-bold text-body mb-1">Yeni test çöz</div>
-                                                    <small className="text-body-secondary">Mevcut ayarlarla farklı kelimeler sorulsun.</small>
+                                                    <small className="text-body-secondary">Farklı kelimelerle yeni test başlat.</small>
                                                 </div>
-                                                <div className="bg-body rounded-circle d-flex align-items-center justify-content-center border shadow-sm flex-shrink-0" style={{ width: 36, height: 36 }}><i className="bi bi-arrow-right fw-bold text-body fs-5"></i></div>
+                                                <div className="bg-body rounded-circle d-flex align-items-center justify-content-center border shadow-sm flex-shrink-0" style={{ width: 32, height: 32 }}><i className="bi bi-arrow-right fw-bold text-body fs-6"></i></div>
                                             </Button>
+                                        </div>
+                                    </Col>
+                                </Row>
 
-                                            <Row className="g-2 mt-2">
-                                                <Col sm={6}>
+                                <hr className="my-4 border-secondary border-opacity-10" />
+
+                                <Row className="g-4">
+                                    {/* Question Type Selection Row */}
+                                    <Col lg={12}>
+                                        <div className="p-3 rounded-4 bg-body border border-secondary border-opacity-10 shadow-sm">
+                                            <div className="d-flex justify-content-between align-items-center mb-3">
+                                                <div className="d-flex align-items-center gap-2">
+                                                    <i className="bi bi-sliders2 text-primary fs-5"></i>
+                                                    <span className="fw-bold small text-muted text-uppercase letter-spacing-1">Soru Tiplerini Ayarla</span>
+                                                </div>
+                                                <div className="small text-primary fw-bold" style={{ cursor: 'pointer' }} onClick={() => {
+                                                    const allTrue = !Object.values(resultQuestionTypes).every(v => v);
+                                                    setResultQuestionTypes({ mcq: allTrue, tf: allTrue, flashcard: allTrue, written: allTrue });
+                                                }}>
+                                                    {Object.values(resultQuestionTypes).every(v => v) ? 'Hiçbirini Seçme' : 'Hepsini Seç'}
+                                                </div>
+                                            </div>
+                                            <div className="d-flex flex-wrap gap-2">
+                                                {[
+                                                    { key: 'mcq', label: 'Çoktan Seçmeli', icon: 'bi-list-ul' },
+                                                    { key: 'tf', label: 'Doğru / Yanlış', icon: 'bi-check-all' },
+                                                    { key: 'flashcard', label: 'Flashcard', icon: 'bi-square-half' },
+                                                    { key: 'written', label: 'Yazarak Cevapla', icon: 'bi-pencil-square' }
+                                                ].map(({ key, label, icon }) => (
+                                                    <button
+                                                        key={key}
+                                                        type="button"
+                                                        className={`btn btn-sm rounded-pill px-4 py-2 fw-medium d-flex align-items-center gap-2 transition-all ${resultQuestionTypes[key] ? 'btn-primary shadow-sm' : 'btn-outline-secondary border-opacity-50'}`}
+                                                        onClick={() => setResultQuestionTypes(prev => {
+                                                            const newState = { ...prev, [key]: !prev[key] };
+                                                            if (!Object.values(newState).some(v => v)) return prev;
+                                                            return newState;
+                                                        })}
+                                                    >
+                                                        <i className={`bi ${icon}`}></i>
+                                                        {label}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </Col>
+
+                                    {/* Word Management Section Row */}
+                                    <Col lg={12}>
+                                        <div className="p-3 rounded-4 bg-body border border-secondary border-opacity-10 shadow-sm">
+                                            <div className="d-flex align-items-center gap-2 mb-3">
+                                                <i className="bi bi-star-fill text-warning fs-5"></i>
+                                                <span className="fw-bold small text-muted text-uppercase letter-spacing-1">Kelimeleri Yönet</span>
+                                            </div>
+                                            
+                                            <Row className="g-2">
+                                                <Col sm={6} md={3}>
                                                     <Button 
                                                         variant="outline-danger" 
-                                                        className="w-100 d-flex align-items-center justify-content-center gap-2 rounded-4 py-2 border-2 transition-all hover-opacity-75 position-relative overflow-hidden" 
-                                                        style={{ borderRadius: '12px' }}
+                                                        className="w-100 d-flex align-items-center justify-content-center gap-2 rounded-3 py-2 border-2 transition-all hover-opacity-75 position-relative overflow-hidden" 
                                                         onClick={async () => {
                                                             const starredWordsInTest = words.filter(w => testWordIds.has(w.id) && w.isStarred);
                                                             if (starredWordsInTest.length === 0) return;
-
                                                             const result = await Swal.fire({
                                                                 title: 'Emin misiniz?',
                                                                 text: `Bu testteki (${starredWordsInTest.length}) yıldızlı kelimenin yıldızını kaldırmak istediğinize emin misiniz?`,
                                                                 icon: 'warning',
                                                                 showCancelButton: true,
-                                                                confirmButtonColor: '#d33',
                                                                 confirmButtonText: 'Evet, kaldır',
                                                                 cancelButtonText: 'İptal'
                                                             });
-
                                                             if (result.isConfirmed) {
-                                                                setBulkActionStatus('removing-stars');
-                                                                setBulkProgress(0);
+                                                                setBulkActionStatus('removing-stars'); setBulkProgress(0);
                                                                 for (let i = 0; i < starredWordsInTest.length; i++) {
                                                                     await onToggleStar(null, starredWordsInTest[i]);
                                                                     setBulkProgress(Math.round(((i + 1) / starredWordsInTest.length) * 100));
                                                                 }
-                                                                setTimeout(() => {
-                                                                    setBulkActionStatus(null);
-                                                                    setBulkProgress(0);
-                                                                }, 1000);
+                                                                setTimeout(() => { setBulkActionStatus(null); setBulkProgress(0); }, 1000);
                                                             }
                                                         }}
                                                         disabled={bulkActionStatus !== null || starredWordsInTestCount === 0}
                                                     >
-                                                        {bulkActionStatus === 'removing-stars' ? (
-                                                            <>
-                                                                <div className="position-absolute top-0 start-0 h-100 bg-danger transition-all opacity-25" style={{ width: `${bulkProgress}%` }}></div>
-                                                                <span className="position-relative fw-bold small">%{bulkProgress} Kaldırılıyor</span>
-                                                            </>
-                                                        ) : (
-                                                            <>
-                                                                <i className="bi bi-star"></i>
-                                                                <span className="small fw-bold">Yıldızlıları Kaldır ({starredWordsInTestCount})</span>
-                                                            </>
-                                                        )}
+                                                        {bulkActionStatus === 'removing-stars' ? <span>%{bulkProgress} Kaldırılıyor</span> : <><i className="bi bi-star"></i> <span className="small fw-bold">Yıldızları Kaldır ({starredWordsInTestCount})</span></>}
                                                     </Button>
                                                 </Col>
-                                                <Col sm={6}>
+                                                <Col sm={6} md={3}>
                                                     <Button 
                                                         variant="outline-warning" 
-                                                        className="w-100 d-flex align-items-center justify-content-center gap-2 rounded-4 py-2 border-2 transition-all hover-opacity-75 position-relative overflow-hidden" 
-                                                        style={{ borderRadius: '12px' }}
+                                                        className="w-100 d-flex align-items-center justify-content-center gap-2 rounded-3 py-2 border-2 transition-all hover-opacity-75 position-relative overflow-hidden" 
                                                         onClick={async () => {
                                                             const errorWordIds = Array.from(new Set(errorQuestions.map(q => q.wordId)));
-                                                            const unstarredErrorWords = errorWordIds
-                                                                .map(id => words.find(w => w.id === id))
-                                                                .filter(w => w && !w.isStarred);
-
-                                                            if (unstarredErrorWords.length === 0) {
-                                                                Swal.fire({
-                                                                    icon: 'info',
-                                                                    title: 'Bilgi',
-                                                                    text: 'Hata yapılan kelimeler zaten yıldızlı veya hata yapılmadı.',
-                                                                    confirmButtonText: 'Tamam'
-                                                                });
-                                                                return;
-                                                            }
-
-                                                            setBulkActionStatus('starring-errors');
-                                                            setBulkProgress(0);
+                                                            const unstarredErrorWords = errorWordIds.map(id => words.find(w => w.id === id)).filter(w => w && !w.isStarred);
+                                                            if (unstarredErrorWords.length === 0) return;
+                                                            setBulkActionStatus('starring-errors'); setBulkProgress(0);
                                                             for (let i = 0; i < unstarredErrorWords.length; i++) {
                                                                 await onToggleStar(null, unstarredErrorWords[i]);
                                                                 setBulkProgress(Math.round(((i + 1) / unstarredErrorWords.length) * 100));
                                                             }
-                                                            
-                                                            setTimeout(() => {
-                                                                setBulkActionStatus(null);
-                                                                setBulkProgress(0);
-                                                            }, 1000);
+                                                            setTimeout(() => { setBulkActionStatus(null); setBulkProgress(0); }, 1000);
                                                         }}
                                                         disabled={bulkActionStatus !== null || errorWordsUniqueCount === 0}
                                                     >
-                                                        {bulkActionStatus === 'starring-errors' ? (
-                                                            <>
-                                                                <div className="position-absolute top-0 start-0 h-100 bg-warning transition-all opacity-25" style={{ width: `${bulkProgress}%` }}></div>
-                                                                <span className="position-relative fw-bold small text-warning-emphasis">%{bulkProgress} Yıldızlanıyor</span>
-                                                            </>
-                                                        ) : (
-                                                            <>
-                                                                <i className="bi bi-star-fill text-warning"></i>
-                                                                <span className="small fw-bold">Hataları Yıldızla ({errorWordsUniqueCount})</span>
-                                                            </>
-                                                        )}
+                                                        {bulkActionStatus === 'starring-errors' ? <span>%{bulkProgress} Yıldızlanıyor</span> : <><i className="bi bi-star-fill"></i> <span className="small fw-bold">Hataları Yıldızla ({errorWordsUniqueCount})</span></>}
                                                     </Button>
                                                 </Col>
-                                            </Row>
-
-                                            <Row className="g-2 mt-2">
-                                                <Col sm={4}>
+                                                <Col sm={4} md={2}>
                                                     <Button 
                                                         variant="outline-secondary" 
-                                                        className="w-100 d-flex flex-column align-items-center justify-content-center gap-1 rounded-4 py-2 border-2 transition-all hover-opacity-75 position-relative overflow-hidden" 
-                                                        style={{ borderRadius: '12px' }}
+                                                        className="w-100 rounded-3 py-2 border-2 transition-all hover-opacity-75 position-relative overflow-hidden" 
                                                         onClick={async () => {
                                                             const ids = Array.from(new Set(blankQuestions.map(q => q.wordId)));
                                                             const targets = ids.map(id => words.find(w => w.id === id)).filter(w => w && !w.isStarred);
                                                             if (targets.length === 0) return;
-                                                            setBulkActionStatus('starring-blanks');
-                                                            setBulkProgress(0);
+                                                            setBulkActionStatus('starring-blanks'); setBulkProgress(0);
                                                             for (let i = 0; i < targets.length; i++) {
                                                                 await onToggleStar(null, targets[i]);
                                                                 setBulkProgress(Math.round(((i + 1) / targets.length) * 100));
@@ -1150,29 +1191,18 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                                         }}
                                                         disabled={bulkActionStatus !== null || blankCount === 0}
                                                     >
-                                                        {bulkActionStatus === 'starring-blanks' ? (
-                                                            <>
-                                                                <div className="position-absolute top-0 start-0 h-100 bg-secondary transition-all opacity-25" style={{ width: `${bulkProgress}%` }}></div>
-                                                                <span className="position-relative fw-bold small">%{bulkProgress}</span>
-                                                            </>
-                                                        ) : (
-                                                            <>
-                                                                <span className="small fw-bold">Boşlar ({blankCount})</span>
-                                                            </>
-                                                        )}
+                                                        {bulkActionStatus === 'starring-blanks' ? <span>%{bulkProgress}</span> : <span className="small fw-bold">Boşlar ({blankCount})</span>}
                                                     </Button>
                                                 </Col>
-                                                <Col sm={4}>
+                                                <Col sm={4} md={2}>
                                                     <Button 
                                                         variant="outline-danger" 
-                                                        className="w-100 d-flex flex-column align-items-center justify-content-center gap-1 rounded-4 py-2 border-2 transition-all hover-opacity-75 position-relative overflow-hidden" 
-                                                        style={{ borderRadius: '12px' }}
+                                                        className="w-100 rounded-3 py-2 border-2 transition-all hover-opacity-75 position-relative overflow-hidden" 
                                                         onClick={async () => {
                                                             const ids = Array.from(new Set(wrongQuestions.map(q => q.wordId)));
                                                             const targets = ids.map(id => words.find(w => w.id === id)).filter(w => w && !w.isStarred);
                                                             if (targets.length === 0) return;
-                                                            setBulkActionStatus('starring-wrongs');
-                                                            setBulkProgress(0);
+                                                            setBulkActionStatus('starring-wrongs'); setBulkProgress(0);
                                                             for (let i = 0; i < targets.length; i++) {
                                                                 await onToggleStar(null, targets[i]);
                                                                 setBulkProgress(Math.round(((i + 1) / targets.length) * 100));
@@ -1181,29 +1211,18 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                                         }}
                                                         disabled={bulkActionStatus !== null || wrongCount === 0}
                                                     >
-                                                        {bulkActionStatus === 'starring-wrongs' ? (
-                                                            <>
-                                                                <div className="position-absolute top-0 start-0 h-100 bg-danger transition-all opacity-25" style={{ width: `${bulkProgress}%` }}></div>
-                                                                <span className="position-relative fw-bold small">%{bulkProgress}</span>
-                                                            </>
-                                                        ) : (
-                                                            <>
-                                                                <span className="small fw-bold">Yanlışlar ({wrongCount})</span>
-                                                            </>
-                                                        )}
+                                                        {bulkActionStatus === 'starring-wrongs' ? <span>%{bulkProgress}</span> : <span className="small fw-bold">Yanlışlar ({wrongCount})</span>}
                                                     </Button>
                                                 </Col>
-                                                <Col sm={4}>
+                                                <Col sm={4} md={2}>
                                                     <Button 
                                                         variant="outline-warning" 
-                                                        className="w-100 d-flex flex-column align-items-center justify-content-center gap-1 rounded-4 py-2 border-2 transition-all hover-opacity-75 position-relative overflow-hidden" 
-                                                        style={{ borderRadius: '12px' }}
+                                                        className="w-100 rounded-3 py-2 border-2 transition-all hover-opacity-75 position-relative overflow-hidden" 
                                                         onClick={async () => {
                                                             const ids = Array.from(new Set(typoQuestions.map(q => q.wordId)));
                                                             const targets = ids.map(id => words.find(w => w.id === id)).filter(w => w && !w.isStarred);
                                                             if (targets.length === 0) return;
-                                                            setBulkActionStatus('starring-typos');
-                                                            setBulkProgress(0);
+                                                            setBulkActionStatus('starring-typos'); setBulkProgress(0);
                                                             for (let i = 0; i < targets.length; i++) {
                                                                 await onToggleStar(null, targets[i]);
                                                                 setBulkProgress(Math.round(((i + 1) / targets.length) * 100));
@@ -1212,16 +1231,7 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                                         }}
                                                         disabled={bulkActionStatus !== null || typoCount === 0}
                                                     >
-                                                        {bulkActionStatus === 'starring-typos' ? (
-                                                            <>
-                                                                <div className="position-absolute top-0 start-0 h-100 bg-warning transition-all opacity-25" style={{ width: `${bulkProgress}%` }}></div>
-                                                                <span className="position-relative fw-bold small text-warning-emphasis">%{bulkProgress}</span>
-                                                            </>
-                                                        ) : (
-                                                            <>
-                                                                <span className="small fw-bold">Hatalar ({typoCount})</span>
-                                                            </>
-                                                        )}
+                                                        {bulkActionStatus === 'starring-typos' ? <span>%{bulkProgress}</span> : <span className="small fw-bold">Hatalar ({typoCount})</span>}
                                                     </Button>
                                                 </Col>
                                             </Row>
@@ -1335,6 +1345,7 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                         hiddenOptionIndices={hiddenOptions[idx]}
                                         isActive={activeQuestionIdx === idx}
                                         initialTestState={initialTestState}
+                                        testHelps={testHelps}
                                         customLists={customLists}
                                         flipped={flippedCards[idx]}
                                         onFlip={flipCard}
@@ -1431,6 +1442,41 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                     </div>
 
                     <div className="flex-grow-1 overflow-y-auto p-3">
+                        <div className="mb-4 pb-3 border-bottom border-secondary border-opacity-10">
+                            <h6 className="fw-bold text-body mb-3">Seçenekler</h6>
+                            <div className="d-flex flex-column gap-3">
+                                <div className="d-flex justify-content-between align-items-center text-body small">
+                                    <span>Harf Sayacı</span>
+                                    <FormCheck 
+                                        type="switch"
+                                        id="mobile-help-counter"
+                                        className="custom-switch-md"
+                                        checked={testHelps.showLetterCounter}
+                                        onChange={(e) => setTestHelps(prev => ({ ...prev, showLetterCounter: e.target.checked }))}
+                                    />
+                                </div>
+                                <div className="d-flex justify-content-between align-items-center text-body small">
+                                    <span>Uzunluk Rengi</span>
+                                    <FormCheck 
+                                        type="switch"
+                                        id="mobile-help-green"
+                                        className="custom-switch-md"
+                                        checked={testHelps.colorOnLengthMatch}
+                                        onChange={(e) => setTestHelps(prev => ({ ...prev, colorOnLengthMatch: e.target.checked }))}
+                                    />
+                                </div>
+                                <div className="d-flex justify-content-between align-items-center text-body small">
+                                    <span>Tam Eşleşme Rengi</span>
+                                    <FormCheck 
+                                        type="switch"
+                                        id="mobile-help-blue"
+                                        className="custom-switch-md"
+                                        checked={testHelps.colorOnExactMatch}
+                                        onChange={(e) => setTestHelps(prev => ({ ...prev, colorOnExactMatch: e.target.checked }))}
+                                    />
+                                </div>
+                            </div>
+                        </div>
                         <div className="d-flex justify-content-between align-items-center mb-3">
                             <span className="fw-bold">{showAnswersSummary ? 'Cevaplarım' : 'Sorular'}</span>
                             <Button
@@ -1450,7 +1496,7 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                     const isActive = activeQuestionIdx === idx;
 
                                     let btnClass = "btn btn-sm rounded-circle fw-bold border-secondary border-opacity-50 transition-all ";
-                                    let btnStyle = { width: '36px', height: '44px', padding: 0 };
+                                    let btnStyle = { width: '36px', height: '36px', padding: 0 };
 
                                     if (completed) {
                                         const ans = answers[idx]?.selected;

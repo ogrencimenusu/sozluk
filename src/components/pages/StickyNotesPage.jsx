@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Container, Row, Col, Card, Form, Button } from 'react-bootstrap';
+import { Container, Row, Col, Card, Form, Button, Spinner } from 'react-bootstrap';
 import PageHeader from '../layout/PageHeader';
 
 const StickyNotesPage = ({
@@ -26,6 +26,7 @@ const StickyNotesPage = ({
   const [expandedDates, setExpandedDates] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [saveStatus, setSaveStatus] = useState('idle'); // 'idle', 'saving', 'saved'
+  const [visibleCount, setVisibleCount] = useState(5);
 
   const handleToggleExpand = (dateLabel) => {
     setExpandedDates(prev =>
@@ -36,6 +37,78 @@ const StickyNotesPage = ({
   };
 
   const autoSaveTimerRef = useRef(null);
+  const observerTarget = useRef(null);
+  const hasFocusedTextarea = useRef(false);
+
+  // Reset focus tracker when edit mode changes
+  useEffect(() => {
+    if (!editingNoteId) {
+      hasFocusedTextarea.current = false;
+    }
+  }, [editingNoteId]);
+
+  const filteredNotes = useMemo(() => {
+    if (!searchQuery.trim()) return stickyNotes;
+    const query = searchQuery.toLowerCase();
+    return stickyNotes.filter(n =>
+      (n.title && n.title.toLowerCase().includes(query)) ||
+      (n.text && n.text.toLowerCase().includes(query)) ||
+      (n.wordTerm && n.wordTerm.toLowerCase().includes(query))
+    );
+  }, [stickyNotes, searchQuery]);
+
+  const groupedNotes = useMemo(() => {
+    const groups = {};
+    const displayedNotes = filteredNotes.slice(0, visibleCount);
+    const sortedNotes = [...displayedNotes].sort((a, b) => {
+      const aVal = a.createdAt ? (a.createdAt.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt).getTime()) : 0;
+      const bVal = b.createdAt ? (b.createdAt.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt).getTime()) : 0;
+      return bVal - aVal;
+    });
+
+    sortedNotes.forEach(note => {
+      const dateObj = note.createdAt ? (note.createdAt.toDate ? note.createdAt.toDate() : new Date(note.createdAt)) : new Date();
+      const opts = { day: 'numeric', month: 'long', year: 'numeric' };
+      const dateStr = dateObj.toLocaleDateString('tr-TR', opts);
+
+      const today = new Date().toLocaleDateString('tr-TR', opts);
+      const yesterdayObj = new Date();
+      yesterdayObj.setDate(yesterdayObj.getDate() - 1);
+      const yesterday = yesterdayObj.toLocaleDateString('tr-TR', opts);
+
+      let key = dateStr;
+      if (dateStr === today) key = "Bugün";
+      else if (dateStr === yesterday) key = "Dün";
+
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(note);
+    });
+
+    return groups;
+  }, [filteredNotes, visibleCount]);
+
+  // Reset pagination when searching
+  useEffect(() => {
+    setVisibleCount(5);
+  }, [searchQuery]);
+
+  // Infinite scroll observer
+  useEffect(() => {
+    const target = observerTarget.current;
+    if (!target) return;
+
+    const observer = new IntersectionObserver(
+      entries => {
+        if (entries[0].isIntersecting && visibleCount < filteredNotes.length) {
+          setVisibleCount(prev => prev + 5);
+        }
+      },
+      { threshold: 0.1, rootMargin: '100px' }
+    );
+
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [visibleCount, filteredNotes.length]);
 
   // Auto-save logic
   useEffect(() => {
@@ -69,45 +142,6 @@ const StickyNotesPage = ({
       }
     };
   }, [inlineEditingText, inlineEditingTitle, editingNoteId, handleUpdateNote]);
-
-  const filteredNotes = useMemo(() => {
-    if (!searchQuery.trim()) return stickyNotes;
-    const query = searchQuery.toLowerCase();
-    return stickyNotes.filter(n =>
-      (n.title && n.title.toLowerCase().includes(query)) ||
-      (n.text && n.text.toLowerCase().includes(query)) ||
-      (n.wordTerm && n.wordTerm.toLowerCase().includes(query))
-    );
-  }, [stickyNotes, searchQuery]);
-
-  const groupedNotes = useMemo(() => {
-    const groups = {};
-    const sortedNotes = [...filteredNotes].sort((a, b) => {
-      const aVal = a.createdAt ? (a.createdAt.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt).getTime()) : 0;
-      const bVal = b.createdAt ? (b.createdAt.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt).getTime()) : 0;
-      return bVal - aVal;
-    });
-
-    sortedNotes.forEach(note => {
-      const dateObj = note.createdAt ? (note.createdAt.toDate ? note.createdAt.toDate() : new Date(note.createdAt)) : new Date();
-      const opts = { day: 'numeric', month: 'long', year: 'numeric' };
-      const dateStr = dateObj.toLocaleDateString('tr-TR', opts);
-
-      const today = new Date().toLocaleDateString('tr-TR', opts);
-      const yesterdayObj = new Date();
-      yesterdayObj.setDate(yesterdayObj.getDate() - 1);
-      const yesterday = yesterdayObj.toLocaleDateString('tr-TR', opts);
-
-      let key = dateStr;
-      if (dateStr === today) key = "Bugün";
-      else if (dateStr === yesterday) key = "Dün";
-
-      if (!groups[key]) groups[key] = [];
-      groups[key].push(note);
-    });
-
-    return groups;
-  }, [filteredNotes]);
 
   const renderHighlightedText = (text, query) => {
     if (!query || !text) return text;
@@ -161,7 +195,7 @@ const StickyNotesPage = ({
               {Object.keys(groupedNotes).length === 0 ? (
                 <div className="text-muted text-center p-4">Not bulunamadı.</div>
               ) : (
-                <div className="d-flex flex-column gap-3 p-4 pt-1">
+                <div className="d-flex flex-column gap-3 p-4 pt-1" style={{ maxHeight: 'calc(100vh - 250px)', overflowY: 'auto', overflowX: 'hidden' }}>
                   {Object.entries(groupedNotes).map(([dateLabel, items], idx) => (
                     <div key={idx}>
                       <div className="small fw-bold text-muted mb-2 ps-2" style={{ letterSpacing: '0.5px' }}>{dateLabel}</div>
@@ -318,7 +352,6 @@ const StickyNotesPage = ({
                                         placeholder="Not Başlığı (İsteğe bağlı)..."
                                         className="border border-opacity-25 shadow-none bg-body mb-2 rounded-3 px-3 py-2 fw-bold text-body"
                                         style={{ borderColor: '#f59e0b' }}
-                                        autoFocus
                                       />
                                       <Form.Control
                                         as="textarea"
@@ -358,6 +391,14 @@ const StickyNotesPage = ({
                                           if (tag) {
                                             tag.style.height = 'auto';
                                             tag.style.height = tag.scrollHeight + 'px';
+                                            
+                                            // Focus and set cursor to end on initial edit
+                                            if (editingNoteId && !hasFocusedTextarea.current) {
+                                              tag.focus();
+                                              const len = tag.value.length;
+                                              tag.setSelectionRange(len, len);
+                                              hasFocusedTextarea.current = true;
+                                            }
                                           }
                                         }}
                                       />
@@ -429,6 +470,13 @@ const StickyNotesPage = ({
                         </div>
                       </div>
                     ))}
+                  </div>
+                )}
+                {/* Intersection observer target */}
+                {filteredNotes.length > visibleCount && (
+                  <div ref={observerTarget} className="text-center py-4">
+                    <Spinner animation="border" size="sm" variant="primary" className="opacity-50" />
+                    <span className="ms-2 text-muted small">Daha eski notlar yükleniyor...</span>
                   </div>
                 )}
               </div>

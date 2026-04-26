@@ -10,7 +10,7 @@ const PracticeTestContainer = forwardRef((props, ref) => {
         words, onCancel, savedOptions, onSaveOptions, 
         onUpdateStage, onToggleStar, onDelete, onEdit, 
         initialConfig, onLogTestResults, dailyStats, 
-        practiceTests, onSaveTest, onDeleteTest, onDeleteAllTests,
+        practiceTests, onSaveTest, onDeleteTest, onDeleteAllTests, onTogglePinTest,
         customLists, onAddWordsToList, onRemoveWordFromList
     } = props;
 
@@ -40,13 +40,15 @@ const PracticeTestContainer = forwardRef((props, ref) => {
     }));
 
     // Generate Questions when starting
-    const handleStart = async (config) => {
+    const handleStart = async (config, forcedWords = null) => {
         setLastConfig(config);
         let pool = [...words];
 
         // 1. Filter
         if (config.onlyStarred) {
             pool = pool.filter(w => w.isStarred);
+        } else if (config.excludeStarred) {
+            pool = pool.filter(w => !w.isStarred);
         }
 
         const selectedListIds = config.selectedLists ? Object.keys(config.selectedLists).filter(id => config.selectedLists[id]) : [];
@@ -87,7 +89,7 @@ const PracticeTestContainer = forwardRef((props, ref) => {
         }
 
         // 3. Select target words based on question count
-        const selectedWords = pool.slice(0, config.questionCount);
+        const selectedWords = forcedWords || pool.slice(0, config.questionCount);
 
         // Determine available question types
         const typesAvailable = [];
@@ -404,13 +406,20 @@ const PracticeTestContainer = forwardRef((props, ref) => {
         setQuestions([]);
     };
 
-    const handleRetakeSame = () => {
-        setTestKey(prev => prev + 1);
+    const handleRetakeSame = (questionTypeOverrides) => {
+        if (questionTypeOverrides) {
+             const newConfig = { ...lastConfig, questionTypes: questionTypeOverrides };
+             const currentSelectedWords = questions.map(q => words.find(w => w.id === q.wordId)).filter(Boolean);
+             handleStart(newConfig, currentSelectedWords);
+        } else {
+             setTestKey(prev => prev + 1);
+        }
     };
 
-    const handleRetakeNew = () => {
+    const handleRetakeNew = (questionTypeOverrides) => {
         if (lastConfig) {
-            handleStart(lastConfig);
+            const newConfig = questionTypeOverrides ? { ...lastConfig, questionTypes: questionTypeOverrides } : lastConfig;
+            handleStart(newConfig);
         }
     };
 
@@ -433,6 +442,7 @@ const PracticeTestContainer = forwardRef((props, ref) => {
                     onResumeTest={handleResumeTest}
                     onDeleteTest={onDeleteTest}
                     onDeleteAllTests={onDeleteAllTests}
+                    onTogglePinTest={onTogglePinTest}
                     customLists={customLists}
                 />
             )}

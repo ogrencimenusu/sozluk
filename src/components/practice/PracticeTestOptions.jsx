@@ -10,11 +10,12 @@ const availableContexts = [
     'Şimdiki Zaman'
 ];
 
-function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOptions, onSaveOptions, practiceTests, onResumeTest, onDeleteTest, onDeleteAllTests, customLists }) {
+function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOptions, onSaveOptions, practiceTests, onResumeTest, onDeleteTest, onDeleteAllTests, onTogglePinTest, customLists }) {
     const [questionCount, setQuestionCount] = useState(Math.min(10, maxQuestions));
     const [onlyStarred, setOnlyStarred] = useState(false);
     const [questionFormat, setQuestionFormat] = useState('mixed'); // 'definition' or 'term' or 'mixed'
     const [shuffle, setShuffle] = useState(true);
+    const [excludeStarred, setExcludeStarred] = useState(false);
 
     // New State for Learning Status
     const [learningStatus, setLearningStatus] = useState({
@@ -47,6 +48,12 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
         fillInTheBlanks: false
     });
 
+    const [testHelps, setTestHelps] = useState({
+        showLetterCounter: true,
+        colorOnLengthMatch: true,
+        colorOnExactMatch: true
+    });
+
     const [selectedContexts, setSelectedContexts] = useState(() => {
         const initial = {};
         availableContexts.forEach(c => initial[c] = true);
@@ -64,10 +71,12 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
             if (savedOptions.onlyStarred !== undefined) setOnlyStarred(savedOptions.onlyStarred);
             if (savedOptions.questionFormat !== undefined) setQuestionFormat(savedOptions.questionFormat);
             if (savedOptions.shuffle !== undefined) setShuffle(savedOptions.shuffle);
+            if (savedOptions.excludeStarred !== undefined) setExcludeStarred(savedOptions.excludeStarred);
             if (savedOptions.learningStatus !== undefined) setLearningStatus(savedOptions.learningStatus);
             if (savedOptions.questionTypes !== undefined) setQuestionTypes(savedOptions.questionTypes);
             if (savedOptions.advancedOptions !== undefined) setAdvancedOptions(savedOptions.advancedOptions);
             if (savedOptions.selectedLists !== undefined) setSelectedLists(savedOptions.selectedLists);
+            if (savedOptions.testHelps !== undefined) setTestHelps(savedOptions.testHelps);
             if (savedOptions.selectedContexts !== undefined) {
                 setSelectedContexts(savedOptions.selectedContexts);
             } else {
@@ -111,14 +120,17 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
             questionTypes,
             advancedOptions,
             selectedLists,
-            selectedContexts
+            selectedContexts,
+            testHelps,
+            excludeStarred
         });
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [hasLoaded, questionCount, onlyStarred, questionFormat, shuffle, learningStatus, questionTypes, advancedOptions, selectedLists, selectedContexts]);
+    }, [hasLoaded, questionCount, onlyStarred, questionFormat, shuffle, learningStatus, questionTypes, advancedOptions, selectedLists, selectedContexts, excludeStarred, testHelps]);
 
     // Calculate available questions based on current filters
     const availableWordsCount = (words || []).filter(w => {
         if (onlyStarred && !w.isStarred) return false;
+        if (excludeStarred && w.isStarred) return false;
         
         // Filter by Custom Lists
         const activeListIds = Object.keys(selectedLists).filter(id => selectedLists[id]);
@@ -185,7 +197,9 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
             questionTypes,
             advancedOptions,
             selectedLists,
-            selectedContexts
+            selectedContexts,
+            testHelps,
+            excludeStarred
         });
     };
 
@@ -211,7 +225,7 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
                             <Button variant="outline-danger" size="sm" className="rounded-pill px-2 py-1 fw-bold" style={{ fontSize: '11px' }} onClick={() => {
                                 Swal.fire({
                                     title: 'Tümünü Sil',
-                                    text: 'Tüm sınav geçmişini silmek istediğinize emin misiniz? Bu işlem geri alınamaz.',
+                                    text: 'Tüm sınav geçmişini silmek istediğinize emin misiniz? (Sabitlenen testler silinmeyecektir). Bu işlem geri alınamaz.',
                                     icon: 'warning',
                                     showCancelButton: true,
                                     confirmButtonText: 'Evet, Sil',
@@ -279,26 +293,43 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
                                         </div>
 
                                         <div
-                                            className="ms-1 d-flex align-items-center"
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                Swal.fire({
-                                                    title: 'Testi Sil',
-                                                    text: 'Bu testi silmek istediğinize emin misiniz?',
-                                                    icon: 'warning',
-                                                    showCancelButton: true,
-                                                    confirmButtonText: 'Evet, Sil',
-                                                    cancelButtonText: 'İptal',
-                                                    confirmButtonColor: '#d33',
-                                                }).then(result => {
-                                                    if (result.isConfirmed && onDeleteTest) {
-                                                        onDeleteTest(test.id);
-                                                    }
-                                                });
-                                            }}
-                                            title="Sil"
+                                            className="ms-auto d-flex align-items-center gap-2"
+                                            onClick={(e) => e.stopPropagation()}
                                         >
-                                            <i className="bi bi-x-lg text-danger opacity-75 hover-opacity-100 transition-all" style={{ cursor: 'pointer', fontSize: '1.1rem' }}></i>
+                                            <div
+                                                className="d-flex align-items-center"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    if (onTogglePinTest) {
+                                                        onTogglePinTest(test.id, !test.isPinned);
+                                                    }
+                                                }}
+                                                title={test.isPinned ? "Sök" : "Sabitle"}
+                                            >
+                                                <i className={`bi ${test.isPinned ? 'bi-pin-angle-fill text-primary' : 'bi-pin-angle text-muted'} opacity-75 hover-opacity-100 transition-all`} style={{ cursor: 'pointer', fontSize: '1.1rem' }}></i>
+                                            </div>
+                                            <div
+                                                className="d-flex align-items-center"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    Swal.fire({
+                                                        title: 'Testi Sil',
+                                                        text: 'Bu testi silmek istediğinize emin misiniz?',
+                                                        icon: 'warning',
+                                                        showCancelButton: true,
+                                                        confirmButtonText: 'Evet, Sil',
+                                                        cancelButtonText: 'İptal',
+                                                        confirmButtonColor: '#d33',
+                                                    }).then(result => {
+                                                        if (result.isConfirmed && onDeleteTest) {
+                                                            onDeleteTest(test.id);
+                                                        }
+                                                    });
+                                                }}
+                                                title="Sil"
+                                            >
+                                                <i className="bi bi-x-lg text-danger opacity-75 hover-opacity-100 transition-all" style={{ cursor: 'pointer', fontSize: '1.1rem' }}></i>
+                                            </div>
                                         </div>
                                     </button>
                                 );
@@ -470,6 +501,7 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
                         />
                     </div>
 
+
                     {/* Özel Listeler Section */}
                     {customLists && customLists.length > 0 && (
                         <div className="mt-4 pt-3 border-top border-secondary border-opacity-10 ">
@@ -528,6 +560,40 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
                         </div>
                     )}
 
+                    <div className="mt-4 pt-3 border-top border-secondary border-opacity-25">
+                        <h6 className="text-body fw-bold mb-3">Yardımlar</h6>
+                        <div className="d-flex justify-content-between align-items-center mb-3 text-body">
+                            <span>Harf Sayacı</span>
+                            <FormCheck
+                                type="switch"
+                                id="help-counter"
+                                className="custom-switch-lg"
+                                checked={testHelps.showLetterCounter}
+                                onChange={(e) => setTestHelps(prev => ({ ...prev, showLetterCounter: e.target.checked }))}
+                            />
+                        </div>
+                        <div className="d-flex justify-content-between align-items-center mb-3 text-body">
+                            <span>Uzunluk Eşleşince Yeşil Olsun</span>
+                            <FormCheck
+                                type="switch"
+                                id="help-green"
+                                className="custom-switch-lg"
+                                checked={testHelps.colorOnLengthMatch}
+                                onChange={(e) => setTestHelps(prev => ({ ...prev, colorOnLengthMatch: e.target.checked }))}
+                            />
+                        </div>
+                        <div className="d-flex justify-content-between align-items-center mb-0 text-body">
+                            <span>Tam Eşleşince Mavi Olsun</span>
+                            <FormCheck
+                                type="switch"
+                                id="help-blue"
+                                className="custom-switch-lg"
+                                checked={testHelps.colorOnExactMatch}
+                                onChange={(e) => setTestHelps(prev => ({ ...prev, colorOnExactMatch: e.target.checked }))}
+                            />
+                        </div>
+                    </div>
+
                     <div className="d-flex justify-content-between align-items-center mb-3 mt-4 pt-3 text-body  border-top border-secondary border-opacity-25">
                         <span className="d-flex align-items-center gap-2">
                             Sadece Yıldızlı Kelimeleri Çalış <i className="bi bi-star-fill text-warning fs-6"></i>
@@ -538,7 +604,26 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
                             id="option-starred"
                             className="custom-switch-lg"
                             checked={onlyStarred}
-                            onChange={(e) => setOnlyStarred(e.target.checked)}
+                            onChange={(e) => {
+                                setOnlyStarred(e.target.checked);
+                                if (e.target.checked) setExcludeStarred(false);
+                            }}
+                        />
+                    </div>
+                    <div className="d-flex justify-content-between align-items-center mb-3 text-body">
+                        <span className="d-flex align-items-center gap-2">
+                            Yıldızlılar Hariç
+                            <i className="bi bi-star text-body-secondary fs-6"></i>
+                        </span>
+                        <FormCheck
+                            type="switch"
+                            id="option-exclude-starred"
+                            className="custom-switch-lg"
+                            checked={excludeStarred}
+                            onChange={(e) => {
+                                setExcludeStarred(e.target.checked);
+                                if (e.target.checked) setOnlyStarred(false);
+                            }}
                         />
                     </div>
                     <div className="d-flex justify-content-between align-items-center text-body">

@@ -169,7 +169,7 @@ const SettingsPage = ({ theme, setTheme, viewMode, setViewMode, wordsPerPage, se
                   <img src="/iconv2.png" alt="Logo" style={{ width: '56px', height: '56px', objectFit: 'contain', marginBottom: '12px' }} />
                   <h5 className="fw-bold mb-1">Sözlük Projesi</h5>
                   <p className="text-muted small mb-0 flex-grow-1">Bireysel Kelime Öğrenme Asistanı</p>
-                  <div className="mt-3 badge bg-primary bg-opacity-10 text-primary px-3 py-2 rounded-pill">Sürüm v1.0.2</div>
+                  <div className="mt-3 badge bg-primary bg-opacity-10 text-primary px-3 py-2 rounded-pill">Sürüm v2.0.3</div>
                 </div>
               </Card.Body>
             </Card>

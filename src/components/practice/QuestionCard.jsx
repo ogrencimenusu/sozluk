@@ -34,7 +34,8 @@ const QuestionCard = memo(({
     canRevealMoreMeanings,
     setSelectedWordForModal,
     setWrittenInputs,
-    questions
+    questions,
+    testHelps: propTestHelps
 }) => {
     const isMcq = currentQuestion.type !== 'tf' && currentQuestion.type !== 'written' && currentQuestion.type !== 'flashcard' && currentQuestion.options;
     const isWritten = currentQuestion.type === 'written';
@@ -138,7 +139,14 @@ const QuestionCard = memo(({
                                                     variant="outline-warning"
                                                     size="sm"
                                                     className="rounded-pill px-3 py-1 d-flex align-items-center gap-1 border-opacity-75"
-                                                    onClick={() => canHint && handleHintClick(idx, currentQuestion)}
+                                                    onMouseDown={(e) => e.preventDefault()}
+                                                    onClick={() => {
+                                                        if (canHint) {
+                                                            handleHintClick(idx, currentQuestion);
+                                                            const input = document.getElementById(`written-input-${idx}`);
+                                                            if (input) input.focus();
+                                                        }
+                                                    }}
                                                     disabled={!canHint}
                                                     title="İpucu Al"
                                                     style={{ pointerEvents: canHint ? 'auto' : 'none' }}
@@ -164,6 +172,7 @@ const QuestionCard = memo(({
                                             variant="outline-primary"
                                             size="sm"
                                             className="rounded-pill px-3 py-1 d-none d-md-flex align-items-center gap-1 border-opacity-75"
+                                            onMouseDown={(e) => e.preventDefault()}
                                             onClick={() => onNextMeaning(idx)}
                                             title={canRevealMoreMeanings(idx) ? "Diğer Anlamı Göster" : "Tüm Anlamlar Gösterildi"}
                                             disabled={completed || !!answer || !canRevealMoreMeanings(idx)}
@@ -272,6 +281,7 @@ const QuestionCard = memo(({
                                                     {hasMultipleMeanings(idx) && (
                                                         <Dropdown.Item
                                                             className="small d-flex align-items-center gap-2 py-2"
+                                                            onMouseDown={(e) => e.preventDefault()}
                                                             onClick={() => onNextMeaning(idx)}
                                                             disabled={completed || !!answer || !canRevealMoreMeanings(idx)}
                                                         >
@@ -373,7 +383,7 @@ const QuestionCard = memo(({
                     {currentQuestion.type === 'written' ? (
                         <div className="mb-3">
                             {initialTestState?.config?.advancedOptions?.missingLetters && !answer && (
-                                <div className="mb-2 text-center py-2 px-3 rounded-3 border border-info border-opacity-50 bg-info bg-opacity-10 shadow-sm">
+                                <div className="mb-2 text-start py-2 px-3 rounded-3 border border-info border-opacity-50 bg-info bg-opacity-10 shadow-sm">
                                     <div className="fs-4 font-monospace fw-bold text-body" style={{ letterSpacing: '4px' }}>
                                         {currentQuestion.answer.split('').map((char, i) => {
                                             if (char === ' ') return <span key={i} className="mx-2"></span>;
@@ -424,9 +434,30 @@ const QuestionCard = memo(({
                                             <i className="bi bi-check-lg fs-4"></i>
                                         </Button>
                                     </div>
-                                    <small className={`ms-1 ${(writtenInput || '').length === (currentQuestion.answer || '').length ? 'text-success' : 'text-danger'}`} style={{ fontSize: '0.75rem', fontWeight: (writtenInput || '').length === (currentQuestion.answer || '').length ? 'bold' : 'normal' }}>
-                                        {(writtenInput || '').length} / {(currentQuestion.answer || '').length} harf
-                                    </small>
+                                    {(() => {
+                                        const helps = propTestHelps || initialTestState?.config?.testHelps || { showLetterCounter: true, colorOnLengthMatch: true, colorOnExactMatch: true };
+                                        if (!helps.showLetterCounter) return null;
+                                        
+                                        const typed = (writtenInput || '').toLowerCase();
+                                        const target = (currentQuestion.answer || '').toLowerCase();
+                                        const isLengthMatch = typed.length === target.length;
+                                        const isExactMatch = typed === target;
+                                        
+                                        let colorClass = 'text-danger';
+                                        if (isLengthMatch) {
+                                            if (isExactMatch && helps.colorOnExactMatch) {
+                                                colorClass = 'text-primary';
+                                            } else if (helps.colorOnLengthMatch) {
+                                                colorClass = 'text-success';
+                                            }
+                                        }
+                                        
+                                        return (
+                                            <small className={`ms-1 ${colorClass}`} style={{ fontSize: '0.75rem', fontWeight: isLengthMatch ? 'bold' : 'normal' }}>
+                                                {typed.length} / {target.length} harf
+                                            </small>
+                                        );
+                                    })()}
                                 </div>
                             ) : (
                                 <div className={`rounded-3 p-3 border d-flex align-items-start gap-3 ${answer?.selected?.isCorrect
@@ -652,6 +683,7 @@ const QuestionCard = memo(({
                                     variant="link"
                                     size="sm"
                                     className="p-0 px-3 text-body-secondary hover-text-primary transition-all border-0 shadow-none d-flex align-items-center justify-content-center border-end border-secondary border-opacity-25 rounded-0"
+                                    onMouseDown={(e) => e.preventDefault()}
                                     onClick={() => focusNextWrittenQuestion(idx, 'up')}
                                     disabled={false} // Simplify for now
                                     title="Önceki Yazılı Soru"
@@ -678,6 +710,7 @@ const QuestionCard = memo(({
                                     variant="link"
                                     size="sm"
                                     className="p-0 px-3 text-body-secondary hover-text-primary transition-all border-0 shadow-none d-flex align-items-center justify-content-center rounded-0"
+                                    onMouseDown={(e) => e.preventDefault()}
                                     onClick={() => focusNextWrittenQuestion(idx, 'down')}
                                     disabled={false} // Simplify
                                     title="Sonraki Yazılı Soru"
