@@ -7,7 +7,7 @@ import { levenshteinDistance } from '../../utils/stringUtils';
 import DailyGoalTracker from '../DailyGoalTracker';
 import Swal from 'sweetalert2';
 
-function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpdateStage, onToggleStar, onDelete, onEdit, onRetakeSame, onRetakeNew, onRetakeMissed, onLogTestResults, dailyStats, testId, initialTestState, onSaveTest, customLists, onAddWordsToList, onRemoveWordFromList }) {
+function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpdateStage, onUpdateStagesBatch, onToggleStar, onDelete, onEdit, onRetakeSame, onRetakeNew, onRetakeMissed, onLogTestResults, dailyStats, testId, initialTestState, onSaveTest, customLists, onAddWordsToList, onRemoveWordFromList }) {
     const [answers, setAnswers] = useState(() => initialTestState?.answers || {}); // { [questionIdx]: { selected: OptionObj } }
     const [writtenInputs, setWrittenInputs] = useState(() => initialTestState?.writtenInputs || {}); // { [questionIdx]: string } for 'written' type
     const [completed, setCompleted] = useState(() => initialTestState?.completed || false);
@@ -673,42 +673,30 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
         let correctCountLocal = 0;
         let incorrectCountLocal = 0;
         let wordStats = {};
-        if (onUpdateStage) {
-            const updatePromises = questions.map((q, idx) => {
-                const ans = finalAnswers[idx]?.selected;
-                const isCorrect = ans?.isCorrect;
+        
+        const updates = questions.map((q, idx) => {
+            const ans = finalAnswers[idx]?.selected;
+            const isCorrect = ans?.isCorrect;
 
-                if (ans?.text !== 'Boş bırakıldı') {
-                    if (isCorrect) correctCountLocal++;
-                    else incorrectCountLocal++;
+            if (ans?.text !== 'Boş bırakıldı') {
+                if (isCorrect) correctCountLocal++;
+                else incorrectCountLocal++;
 
-                    if (!wordStats[q.wordId]) {
-                        const wordObj = words.find(w => w.id === q.wordId);
-                        wordStats[q.wordId] = { correct: 0, incorrect: 0, term: wordObj?.term || 'Bilinmeyen' };
-                    }
-                    if (isCorrect) wordStats[q.wordId].correct++;
-                    else wordStats[q.wordId].incorrect++;
+                if (!wordStats[q.wordId]) {
+                    const wordObj = words.find(w => w.id === q.wordId);
+                    wordStats[q.wordId] = { correct: 0, incorrect: 0, term: wordObj?.term || 'Bilinmeyen' };
                 }
+                if (isCorrect) wordStats[q.wordId].correct++;
+                else wordStats[q.wordId].incorrect++;
+            }
+            return { wordId: q.wordId, isCorrect };
+        });
 
-                return onUpdateStage(q.wordId, isCorrect);
-            });
+        if (onUpdateStagesBatch) {
+            await onUpdateStagesBatch(updates);
+        } else if (onUpdateStage) {
+            const updatePromises = updates.map(u => onUpdateStage(u.wordId, u.isCorrect));
             await Promise.all(updatePromises);
-        } else {
-            questions.forEach((q, idx) => {
-                const ans = finalAnswers[idx]?.selected;
-                const isCorrect = ans?.isCorrect;
-                if (ans?.text !== 'Boş bırakıldı') {
-                    if (isCorrect) correctCountLocal++;
-                    else incorrectCountLocal++;
-
-                    if (!wordStats[q.wordId]) {
-                        const wordObj = words.find(w => w.id === q.wordId);
-                        wordStats[q.wordId] = { correct: 0, incorrect: 0, term: wordObj?.term || 'Bilinmeyen' };
-                    }
-                    if (isCorrect) wordStats[q.wordId].correct++;
-                    else wordStats[q.wordId].incorrect++;
-                }
-            });
         }
 
         if (onLogTestResults) {
@@ -826,6 +814,8 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
         };
     }, [completed, words]);
 
+    const hasWrittenQuestions = React.useMemo(() => questions.some(q => q.type === 'written'), [questions]);
+
     return (
         <>
             <Container fluid className="py-4 bg-body">
@@ -843,41 +833,43 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                 <Row className="px-md-4 position-relative">
                     {/* SIDEBAR: Question Navigation Map */}
                     <Col md={3} lg={2} className="p-0 mb-4 mb-md-0 d-none d-md-block" style={{ position: 'sticky', top: '100px', height: 'fit-content', zIndex: 100 }}>
-                        <Card className="bg-body-tertiary border-secondary border-opacity-25 rounded-4 p-3 shadow-none text-body mb-3">
-                            <h6 className="fw-bold mb-3">Seçenekler</h6>
-                            <div className="d-flex flex-column gap-3">
-                                <div className="d-flex justify-content-between align-items-center text-body small">
-                                    <span>Harf Sayacı</span>
-                                    <FormCheck 
-                                        type="switch"
-                                        id="active-help-counter"
-                                        className="custom-switch-md"
-                                        checked={testHelps.showLetterCounter}
-                                        onChange={(e) => setTestHelps(prev => ({ ...prev, showLetterCounter: e.target.checked }))}
-                                    />
+                        {hasWrittenQuestions && (
+                            <Card className="bg-body-tertiary border-secondary border-opacity-25 rounded-4 p-3 shadow-none text-body mb-3">
+                                <h6 className="fw-bold mb-3">Seçenekler</h6>
+                                <div className="d-flex flex-column gap-3">
+                                    <div className="d-flex justify-content-between align-items-center text-body small">
+                                        <span>Harf Sayacı</span>
+                                        <FormCheck 
+                                            type="switch"
+                                            id="active-help-counter"
+                                            className="custom-switch-md"
+                                            checked={testHelps.showLetterCounter}
+                                            onChange={(e) => setTestHelps(prev => ({ ...prev, showLetterCounter: e.target.checked }))}
+                                        />
+                                    </div>
+                                    <div className="d-flex justify-content-between align-items-center text-body small">
+                                        <span>Uzunluk Rengi</span>
+                                        <FormCheck 
+                                            type="switch"
+                                            id="active-help-green"
+                                            className="custom-switch-md"
+                                            checked={testHelps.colorOnLengthMatch}
+                                            onChange={(e) => setTestHelps(prev => ({ ...prev, colorOnLengthMatch: e.target.checked }))}
+                                        />
+                                    </div>
+                                    <div className="d-flex justify-content-between align-items-center text-body small">
+                                        <span>Tam Eşleşme Rengi</span>
+                                        <FormCheck 
+                                            type="switch"
+                                            id="active-help-blue"
+                                            className="custom-switch-md"
+                                            checked={testHelps.colorOnExactMatch}
+                                            onChange={(e) => setTestHelps(prev => ({ ...prev, colorOnExactMatch: e.target.checked }))}
+                                        />
+                                    </div>
                                 </div>
-                                <div className="d-flex justify-content-between align-items-center text-body small">
-                                    <span>Uzunluk Rengi</span>
-                                    <FormCheck 
-                                        type="switch"
-                                        id="active-help-green"
-                                        className="custom-switch-md"
-                                        checked={testHelps.colorOnLengthMatch}
-                                        onChange={(e) => setTestHelps(prev => ({ ...prev, colorOnLengthMatch: e.target.checked }))}
-                                    />
-                                </div>
-                                <div className="d-flex justify-content-between align-items-center text-body small">
-                                    <span>Tam Eşleşme Rengi</span>
-                                    <FormCheck 
-                                        type="switch"
-                                        id="active-help-blue"
-                                        className="custom-switch-md"
-                                        checked={testHelps.colorOnExactMatch}
-                                        onChange={(e) => setTestHelps(prev => ({ ...prev, colorOnExactMatch: e.target.checked }))}
-                                    />
-                                </div>
-                            </div>
-                        </Card>
+                            </Card>
+                        )}
                         <Card className="bg-body-tertiary border-secondary border-opacity-25 rounded-4 p-3 shadow-none text-body d-flex flex-column" style={{ maxHeight: 'calc(100vh - 300px)' }}>
                             <div className="d-flex justify-content-between align-items-center mb-4 flex-shrink-0">
                                 <span className="fw-bold">{showAnswersSummary ? 'Cevaplarım' : 'Sorular'}</span>
@@ -1442,41 +1434,43 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                     </div>
 
                     <div className="flex-grow-1 overflow-y-auto p-3">
-                        <div className="mb-4 pb-3 border-bottom border-secondary border-opacity-10">
-                            <h6 className="fw-bold text-body mb-3">Seçenekler</h6>
-                            <div className="d-flex flex-column gap-3">
-                                <div className="d-flex justify-content-between align-items-center text-body small">
-                                    <span>Harf Sayacı</span>
-                                    <FormCheck 
-                                        type="switch"
-                                        id="mobile-help-counter"
-                                        className="custom-switch-md"
-                                        checked={testHelps.showLetterCounter}
-                                        onChange={(e) => setTestHelps(prev => ({ ...prev, showLetterCounter: e.target.checked }))}
-                                    />
-                                </div>
-                                <div className="d-flex justify-content-between align-items-center text-body small">
-                                    <span>Uzunluk Rengi</span>
-                                    <FormCheck 
-                                        type="switch"
-                                        id="mobile-help-green"
-                                        className="custom-switch-md"
-                                        checked={testHelps.colorOnLengthMatch}
-                                        onChange={(e) => setTestHelps(prev => ({ ...prev, colorOnLengthMatch: e.target.checked }))}
-                                    />
-                                </div>
-                                <div className="d-flex justify-content-between align-items-center text-body small">
-                                    <span>Tam Eşleşme Rengi</span>
-                                    <FormCheck 
-                                        type="switch"
-                                        id="mobile-help-blue"
-                                        className="custom-switch-md"
-                                        checked={testHelps.colorOnExactMatch}
-                                        onChange={(e) => setTestHelps(prev => ({ ...prev, colorOnExactMatch: e.target.checked }))}
-                                    />
+                        {hasWrittenQuestions && (
+                            <div className="mb-4 pb-3 border-bottom border-secondary border-opacity-10">
+                                <h6 className="fw-bold text-body mb-3">Seçenekler</h6>
+                                <div className="d-flex flex-column gap-3">
+                                    <div className="d-flex justify-content-between align-items-center text-body small">
+                                        <span>Harf Sayacı</span>
+                                        <FormCheck 
+                                            type="switch"
+                                            id="mobile-help-counter"
+                                            className="custom-switch-md"
+                                            checked={testHelps.showLetterCounter}
+                                            onChange={(e) => setTestHelps(prev => ({ ...prev, showLetterCounter: e.target.checked }))}
+                                        />
+                                    </div>
+                                    <div className="d-flex justify-content-between align-items-center text-body small">
+                                        <span>Uzunluk Rengi</span>
+                                        <FormCheck 
+                                            type="switch"
+                                            id="mobile-help-green"
+                                            className="custom-switch-md"
+                                            checked={testHelps.colorOnLengthMatch}
+                                            onChange={(e) => setTestHelps(prev => ({ ...prev, colorOnLengthMatch: e.target.checked }))}
+                                        />
+                                    </div>
+                                    <div className="d-flex justify-content-between align-items-center text-body small">
+                                        <span>Tam Eşleşme Rengi</span>
+                                        <FormCheck 
+                                            type="switch"
+                                            id="mobile-help-blue"
+                                            className="custom-switch-md"
+                                            checked={testHelps.colorOnExactMatch}
+                                            onChange={(e) => setTestHelps(prev => ({ ...prev, colorOnExactMatch: e.target.checked }))}
+                                        />
+                                    </div>
                                 </div>
                             </div>
-                        </div>
+                        )}
                         <div className="d-flex justify-content-between align-items-center mb-3">
                             <span className="fw-bold">{showAnswersSummary ? 'Cevaplarım' : 'Sorular'}</span>
                             <Button

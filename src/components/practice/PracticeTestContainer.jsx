@@ -8,7 +8,7 @@ import { levenshteinDistance } from '../../utils/stringUtils';
 const PracticeTestContainer = forwardRef((props, ref) => {
     const { 
         words, onCancel, savedOptions, onSaveOptions, 
-        onUpdateStage, onToggleStar, onDelete, onEdit, 
+        onUpdateStage, onUpdateStagesBatch, onToggleStar, onDelete, onEdit, 
         initialConfig, onLogTestResults, dailyStats, 
         practiceTests, onSaveTest, onDeleteTest, onDeleteAllTests, onTogglePinTest,
         customLists, onAddWordsToList, onRemoveWordFromList
@@ -465,6 +465,7 @@ const PracticeTestContainer = forwardRef((props, ref) => {
                         onHome={onCancel}
                         onFinish={handleFinish}
                         onUpdateStage={onUpdateStage}
+                        onUpdateStagesBatch={onUpdateStagesBatch}
                         onToggleStar={onToggleStar}
                         onDelete={onDelete}
                         onEdit={onEdit}

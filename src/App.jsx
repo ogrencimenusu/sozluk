@@ -333,8 +333,20 @@ function App() {
     try {
       const collectionsToMigrate = ['words', 'customLists', 'practice_tests', 'daily_stats', 'sticky_notes'];
       for (const collName of collectionsToMigrate) {
-        const q = query(collection(db, collName));
-        const snap = await getDocs(q);
+        // Optimization: Only query documents without a userId
+        // Note: This might require a composite index if combined with other filters, 
+        // but for a simple collection query it usually works or fails gracefully.
+        const q = query(collection(db, collName), where('userId', '==', null));
+        let snap;
+        try {
+          snap = await getDocs(q);
+        } catch (e) {
+          // If the query fails (e.g. index missing), fallback to non-filtered but limit it
+          console.warn(`Filtered migration failed for ${collName}, falling back to limited fetch.`);
+          const fallbackQ = query(collection(db, collName), limit(500));
+          snap = await getDocs(fallbackQ);
+        }
+        
         const batch = writeBatch(db);
         let count = 0;
         
@@ -1350,6 +1362,47 @@ function App() {
       }
     } catch (err) {
       console.error('Öğrenme aşaması güncellenemedi:', err);
+    }
+  };
+
+  const handleUpdateStagesBatch = async (updates) => {
+    if (!updates || updates.length === 0) return;
+    try {
+      if (!isConfigMissing) {
+        const batch = writeBatch(db);
+        let hasChanges = false;
+        
+        updates.forEach(({ wordId, isCorrect }) => {
+          const word = words.find(w => w.id === wordId);
+          if (word) {
+            const currentStage = word.learningStage ?? 0;
+            const newStage = isCorrect ? Math.min(10, currentStage + 1) : Math.max(0, currentStage - 1);
+            if (newStage !== currentStage) {
+              batch.update(doc(db, 'words', wordId), { learningStage: newStage });
+              hasChanges = true;
+            }
+          }
+        });
+        
+        if (hasChanges) {
+          await batch.commit();
+        }
+      } else {
+        setWords(prev => {
+          const newWords = [...prev];
+          updates.forEach(({ wordId, isCorrect }) => {
+            const idx = newWords.findIndex(w => w.id === wordId);
+            if (idx !== -1) {
+              const currentStage = newWords[idx].learningStage ?? 0;
+              const newStage = isCorrect ? Math.min(10, currentStage + 1) : Math.max(0, currentStage - 1);
+              newWords[idx] = { ...newWords[idx], learningStage: newStage };
+            }
+          });
+          return newWords;
+        });
+      }
+    } catch (err) {
+      console.error('Toplu güncelleme başarısız:', err);
     }
   };
 
@@ -2645,6 +2698,7 @@ function App() {
             savedOptions={practiceOptions}
             onSaveOptions={setPracticeOptions}
             onUpdateStage={handleUpdateStage}
+            onUpdateStagesBatch={handleUpdateStagesBatch}
             onToggleStar={handleToggleStar}
             onDelete={handleDelete}
             onEdit={handleEdit}

@@ -73,12 +73,12 @@ const LoginPage = ({ theme: initialTheme }) => {
   const isDark = theme === 'dark';
 
   return (
-    <div 
-      className="login-wrapper min-vh-100 d-flex align-items-center justify-content-center" 
+    <div
+      className="login-wrapper min-vh-100 d-flex align-items-center justify-content-center"
       data-bs-theme={isDark ? 'dark' : 'light'}
       style={{
-        background: isDark 
-          ? 'radial-gradient(circle at center, #111827 0%, #000000 100%)' 
+        background: isDark
+          ? 'radial-gradient(circle at center, #111827 0%, #000000 100%)'
           : 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 50%, #e2e8f0 100%)',
         position: 'relative',
         overflow: 'hidden',
@@ -86,7 +86,7 @@ const LoginPage = ({ theme: initialTheme }) => {
       }}
     >
       {/* Theme Toggle Button */}
-      <Button 
+      <Button
         variant={isDark ? "outline-light" : "outline-dark"}
         onClick={toggleTheme}
         className="position-absolute top-0 end-0 m-4 rounded-circle d-flex align-items-center justify-content-center p-0 shadow-sm"
@@ -114,7 +114,7 @@ const LoginPage = ({ theme: initialTheme }) => {
       <Container style={{ position: 'relative', zIndex: 1 }}>
         <Row className="justify-content-center">
           <Col md={8} lg={6} xl={5}>
-            <Card 
+            <Card
               className={`border-0 shadow-2xl overflow-hidden ${isDark ? 'bg-black' : ''}`}
               style={{
                 borderRadius: '2.5rem',
@@ -122,8 +122,8 @@ const LoginPage = ({ theme: initialTheme }) => {
                 backdropFilter: 'blur(40px)',
                 WebkitBackdropFilter: 'blur(40px)',
                 border: isDark ? '1px solid rgba(255, 255, 255, 0.05)' : '1px solid rgba(255, 255, 255, 0.3)',
-                boxShadow: isDark 
-                  ? '0 25px 50px -12px rgba(0, 0, 0, 1)' 
+                boxShadow: isDark
+                  ? '0 25px 50px -12px rgba(0, 0, 0, 1)'
                   : '0 25px 50px -12px rgba(0, 0, 0, 0.1)'
               }}
             >
@@ -140,13 +140,13 @@ const LoginPage = ({ theme: initialTheme }) => {
                       <img src="/iconv2.png" alt="Logo" style={{ width: '60px', height: '60px', objectFit: 'contain' }} />
                     </div>
                   </div>
-                  
-                  <h1 className="fw-black mb-2" style={{ 
-                    letterSpacing: '-1.5px', 
+
+                  <h1 className="fw-black mb-2" style={{
+                    letterSpacing: '-1.5px',
                     fontSize: '2.5rem',
                     color: isDark ? '#f8fafc' : '#0f172a'
                   }}>Hoş Geldiniz</h1>
-                  <p style={{ 
+                  <p style={{
                     color: isDark ? '#94a3b8' : '#64748b',
                     fontSize: '1rem',
                     fontWeight: '400',
@@ -158,8 +158,8 @@ const LoginPage = ({ theme: initialTheme }) => {
                 </div>
 
                 <div className="d-grid mb-5">
-                  <Button 
-                    variant="primary" 
+                  <Button
+                    variant="primary"
                     className="google-login-btn py-3 px-4 rounded-pill d-flex align-items-center justify-content-center gap-3 border-0 transition-all shadow-lg"
                     onClick={handleLogin}
                     disabled={loading}
@@ -185,21 +185,21 @@ const LoginPage = ({ theme: initialTheme }) => {
 
                 <div className="text-center pt-4 border-top border-secondary border-opacity-10">
                   <div className="d-flex align-items-center justify-content-center gap-2 mb-2">
-                    <span className="badge px-3 py-2 rounded-pill" style={{ 
-                      background: isDark ? 'rgba(59, 130, 246, 0.1)' : '#eff6ff', 
+                    <span className="badge px-3 py-2 rounded-pill" style={{
+                      background: isDark ? 'rgba(59, 130, 246, 0.1)' : '#eff6ff',
                       color: '#3b82f6',
                       fontSize: '0.75rem',
                       fontWeight: '700'
-                    }}>VERSION 2.0.3</span>
-                    <span className="badge px-3 py-2 rounded-pill" style={{ 
-                      background: isDark ? 'rgba(16, 185, 129, 0.1)' : '#ecfdf5', 
+                    }}>VERSION 2.1.0</span>
+                    <span className="badge px-3 py-2 rounded-pill" style={{
+                      background: isDark ? 'rgba(16, 185, 129, 0.1)' : '#ecfdf5',
                       color: '#10b981',
                       fontSize: '0.75rem',
                       fontWeight: '700'
                     }}>PRODUCTION READY</span>
                   </div>
-                  <p style={{ 
-                    fontSize: '0.75rem', 
+                  <p style={{
+                    fontSize: '0.75rem',
                     color: isDark ? '#475569' : '#94a3b8',
                     marginBottom: 0
                   }}>
@@ -210,7 +210,7 @@ const LoginPage = ({ theme: initialTheme }) => {
             </Card>
 
             <div className="text-center mt-4">
-              <p className="small px-4" style={{ 
+              <p className="small px-4" style={{
                 color: isDark ? '#64748b' : '#94a3b8',
                 lineHeight: '1.6'
               }}>

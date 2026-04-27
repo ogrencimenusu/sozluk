@@ -444,6 +444,9 @@ const StickyNotesPage = ({
                                     <span className="sticky-note-list-date d-flex align-items-center gap-1">
                                       <i className="bi bi-clock"></i>
                                       {isValidDate ? noteDate.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : '—'}
+                                      <span className="ms-2 ps-2 border-start border-opacity-25" style={{ fontSize: '0.75rem' }}>
+                                        {note.text ? note.text.split('\n').filter(l => l.trim()).length : 0} Kelime
+                                      </span>
                                     </span>
                                     <div className="d-flex gap-3 align-items-center">
                                       <a
