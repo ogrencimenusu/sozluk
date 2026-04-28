@@ -35,7 +35,8 @@ const QuestionCard = memo(({
     setSelectedWordForModal,
     setWrittenInputs,
     questions,
-    testHelps: propTestHelps
+    testHelps: propTestHelps,
+    stickyNotes
 }) => {
     const isMcq = currentQuestion.type !== 'tf' && currentQuestion.type !== 'written' && currentQuestion.type !== 'flashcard' && currentQuestion.options;
     const isWritten = currentQuestion.type === 'written';
@@ -254,10 +255,13 @@ const QuestionCard = memo(({
                                                 <Dropdown.Toggle
                                                     variant="outline-secondary"
                                                     size="sm"
-                                                    className="rounded-circle px-2 py-1 d-flex align-items-center no-caret border-opacity-75 shadow-sm"
+                                                    className="rounded-circle px-2 py-1 d-flex align-items-center no-caret border-opacity-75 shadow-sm position-relative"
                                                     title="Daha Fazla Seçenek"
                                                 >
                                                     <i className="bi bi-three-dots text-body-secondary"></i>
+                                                    {stickyNotes && stickyNotes.some(n => n.wordId === wordObj.id) && (
+                                                        <span className="position-absolute" style={{ top: '-2px', right: '-2px', width: '10px', height: '10px', backgroundColor: '#f59e0b', borderRadius: '50%' }}></span>
+                                                    )}
                                                 </Dropdown.Toggle>
 
                                                 <Dropdown.Menu className="shadow-lg border-secondary border-opacity-25 bg-body-tertiary rounded-3" style={{ minWidth: '200px' }}>
@@ -290,10 +294,13 @@ const QuestionCard = memo(({
                                                     )}
 
                                                     <Dropdown.Item
-                                                        className="small d-flex align-items-center gap-2 py-2"
+                                                        className="small d-flex align-items-center gap-2 py-2 position-relative"
                                                         onClick={() => setSelectedWordForModal(wordObj)}
                                                     >
                                                         <i className="bi bi-info-circle text-secondary"></i> Kelime Detayı
+                                                        {stickyNotes && stickyNotes.some(n => n.wordId === wordObj.id) && (
+                                                            <span className="position-absolute" style={{ top: '10px', right: '10px', width: '8px', height: '8px', backgroundColor: '#f59e0b', borderRadius: '50%' }}></span>
+                                                        )}
                                                     </Dropdown.Item>
 
                                                     {onDelete && (
@@ -313,12 +320,15 @@ const QuestionCard = memo(({
                                             <Button
                                                 variant="outline-secondary"
                                                 size="sm"
-                                                className="rounded-pill px-3 py-1 d-none d-md-flex align-items-center gap-1"
+                                                className="rounded-pill px-3 py-1 d-none d-md-flex align-items-center gap-1 position-relative"
                                                 onClick={() => setSelectedWordForModal(wordObj)}
                                                 title="Kelime Detayı"
                                             >
                                                 <i className="bi bi-info-circle"></i>
                                                 <span className="small">Detay</span>
+                                                {stickyNotes && stickyNotes.some(n => n.wordId === wordObj.id) && (
+                                                    <span className="position-absolute" style={{ top: '-2px', right: '-2px', width: '10px', height: '10px', backgroundColor: '#f59e0b', borderRadius: '50%' }}></span>
+                                                )}
                                             </Button>
 
                                             {onDelete && (
@@ -345,7 +355,7 @@ const QuestionCard = memo(({
                     </div>
                 </div>
 
-                <div className="mb-1">
+                <div className="mb-3">
                     {currentQuestion.format === 'example' && currentQuestion.questionContext && (
                         <div className="mb-2">
                             <Badge bg="info" className="bg-opacity-25 text-info-emphasis px-2 py-1 rounded-pill">
@@ -437,12 +447,12 @@ const QuestionCard = memo(({
                                     {(() => {
                                         const helps = propTestHelps || initialTestState?.config?.testHelps || { showLetterCounter: true, colorOnLengthMatch: true, colorOnExactMatch: true };
                                         if (!helps.showLetterCounter) return null;
-                                        
+
                                         const typed = (writtenInput || '').toLowerCase();
                                         const target = (currentQuestion.answer || '').toLowerCase();
                                         const isLengthMatch = typed.length === target.length;
                                         const isExactMatch = typed === target;
-                                        
+
                                         let colorClass = 'text-danger';
                                         if (isLengthMatch) {
                                             if (isExactMatch && helps.colorOnExactMatch) {
@@ -451,7 +461,7 @@ const QuestionCard = memo(({
                                                 colorClass = 'text-success';
                                             }
                                         }
-                                        
+
                                         return (
                                             <small className={`ms-1 ${colorClass}`} style={{ fontSize: '0.75rem', fontWeight: isLengthMatch ? 'bold' : 'normal' }}>
                                                 {typed.length} / {target.length} harf
@@ -583,11 +593,7 @@ const QuestionCard = memo(({
                                 )}
                             </div>
                         </div>
-                    ) : (
-                        <span className="text-body-secondary fw-semibold d-block mb-3">
-                            Eşleşen {currentQuestion.format === 'definition' ? 'kelimeyi' : 'anlamı'} seçiniz
-                        </span>
-                    )}
+                    ) : null}
                     <Row className="g-3 align-items-stretch">
                         {(currentQuestion.options || []).map((opt, i) => {
                             const isSelected = answer?.selected?.text === opt.text;

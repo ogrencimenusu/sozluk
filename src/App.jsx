@@ -229,7 +229,7 @@ function App() {
   const [practiceTests, setPracticeTests] = useState([]);
   const [stickyNotes, setStickyNotes] = useState([]);
   const uncompletedNotesCount = useMemo(() => {
-    return stickyNotes.filter(note => !note.isCompleted).length;
+    return stickyNotes.filter(note => !note.isCompleted && !note.wordId).length;
   }, [stickyNotes]);
   const [templates, setTemplates] = useState([
     {
@@ -2221,10 +2221,28 @@ function App() {
                       <Card
                         className={`h-100 interactive-card border ${isSelectionMode && selectedWords.includes(word.id) ? 'border-primary border-2 bg-primary bg-opacity-10' : 'border-opacity-25'} bg-body-tertiary shadow-sm`}
                         onClick={(e) => isSelectionMode && handleSelectWord(e, word.id)}
-                        style={{ cursor: isSelectionMode ? 'pointer' : 'default', overflow: 'visible' }}
+                        style={{ cursor: isSelectionMode ? 'pointer' : 'default', position: 'relative', overflow: 'visible' }}
                         data-word-id={word.id}
                         data-word-term={word.term}
                       >
+                        {/* Sticky Note Indicator Dot */}
+                        {stickyNotes.some(n => n.wordId === word.id) && (
+                          <div 
+                            style={{
+                              position: 'absolute',
+                              top: '-4px',
+                              right: '-4px',
+                              width: '10px',
+                              height: '10px',
+                              backgroundColor: '#f59e0b',
+                              borderRadius: '50%',
+                              zIndex: 10,
+                              boxShadow: '0 0 5px rgba(245, 158, 11, 0.5)',
+                              border: '1.5px solid var(--bs-body-tertiary-bg)'
+                            }}
+                            title="Bu kelimeye ait notlar var"
+                          />
+                        )}
                         <Card.Body className="d-flex flex-column" style={{ overflow: 'visible' }}>
                           <div className="d-flex justify-content-between align-items-center mb-2">
                             <div className="d-flex align-items-center gap-2">
@@ -2712,6 +2730,8 @@ function App() {
             customLists={customLists}
             onAddWordsToList={handleAddWordsToList}
             onRemoveWordFromList={handleRemoveWordFromList}
+            stickyNotes={stickyNotes}
+            onUpdateNote={handleUpdateNote}
           />
         </Container>
       )}
@@ -2810,6 +2830,7 @@ function App() {
           onWordClick={setSelectedWord}
           handleSpeak={handleSpeak}
           dailyStats={dailyStats}
+          stickyNotes={stickyNotes}
         />
       )}
 
@@ -2925,6 +2946,7 @@ function App() {
         onRemoveWordFromList={handleRemoveWordFromList}
         stickyNotes={stickyNotes}
         onAddNote={handleAddNote}
+        onUpdateNote={handleUpdateNote}
         onDeleteNote={handleDeleteNote}
         stickyHighlights={selectedWord ? stickyNotes.filter(n => n.wordId === selectedWord.id).map(n => n.text) : []}
         onOpenNotesModal={() => setCurrentView('sticky-notes')}

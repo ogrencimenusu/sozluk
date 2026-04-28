@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Container, Row, Col, Card, Form, Button, Spinner } from 'react-bootstrap';
+import { Container, Row, Col, Card, Form, Button, Spinner, Dropdown, Offcanvas } from 'react-bootstrap';
 import PageHeader from '../layout/PageHeader';
 
 const StickyNotesPage = ({
@@ -27,6 +27,28 @@ const StickyNotesPage = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [saveStatus, setSaveStatus] = useState('idle'); // 'idle', 'saving', 'saved'
   const [visibleCount, setVisibleCount] = useState(5);
+  const [expandedLinkedGroups, setExpandedLinkedGroups] = useState([]);
+  const [showTitleDropdown, setShowTitleDropdown] = useState(null); // null, 'new', or note.id
+  const [titleSearchTerm, setTitleSearchTerm] = useState('');
+  const [showMobileTitles, setShowMobileTitles] = useState(false);
+
+  const uniqueTitles = useMemo(() => {
+    const titles = stickyNotes.map(n => n.title).filter(t => t && t.trim() !== '');
+    return [...new Set(titles)];
+  }, [stickyNotes]);
+
+  const filteredTitles = useMemo(() => {
+    if (!titleSearchTerm) return uniqueTitles;
+    return uniqueTitles.filter(t => t.toLowerCase().includes(titleSearchTerm.toLowerCase()));
+  }, [uniqueTitles, titleSearchTerm]);
+
+  const toggleLinkedGroup = (dateLabel) => {
+    setExpandedLinkedGroups(prev =>
+      prev.includes(dateLabel)
+        ? prev.filter(d => d !== dateLabel)
+        : [...prev, dateLabel]
+    );
+  };
 
   const handleToggleExpand = (dateLabel) => {
     setExpandedDates(prev =>
@@ -57,10 +79,9 @@ const StickyNotesPage = ({
     );
   }, [stickyNotes, searchQuery]);
 
-  const groupedNotes = useMemo(() => {
+  const groupNotesArray = (notesArray) => {
     const groups = {};
-    const displayedNotes = filteredNotes.slice(0, visibleCount);
-    const sortedNotes = [...displayedNotes].sort((a, b) => {
+    const sortedNotes = [...notesArray].sort((a, b) => {
       const aVal = a.createdAt ? (a.createdAt.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt).getTime()) : 0;
       const bVal = b.createdAt ? (b.createdAt.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt).getTime()) : 0;
       return bVal - aVal;
@@ -85,7 +106,10 @@ const StickyNotesPage = ({
     });
 
     return groups;
-  }, [filteredNotes, visibleCount]);
+  };
+
+  const allGroupedNotes = useMemo(() => groupNotesArray(filteredNotes), [filteredNotes]);
+  const groupedNotes = useMemo(() => groupNotesArray(filteredNotes.slice(0, visibleCount)), [filteredNotes, visibleCount]);
 
   // Reset pagination when searching
   useEffect(() => {
@@ -182,55 +206,109 @@ const StickyNotesPage = ({
         dailyStats={dailyStats}
       />
 
-      <Row className="g-4">
-        {/* Sol Kolon: Başlık Listesi Sidebar - Desktop'ta solda, Mobil'de altta */}
-        <Col xs={12} md={5} lg={4} className="order-2 order-md-1">
-          <Card className="border-0 shadow-sm rounded-4 h-100 bg-body-tertiary">
+      {/* Mobile Sidebar Toggle Button */}
+      <div className="d-md-none">
+        <button 
+          className="mobile-nav-toggle-btn"
+          onClick={() => setShowMobileTitles(true)}
+          title="Not Başlıklarını Aç"
+          style={{ top: '150px' }} // Position it below any other global toggles
+        >
+          <i className="bi bi-list-ul"></i>
+        </button>
+      </div>
+
+      <Row className="g-4 position-relative">
+        {/* Sol Kolon: Başlık Listesi Sidebar - Desktop'ta solda, Mobil'de altta (hidden by default on mobile) */}
+        <Col md={5} lg={4} className="order-2 order-md-1 d-none d-md-block sticky-sidebar">
+          <Card className="border-0 shadow-sm rounded-4 bg-body-tertiary">
             <Card.Header className="bg-transparent border-0 pt-4 pb-2 px-4">
               <h5 className="fw-bold m-0 d-flex align-items-center gap-2 text-primary">
                 <i className="bi bi-list-ul"></i> Not Başlıkları
               </h5>
             </Card.Header>
             <Card.Body className="p-0">
-              {Object.keys(groupedNotes).length === 0 ? (
+              {Object.keys(allGroupedNotes).length === 0 ? (
                 <div className="text-muted text-center p-4">Not bulunamadı.</div>
               ) : (
                 <div className="d-flex flex-column gap-3 p-4 pt-1" style={{ maxHeight: 'calc(100vh - 250px)', overflowY: 'auto', overflowX: 'hidden' }}>
-                  {Object.entries(groupedNotes).map(([dateLabel, items], idx) => (
+                  {Object.entries(allGroupedNotes).map(([dateLabel, items], idx) => (
                     <div key={idx}>
                       <div className="small fw-bold text-muted mb-2 ps-2" style={{ letterSpacing: '0.5px' }}>{dateLabel}</div>
                       <div className="d-flex flex-column gap-2">
-                        {items.slice(0, expandedDates.includes(dateLabel) ? items.length : 4).map((note, i) => (
-                          <div
-                            key={note.id}
-                            className="bg-body shadow-sm p-3 rounded-4 d-flex align-items-center gap-3 interactive-card"
-                            style={{ cursor: 'pointer' }}
-                            onClick={() => scrollToNote(note.id)}
-                          >
-                            <div 
-                              className={`fw-bold fs-6 flex-grow-1 text-truncate ${note.isCompleted ? 'text-success opacity-75' : ''}`}
-                              style={!note.isCompleted ? { color: '#f59e0b' } : {}}
-                            >
-                              {i + 1}. {note.title || (note.text ? note.text.substring(0, 30) + '...' : 'Başlıksız Not')}
-                            </div>
-                            {note.isCompleted && <i className="bi bi-check-circle-fill text-success opacity-50"></i>}
-                          </div>
-                        ))}
-                        {items.length > 4 && (
-                          <div className="text-center mt-1">
-                            <span
-                              className="text-primary small fw-medium"
-                              style={{ cursor: 'pointer' }}
-                              onClick={() => handleToggleExpand(dateLabel)}
-                            >
-                              {expandedDates.includes(dateLabel) ? (
-                                <><i className="bi bi-chevron-up"></i> Daha az göster</>
-                              ) : (
-                                <>({items.length - 4} adet not daha) <i className="bi bi-chevron-down"></i></>
+                        {(() => {
+                          const linkedItems = items.filter(n => n.wordTerm && n.wordTerm !== 'Manuel Not' && n.wordTerm !== 'MANUEL NOT');
+                          const manualItems = items.filter(n => !n.wordTerm || n.wordTerm === 'Manuel Not' || n.wordTerm === 'MANUEL NOT');
+                          const isLinkedExpanded = expandedLinkedGroups.includes(dateLabel);
+
+                          return (
+                            <>
+                              {linkedItems.length > 0 && (
+                                <Button 
+                                  variant="primary" 
+                                  size="sm" 
+                                  className="w-100 rounded-4 mb-2 py-2 d-flex align-items-center justify-content-between px-3 shadow-sm border-0"
+                                  onClick={() => toggleLinkedGroup(dateLabel)}
+                                  style={{ background: 'linear-gradient(135deg, #3b82f6, #2563eb)' }}
+                                >
+                                  <span className="fw-bold small"><i className="bi bi-link-45deg me-1"></i> {linkedItems.length} tane ilişkili not</span>
+                                  <i className={`bi ${isLinkedExpanded ? 'bi-chevron-up' : 'bi-chevron-down'} small`}></i>
+                                </Button>
                               )}
-                            </span>
-                          </div>
-                        )}
+                              
+                              {isLinkedExpanded && linkedItems.map((note, i) => (
+                                <div
+                                  key={note.id}
+                                  className="bg-body shadow-sm p-3 rounded-4 d-flex align-items-center gap-3 interactive-card mb-1 border-start border-4 border-primary"
+                                  style={{ cursor: 'pointer' }}
+                                  onClick={() => scrollToNote(note.id)}
+                                >
+                                  <div className="fw-bold fs-6 flex-grow-1 d-flex justify-content-between align-items-center gap-2" style={{ minWidth: 0 }}>
+                                    <div className="text-truncate text-body-secondary fw-normal" style={{ flexShrink: 1, minWidth: 0 }}>
+                                      {i + 1}. {note.wordTerm}
+                                    </div>
+                                    {note.title && (
+                                      <div className="text-truncate text-primary text-end flex-grow-1" style={{ minWidth: 0 }}>
+                                        {note.title}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+
+                              {manualItems.slice(0, expandedDates.includes(dateLabel) ? manualItems.length : 4).map((note, i) => (
+                                <div
+                                  key={note.id}
+                                  className="bg-body shadow-sm p-3 rounded-4 d-flex align-items-center gap-3 interactive-card mb-1"
+                                  style={{ cursor: 'pointer' }}
+                                  onClick={() => scrollToNote(note.id)}
+                                >
+                                  <div className={`fw-bold fs-6 flex-grow-1 text-truncate ${note.isCompleted ? 'text-success opacity-75' : ''}`}
+                                       style={!note.isCompleted ? { color: '#f59e0b' } : {}}>
+                                    {i + 1}. {note.title || (note.text ? note.text.substring(0, 30) + '...' : 'Başlıksız Not')}
+                                  </div>
+                                  {note.isCompleted && <i className="bi bi-check-circle-fill text-success opacity-50"></i>}
+                                </div>
+                              ))}
+                              
+                              {manualItems.length > 4 && (
+                                <div className="text-center mt-1">
+                                  <span
+                                    className="text-primary small fw-medium"
+                                    style={{ cursor: 'pointer' }}
+                                    onClick={() => handleToggleExpand(dateLabel)}
+                                  >
+                                    {expandedDates.includes(dateLabel) ? (
+                                      <><i className="bi bi-chevron-up"></i> Daha az göster</>
+                                    ) : (
+                                      <>({manualItems.length - 4} adet not daha) <i className="bi bi-chevron-down"></i></>
+                                    )}
+                                  </span>
+                                </div>
+                              )}
+                            </>
+                          );
+                        })()}
                       </div>
                     </div>
                   ))}
@@ -249,13 +327,70 @@ const StickyNotesPage = ({
                 <i className="bi bi-pencil-square"></i> Hızlı Not Ekle
               </h6>
               <div className="d-flex flex-column gap-3">
-                <Form.Control
-                  type="text"
-                  placeholder="Not Başlığı (İsteğe bağlı)..."
-                  value={manualNoteTitle}
-                  onChange={(e) => setManualNoteTitle(e.target.value)}
-                  className="bg-body-secondary border-0 shadow-none px-4 py-3 rounded-pill"
-                />
+                <Dropdown 
+                  show={showTitleDropdown === 'new'} 
+                  onToggle={(isOpen, meta) => {
+                    if (meta && meta.source === 'rootClose') {
+                      setShowTitleDropdown(null);
+                    }
+                  }}
+                  className="w-100"
+                >
+                  <div className="d-flex bg-body-secondary rounded-pill align-items-center mb-0 pe-2">
+                    <Form.Control
+                      type="text"
+                      placeholder="Not Başlığı (İsteğe bağlı)..."
+                      value={manualNoteTitle}
+                      onChange={(e) => setManualNoteTitle(e.target.value)}
+                      onClick={() => setShowTitleDropdown('new')}
+                      className="bg-transparent border-0 shadow-none px-4 py-3 flex-grow-1"
+                    />
+                    {manualNoteTitle && (
+                      <Button 
+                        variant="link" 
+                        className="border-0 shadow-none text-muted p-2 text-decoration-none d-flex align-items-center justify-content-center"
+                        onClick={() => { setManualNoteTitle(''); setShowTitleDropdown('new'); }}
+                      >
+                        <i className="bi bi-x-circle-fill opacity-50 hover-opacity-100"></i>
+                      </Button>
+                    )}
+                    <Dropdown.Toggle 
+                      variant="link" 
+                      className="border-0 shadow-none text-muted p-2 text-decoration-none"
+                      onClick={() => setShowTitleDropdown(showTitleDropdown === 'new' ? null : 'new')}
+                    >
+                    </Dropdown.Toggle>
+                  </div>
+                  <Dropdown.Menu className="w-100 p-2 shadow-lg border-0 mt-1 rounded-3" style={{ maxHeight: '250px', overflowY: 'auto' }}>
+                    <div className="px-1 pb-2 mb-2 border-bottom border-opacity-10">
+                      <Form.Control
+                        type="text"
+                        size="sm"
+                        placeholder="Kayıtlı başlıklarda ara..."
+                        value={titleSearchTerm}
+                        onChange={(e) => setTitleSearchTerm(e.target.value)}
+                        onClick={(e) => e.stopPropagation()}
+                        autoFocus
+                      />
+                    </div>
+                    {filteredTitles.length === 0 ? (
+                      <div className="text-muted small text-center p-2 fst-italic">Kayıtlı başlık bulunamadı.</div>
+                    ) : (
+                      filteredTitles.map((t, i) => (
+                        <Dropdown.Item 
+                          key={i} 
+                          className="small rounded-2 py-2 text-truncate"
+                          onClick={() => {
+                            setManualNoteTitle(t);
+                            setShowTitleDropdown(null);
+                          }}
+                        >
+                          {t}
+                        </Dropdown.Item>
+                      ))
+                    )}
+                  </Dropdown.Menu>
+                </Dropdown>
                 <div className="d-flex flex-column flex-sm-row gap-3 align-items-start align-items-sm-center">
                   <Form.Control
                     as="textarea"
@@ -324,13 +459,13 @@ const StickyNotesPage = ({
                             const isValidDate = noteDate instanceof Date && !isNaN(noteDate);
 
                             return (
-                              <div
-                                key={note.id}
-                                id={`note-${note.id}`}
-                                className={`sticky-note-list-item d-flex align-items-start gap-3 p-3 overflow-hidden transition-all ${justUpdatedNoteId === note.id ? 'just-updated' : ''} ${note.isCompleted ? 'completed' : ''}`}
-                              >
-                                <div className={`sticky-note-list-pin flex-shrink-0 ${note.isCompleted ? 'text-success' : ''}`}>
-                                  <i className={`bi ${note.isCompleted ? 'bi-check-circle-fill' : 'bi-pin-angle-fill'}`}></i>
+                                <div
+                                  key={note.id}
+                                  id={`note-${note.id}`}
+                                  className={`sticky-note-list-item d-flex align-items-start gap-3 p-3 overflow-hidden transition-all ${justUpdatedNoteId === note.id ? 'just-updated' : ''} ${!note.wordId && note.isCompleted ? 'completed' : ''}`}
+                                >
+                                  <div className={`sticky-note-list-pin flex-shrink-0 ${!note.wordId && note.isCompleted ? 'text-success' : ''}`}>
+                                    <i className={`bi ${!note.wordId && note.isCompleted ? 'bi-check-circle-fill' : 'bi-pin-angle-fill'}`}></i>
                                 </div>
                                 <div className="flex-grow-1 min-w-0">
                                   {note.wordTerm && (
@@ -345,14 +480,70 @@ const StickyNotesPage = ({
                                   {editingNoteId === note.id ? (
                                     <div className="mb-2">
                                       {/* Title Edit Input */}
-                                      <Form.Control
-                                        type="text"
-                                        value={inlineEditingTitle}
-                                        onChange={(e) => setInlineEditingTitle(e.target.value)}
-                                        placeholder="Not Başlığı (İsteğe bağlı)..."
-                                        className="border border-opacity-25 shadow-none bg-body mb-2 rounded-3 px-3 py-2 fw-bold text-body"
-                                        style={{ borderColor: '#f59e0b' }}
-                                      />
+                                      <Dropdown 
+                                        show={showTitleDropdown === note.id} 
+                                        onToggle={(isOpen, meta) => {
+                                          if (meta && meta.source === 'rootClose') {
+                                            setShowTitleDropdown(null);
+                                          }
+                                        }}
+                                        className="w-100 mb-2"
+                                      >
+                                        <div className="d-flex bg-body rounded-3 border border-opacity-25 align-items-center pe-1" style={{ borderColor: '#f59e0b' }}>
+                                          <Form.Control
+                                            type="text"
+                                            value={inlineEditingTitle}
+                                            onChange={(e) => setInlineEditingTitle(e.target.value)}
+                                            onClick={() => setShowTitleDropdown(note.id)}
+                                            placeholder="Not Başlığı (İsteğe bağlı)..."
+                                            className="border-0 shadow-none bg-transparent px-3 py-2 fw-bold text-body flex-grow-1"
+                                          />
+                                          {inlineEditingTitle && (
+                                            <Button 
+                                              variant="link" 
+                                              className="border-0 shadow-none text-muted p-1 text-decoration-none d-flex align-items-center justify-content-center"
+                                              onClick={() => { setInlineEditingTitle(''); setShowTitleDropdown(note.id); }}
+                                            >
+                                              <i className="bi bi-x-circle-fill opacity-50 hover-opacity-100"></i>
+                                            </Button>
+                                          )}
+                                          <Dropdown.Toggle 
+                                            variant="link" 
+                                            className="border-0 shadow-none text-muted p-2 text-decoration-none"
+                                            onClick={() => setShowTitleDropdown(showTitleDropdown === note.id ? null : note.id)}
+                                          >
+                                          </Dropdown.Toggle>
+                                        </div>
+                                        <Dropdown.Menu className="w-100 p-2 shadow-lg border-0 mt-1 rounded-3" style={{ maxHeight: '250px', overflowY: 'auto' }}>
+                                          <div className="px-1 pb-2 mb-2 border-bottom border-opacity-10">
+                                            <Form.Control
+                                              type="text"
+                                              size="sm"
+                                              placeholder="Kayıtlı başlıklarda ara..."
+                                              value={titleSearchTerm}
+                                              onChange={(e) => setTitleSearchTerm(e.target.value)}
+                                              onClick={(e) => e.stopPropagation()}
+                                              autoFocus
+                                            />
+                                          </div>
+                                          {filteredTitles.length === 0 ? (
+                                            <div className="text-muted small text-center p-2 fst-italic">Kayıtlı başlık bulunamadı.</div>
+                                          ) : (
+                                            filteredTitles.map((t, i) => (
+                                              <Dropdown.Item 
+                                                key={i} 
+                                                className="small rounded-2 py-2 text-truncate"
+                                                onClick={() => {
+                                                  setInlineEditingTitle(t);
+                                                  setShowTitleDropdown(null);
+                                                }}
+                                              >
+                                                {t}
+                                              </Dropdown.Item>
+                                            ))
+                                          )}
+                                        </Dropdown.Menu>
+                                      </Dropdown>
                                       <Form.Control
                                         as="textarea"
                                         value={inlineEditingText}
@@ -449,14 +640,16 @@ const StickyNotesPage = ({
                                       </span>
                                     </span>
                                     <div className="d-flex gap-3 align-items-center">
-                                      <a
-                                        href="#!"
-                                        className={`sticky-note-list-complete fw-semibold d-flex align-items-center gap-1 ${note.isCompleted ? 'text-secondary' : 'text-success'}`}
-                                        onClick={(e) => { e.preventDefault(); handleToggleNoteCompletion(note.id, note.isCompleted); }}
-                                      >
-                                        <i className={`bi ${note.isCompleted ? 'bi-arrow-counterclockwise' : 'bi-check2-circle'}`}></i>
-                                        {note.isCompleted ? 'Geri Al' : 'Tamamlandı'}
-                                      </a>
+                                      {!note.wordId && (
+                                        <a
+                                          href="#!"
+                                          className={`sticky-note-list-complete fw-semibold d-flex align-items-center gap-1 ${note.isCompleted ? 'text-secondary' : 'text-success'}`}
+                                          onClick={(e) => { e.preventDefault(); handleToggleNoteCompletion(note.id, note.isCompleted); }}
+                                        >
+                                          <i className={`bi ${note.isCompleted ? 'bi-arrow-counterclockwise' : 'bi-check2-circle'}`}></i>
+                                          {note.isCompleted ? 'Geri Al' : 'Tamamlandı'}
+                                        </a>
+                                      )}
                                       <a
                                         href="#!"
                                         className="sticky-note-list-delete fw-semibold d-flex align-items-center gap-1 text-danger"
@@ -487,6 +680,94 @@ const StickyNotesPage = ({
           </Card>
         </Col>
       </Row>
+      {/* MOBILE TITLES SIDEBAR (Offcanvas) */}
+      <Offcanvas 
+        show={showMobileTitles} 
+        onHide={() => setShowMobileTitles(false)} 
+        placement="start"
+        className="bg-body-tertiary border-end border-opacity-10"
+        style={{ width: '280px' }}
+      >
+        <Offcanvas.Header closeButton className="border-bottom border-opacity-10 pb-3">
+          <Offcanvas.Header closeButton className="d-none"></Offcanvas.Header> {/* Fix for multiple close buttons if any */}
+          <Offcanvas.Title className="d-flex align-items-center gap-2">
+            <i className="bi bi-list-ul text-primary fs-4"></i>
+            <span className="fw-bold">Not Başlıkları</span>
+          </Offcanvas.Title>
+        </Offcanvas.Header>
+        <Offcanvas.Body className="p-0">
+          <div className="p-4 pt-3">
+            {Object.keys(allGroupedNotes).length === 0 ? (
+              <div className="text-muted text-center p-4">Not bulunamadı.</div>
+            ) : (
+              <div className="d-flex flex-column gap-3">
+                {Object.entries(allGroupedNotes).map(([dateLabel, items], idx) => (
+                  <div key={idx}>
+                    <div className="small fw-bold text-muted mb-2 ps-2" style={{ letterSpacing: '0.5px' }}>{dateLabel}</div>
+                    <div className="d-flex flex-column gap-2">
+                      {(() => {
+                        const linkedItems = items.filter(n => n.wordTerm && n.wordTerm !== 'Manuel Not' && n.wordTerm !== 'MANUEL NOT');
+                        const manualItems = items.filter(n => !n.wordTerm || n.wordTerm === 'Manuel Not' || n.wordTerm === 'MANUEL NOT');
+                        const isLinkedExpanded = expandedLinkedGroups.includes(dateLabel);
+
+                        return (
+                          <>
+                            {linkedItems.length > 0 && (
+                              <Button 
+                                variant="primary" 
+                                size="sm" 
+                                className="w-100 rounded-4 mb-2 py-2 d-flex align-items-center justify-content-between px-3 shadow-sm border-0"
+                                onClick={() => toggleLinkedGroup(dateLabel)}
+                                style={{ background: 'linear-gradient(135deg, #3b82f6, #2563eb)' }}
+                              >
+                                <span className="fw-bold small"><i className="bi bi-link-45deg me-1"></i> {linkedItems.length}</span>
+                                <i className={`bi ${isLinkedExpanded ? 'bi-chevron-up' : 'bi-chevron-down'} small`}></i>
+                              </Button>
+                            )}
+                            
+                            {isLinkedExpanded && linkedItems.map((note, i) => (
+                              <div
+                                key={`mob-link-${note.id}`}
+                                className="bg-body shadow-sm p-3 rounded-4 d-flex align-items-center gap-3 interactive-card mb-1 border-start border-4 border-primary"
+                                style={{ cursor: 'pointer' }}
+                                onClick={() => {
+                                  scrollToNote(note.id);
+                                  setShowMobileTitles(false);
+                                }}
+                              >
+                                <div className="fw-bold fs-6 flex-grow-1 text-truncate">
+                                  {note.wordTerm}
+                                </div>
+                              </div>
+                            ))}
+
+                            {manualItems.slice(0, expandedDates.includes(dateLabel) ? manualItems.length : 4).map((note, i) => (
+                              <div
+                                key={`mob-man-${note.id}`}
+                                className="bg-body shadow-sm p-3 rounded-4 d-flex align-items-center gap-3 interactive-card mb-1"
+                                style={{ cursor: 'pointer' }}
+                                onClick={() => {
+                                  scrollToNote(note.id);
+                                  setShowMobileTitles(false);
+                                }}
+                              >
+                                <div className={`fw-bold fs-6 flex-grow-1 text-truncate ${note.isCompleted ? 'text-success opacity-75' : ''}`}
+                                     style={!note.isCompleted ? { color: '#f59e0b' } : {}}>
+                                  {note.title || (note.text ? note.text.substring(0, 30) + '...' : 'Başlıksız Not')}
+                                </div>
+                              </div>
+                            ))}
+                          </>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </Offcanvas.Body>
+      </Offcanvas>
     </Container>
   );
 };

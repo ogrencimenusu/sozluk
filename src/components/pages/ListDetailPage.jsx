@@ -10,7 +10,8 @@ const ListDetailPage = ({
   setCurrentView,
   onWordClick,
   handleSpeak,
-  dailyStats
+  dailyStats,
+  stickyNotes = []
 }) => {
   const list = customLists.find(l => l.id === listId);
   
@@ -74,8 +75,26 @@ const ListDetailPage = ({
               <Card 
                 className="h-100 word-card border-0 shadow-sm rounded-4 bg-body-tertiary transition-all hover-lift"
                 onClick={() => onWordClick(word)}
-                style={{ cursor: 'pointer' }}
+                style={{ cursor: 'pointer', position: 'relative', overflow: 'visible' }}
               >
+                {/* Sticky Note Indicator Dot */}
+                {stickyNotes.some(n => n.wordId === word.id) && (
+                  <div 
+                    style={{
+                      position: 'absolute',
+                      top: '-4px',
+                      right: '-4px',
+                      width: '10px',
+                      height: '10px',
+                      backgroundColor: '#f59e0b',
+                      borderRadius: '50%',
+                      zIndex: 10,
+                      boxShadow: '0 0 5px rgba(245, 158, 11, 0.5)',
+                      border: '1.5px solid var(--bs-body-tertiary-bg)'
+                    }}
+                    title="Bu kelimeye ait notlar var"
+                  />
+                )}
                 <Card.Body className="p-4 d-flex flex-column h-100">
                   <div className="d-flex justify-content-between align-items-start mb-2">
                     <div className="min-w-0 flex-grow-1 pe-2">

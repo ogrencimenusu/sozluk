@@ -54,6 +54,9 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
         colorOnExactMatch: true
     });
 
+    const [deleteAllStatus, setDeleteAllStatus] = useState('idle');
+    const [deleteProgress, setDeleteProgress] = useState(0);
+
     const [selectedContexts, setSelectedContexts] = useState(() => {
         const initial = {};
         availableContexts.forEach(c => initial[c] = true);
@@ -222,22 +225,71 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
                     <div className="mb-4 pb-3 border-bottom border-secondary border-opacity-25">
                         <div className="d-flex justify-content-between align-items-center mb-3">
                             <h6 className="text-body fw-bold mb-0">Tamamlanmış & Devam Eden Testler</h6>
-                            <Button variant="outline-danger" size="sm" className="rounded-pill px-2 py-1 fw-bold" style={{ fontSize: '11px' }} onClick={() => {
-                                Swal.fire({
-                                    title: 'Tümünü Sil',
-                                    text: 'Tüm sınav geçmişini silmek istediğinize emin misiniz? (Sabitlenen testler silinmeyecektir). Bu işlem geri alınamaz.',
-                                    icon: 'warning',
-                                    showCancelButton: true,
-                                    confirmButtonText: 'Evet, Sil',
-                                    cancelButtonText: 'İptal',
-                                    confirmButtonColor: '#d33',
-                                }).then(result => {
-                                    if (result.isConfirmed && onDeleteAllTests) {
-                                        onDeleteAllTests();
-                                    }
-                                });
-                            }}>
-                                Tümünü Sil
+                            <Button 
+                                variant={deleteAllStatus === 'processing' ? 'secondary' : (deleteAllStatus === 'completed' ? 'outline-success' : 'outline-danger')} 
+                                size="sm" 
+                                className={`rounded-pill px-2 py-1 fw-bold overflow-hidden position-relative border ${deleteAllStatus !== 'idle' ? 'border-0' : ''} transition-all`} 
+                                style={{ fontSize: '11px', minWidth: '90px', minHeight: '26px' }} 
+                                disabled={deleteAllStatus !== 'idle'}
+                                onClick={() => {
+                                    Swal.fire({
+                                        title: 'Tümünü Sil',
+                                        text: 'Tüm sınav geçmişini silmek istediğinize emin misiniz? (Sabitlenen testler silinmeyecektir). Bu işlem geri alınamaz.',
+                                        icon: 'warning',
+                                        showCancelButton: true,
+                                        confirmButtonText: 'Evet, Sil',
+                                        cancelButtonText: 'İptal',
+                                        confirmButtonColor: '#d33',
+                                    }).then(async result => {
+                                        if (result.isConfirmed && onDeleteAllTests) {
+                                            setDeleteAllStatus('processing');
+                                            setDeleteProgress(0);
+                                            
+                                            const interval = setInterval(() => {
+                                                setDeleteProgress(prev => {
+                                                    if (prev >= 90) return prev;
+                                                    return prev + Math.random() * 15;
+                                                });
+                                            }, 100);
+
+                                            try {
+                                                await onDeleteAllTests();
+                                                clearInterval(interval);
+                                                setDeleteProgress(100);
+                                                setDeleteAllStatus('completed');
+                                            } catch (error) {
+                                                clearInterval(interval);
+                                                setDeleteAllStatus('idle');
+                                            } finally {
+                                                setTimeout(() => {
+                                                    setDeleteAllStatus('idle');
+                                                    setDeleteProgress(0);
+                                                }, 1500);
+                                            }
+                                        }
+                                    });
+                                }}
+                            >
+                                {deleteAllStatus === 'processing' && (
+                                    <div 
+                                        className="position-absolute top-0 start-0 h-100 transition-all bg-secondary" 
+                                        style={{ width: `${deleteProgress}%`, opacity: '0.3', transition: 'width 0.3s ease-out' }} 
+                                    />
+                                )}
+                                <div className="d-flex align-items-center justify-content-center gap-1 position-relative" style={{ zIndex: 1 }}>
+                                    {deleteAllStatus === 'processing' ? (
+                                        <span className="fw-bold text-white">
+                                            Siliniyor...
+                                        </span>
+                                    ) : deleteAllStatus === 'completed' ? (
+                                        <span className="animated fadeIn d-flex align-items-center gap-1 text-success">
+                                            <i className="bi bi-check-circle-fill"></i>
+                                            <span>Silindi</span>
+                                        </span>
+                                    ) : (
+                                        <span>Tümünü Sil</span>
+                                    )}
+                                </div>
                             </Button>
                         </div>
                         <div className="d-flex gap-2 pb-2" style={{ overflowX: 'auto', scrollbarWidth: 'thin', whiteSpace: 'nowrap' }}>

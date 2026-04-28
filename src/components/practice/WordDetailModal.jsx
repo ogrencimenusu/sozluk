@@ -39,10 +39,29 @@ function highlightText(text, highlights) {
 function WordDetailModal({ 
     word, onHide, onSpeak, onEdit, onToggleStar, onAddToList, 
     customLists = [], onAddWordsToList, onRemoveWordFromList,
-    stickyNotes = [], onAddNote, onDeleteNote, stickyHighlights = [], onOpenNotesModal 
+    stickyNotes = [], onAddNote, onUpdateNote, onDeleteNote, stickyHighlights = [], onOpenNotesModal 
 }) {
     const [selectionTooltip, setSelectionTooltip] = useState(null); // { x, y, text }
     const [savedNoteFlash, setSavedNoteFlash] = useState(false);
+    const [editingNoteId, setEditingNoteId] = useState(null);
+    const [editTitle, setEditTitle] = useState('');
+    const [editText, setEditText] = useState('');
+    const [isAddingNote, setIsAddingNote] = useState(false);
+    const [newNoteTitle, setNewNoteTitle] = useState('');
+    const [newNoteText, setNewNoteText] = useState('');
+    const [showTitleDropdown, setShowTitleDropdown] = useState(null); // null, 'new', or note.id
+    const [titleSearchTerm, setTitleSearchTerm] = useState('');
+    
+    const uniqueTitles = React.useMemo(() => {
+        const titles = stickyNotes.map(n => n.title).filter(t => t && t.trim() !== '');
+        return [...new Set(titles)];
+    }, [stickyNotes]);
+
+    const filteredTitles = React.useMemo(() => {
+        if (!titleSearchTerm) return uniqueTitles;
+        return uniqueTitles.filter(t => t.toLowerCase().includes(titleSearchTerm.toLowerCase()));
+    }, [uniqueTitles, titleSearchTerm]);
+
     const modalBodyRef = useRef(null);
     const tooltipRef = useRef(null);
 
@@ -113,7 +132,37 @@ function WordDetailModal({
     // Clear tooltip when word changes
     useEffect(() => {
         setSelectionTooltip(null);
+        setEditingNoteId(null);
+        setIsAddingNote(false);
     }, [word]);
+
+    const handleAddManualNote = () => {
+        if (!newNoteText.trim() || !word) return;
+        onAddNote && onAddNote(word.id, word.term, newNoteText, newNoteTitle);
+        setIsAddingNote(false);
+        setNewNoteTitle('');
+        setNewNoteText('');
+        setSavedNoteFlash(true);
+        setTimeout(() => setSavedNoteFlash(false), 2000);
+    };
+
+    const handleStartEdit = (note) => {
+        setEditingNoteId(note.id);
+        setEditTitle(note.title || '');
+        setEditText(note.text || '');
+    };
+
+    const handleCancelEdit = () => {
+        setEditingNoteId(null);
+        setEditTitle('');
+        setEditText('');
+    };
+
+    const handleSaveEdit = () => {
+        if (!editingNoteId || !editText.trim()) return;
+        onUpdateNote && onUpdateNote(editingNoteId, editText, editTitle);
+        setEditingNoteId(null);
+    };
 
     const handleSaveNote = () => {
         if (!selectionTooltip || !word) return;
@@ -380,6 +429,254 @@ function WordDetailModal({
                         </div>
                     )}
 
+                    {/* ── STICKY NOTES SECTION (Moved under General Definition) ── */}
+                    <div className="sticky-notes-section mb-4">
+                        <h5 className="text-uppercase fw-bold small letter-spacing-2 border-bottom border-opacity-10 pb-2 mb-4 d-flex align-items-center gap-2 sticky-notes-title">
+                            <i className="bi bi-pin-angle-fill text-warning"></i>
+                            Sticky Notlarım
+                            {wordNotes.length > 0 && (
+                                <span className="badge rounded-pill ms-1" style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)', fontSize: '0.7rem' }}>
+                                    {wordNotes.length}
+                                </span>
+                            )}
+                            <button 
+                                className="btn btn-sm btn-link text-primary ms-auto p-0 fw-bold text-decoration-none d-flex align-items-center gap-1"
+                                onClick={() => setIsAddingNote(true)}
+                                style={{ fontSize: '0.75rem' }}
+                            >
+                                <i className="bi bi-plus-circle-fill"></i> Not Ekle
+                            </button>
+                        </h5>
+
+                        {isAddingNote && (
+                            <div className="sticky-note-card position-relative mb-4 shadow-sm" style={{ borderLeft: '4px solid #3b82f6' }}>
+                                <div className="sticky-note-pin">
+                                    <i className="bi bi-pin-angle-fill" style={{ color: '#3b82f6' }}></i>
+                                </div>
+                                <div className="d-flex flex-column gap-2 mt-2">
+                                    <Dropdown 
+                                        show={showTitleDropdown === 'new'} 
+                                        onToggle={(isOpen, meta) => {
+                                            if (meta && meta.source === 'rootClose') {
+                                                setShowTitleDropdown(null);
+                                            }
+                                        }}
+                                        className="w-100"
+                                    >
+                                        <div className="d-flex bg-body rounded align-items-center pe-1">
+                                            <input 
+                                                type="text" 
+                                                className="form-control form-control-sm border-0 shadow-none bg-transparent flex-grow-1" 
+                                                placeholder="Başlık / Yorum ekle..."
+                                                value={newNoteTitle}
+                                                onChange={(e) => setNewNoteTitle(e.target.value)}
+                                                onClick={() => setShowTitleDropdown('new')}
+                                                autoFocus
+                                                style={{ fontWeight: '600', fontSize: '0.9rem', padding: '4px 8px' }}
+                                            />
+                                            {newNoteTitle && (
+                                                <Button 
+                                                    variant="link" 
+                                                    className="border-0 shadow-none text-muted p-1 text-decoration-none d-flex align-items-center justify-content-center"
+                                                    onClick={() => { setNewNoteTitle(''); setShowTitleDropdown('new'); }}
+                                                >
+                                                    <i className="bi bi-x-circle-fill opacity-50 hover-opacity-100"></i>
+                                                </Button>
+                                            )}
+                                            <Dropdown.Toggle 
+                                                variant="link" 
+                                                size="sm" 
+                                                className="border-0 shadow-none text-muted p-1 text-decoration-none"
+                                                onClick={() => setShowTitleDropdown(showTitleDropdown === 'new' ? null : 'new')}
+                                                style={{ boxShadow: 'none' }}
+                                            >
+                                            </Dropdown.Toggle>
+                                        </div>
+                                        <Dropdown.Menu className="w-100 p-2 shadow-lg border-0 mt-1 rounded-3" style={{ maxHeight: '250px', overflowY: 'auto' }}>
+                                            <div className="px-1 pb-2 mb-2 border-bottom border-opacity-10">
+                                                <input
+                                                    type="text"
+                                                    className="form-control form-control-sm border-secondary border-opacity-25"
+                                                    placeholder="Kayıtlı başlıklarda ara..."
+                                                    value={titleSearchTerm}
+                                                    onChange={(e) => setTitleSearchTerm(e.target.value)}
+                                                    onClick={(e) => e.stopPropagation()}
+                                                    autoFocus
+                                                />
+                                            </div>
+                                            {filteredTitles.length === 0 ? (
+                                                <div className="text-muted small text-center p-2 fst-italic">Kayıtlı başlık bulunamadı.</div>
+                                            ) : (
+                                                filteredTitles.map((t, i) => (
+                                                    <Dropdown.Item 
+                                                        key={i} 
+                                                        className="small rounded-2 py-2 text-truncate"
+                                                        onClick={() => {
+                                                            setNewNoteTitle(t);
+                                                            setShowTitleDropdown(null);
+                                                        }}
+                                                    >
+                                                        {t}
+                                                    </Dropdown.Item>
+                                                ))
+                                            )}
+                                        </Dropdown.Menu>
+                                    </Dropdown>
+                                    <textarea 
+                                        className="form-control form-control-sm border-0 shadow-none bg-body" 
+                                        rows="3"
+                                        placeholder="Notunuzu buraya yazın..."
+                                        value={newNoteText}
+                                        onChange={(e) => setNewNoteText(e.target.value)}
+                                        style={{ fontSize: '0.9rem', padding: '8px' }}
+                                    ></textarea>
+                                    <div className="d-flex justify-content-end gap-2 mt-1">
+                                        <button className="btn btn-link btn-sm text-muted text-decoration-none p-0" onClick={() => setIsAddingNote(false)}>İptal</button>
+                                        <button className="btn btn-sm btn-primary px-3 rounded-pill shadow-sm" onClick={handleAddManualNote}>Ekle</button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {wordNotes.length === 0 ? (
+                            <div className="sticky-notes-empty text-center py-4 bg-body-secondary bg-opacity-25 rounded-4 border border-dashed border-opacity-10 mb-4">
+                                <i className="bi bi-pin-angle text-muted opacity-25" style={{ fontSize: '2rem' }}></i>
+                                <p className="text-muted small mt-2 mb-0">
+                                    Henüz notun yok.
+                                </p>
+                            </div>
+                        ) : (
+                            <div className="d-flex flex-column gap-3 mb-4">
+                                {wordNotes.map((note) => {
+                                    const dateStr = note.createdAt
+                                        ? (note.createdAt.toDate
+                                            ? note.createdAt.toDate().toLocaleString('tr-TR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+                                            : new Date(note.createdAt).toLocaleString('tr-TR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }))
+                                        : '';
+                                    
+                                    const isEditing = editingNoteId === note.id;
+
+                                    return (
+                                        <div key={note.id} className={`sticky-note-card position-relative ${isEditing ? 'editing' : ''}`}>
+                                            <div className="sticky-note-pin">
+                                                <i className="bi bi-pin-angle-fill"></i>
+                                            </div>
+                                            
+                                            {isEditing ? (
+                                                <div className="d-flex flex-column gap-2 mt-2">
+                                                    <Dropdown 
+                                                        show={showTitleDropdown === note.id} 
+                                                        onToggle={(isOpen, meta) => {
+                                                            if (meta && meta.source === 'rootClose') {
+                                                                setShowTitleDropdown(null);
+                                                            }
+                                                        }}
+                                                        className="w-100"
+                                                    >
+                                                        <div className="d-flex bg-body rounded align-items-center pe-1">
+                                                            <input 
+                                                                type="text" 
+                                                                className="form-control form-control-sm border-0 shadow-none bg-transparent flex-grow-1" 
+                                                                placeholder="Başlık / Yorum ekle..."
+                                                                value={editTitle}
+                                                                onChange={(e) => setEditTitle(e.target.value)}
+                                                                onClick={() => setShowTitleDropdown(note.id)}
+                                                                style={{ fontWeight: '600', fontSize: '0.9rem', padding: '4px 8px' }}
+                                                            />
+                                                            {editTitle && (
+                                                                <Button 
+                                                                    variant="link" 
+                                                                    className="border-0 shadow-none text-muted p-1 text-decoration-none d-flex align-items-center justify-content-center"
+                                                                    onClick={() => { setEditTitle(''); setShowTitleDropdown(note.id); }}
+                                                                >
+                                                                    <i className="bi bi-x-circle-fill opacity-50 hover-opacity-100"></i>
+                                                                </Button>
+                                                            )}
+                                                            <Dropdown.Toggle 
+                                                                variant="link" 
+                                                                size="sm" 
+                                                                className="border-0 shadow-none text-muted p-1 text-decoration-none"
+                                                                onClick={() => setShowTitleDropdown(showTitleDropdown === note.id ? null : note.id)}
+                                                                style={{ boxShadow: 'none' }}
+                                                            >
+                                                            </Dropdown.Toggle>
+                                                        </div>
+                                                        <Dropdown.Menu className="w-100 p-2 shadow-lg border-0 mt-1 rounded-3" style={{ maxHeight: '250px', overflowY: 'auto' }}>
+                                                            <div className="px-1 pb-2 mb-2 border-bottom border-opacity-10">
+                                                                <input
+                                                                    type="text"
+                                                                    className="form-control form-control-sm border-secondary border-opacity-25"
+                                                                    placeholder="Kayıtlı başlıklarda ara..."
+                                                                    value={titleSearchTerm}
+                                                                    onChange={(e) => setTitleSearchTerm(e.target.value)}
+                                                                    onClick={(e) => e.stopPropagation()}
+                                                                    autoFocus
+                                                                />
+                                                            </div>
+                                                            {filteredTitles.length === 0 ? (
+                                                                <div className="text-muted small text-center p-2 fst-italic">Kayıtlı başlık bulunamadı.</div>
+                                                            ) : (
+                                                                filteredTitles.map((t, i) => (
+                                                                    <Dropdown.Item 
+                                                                        key={i} 
+                                                                        className="small rounded-2 py-2 text-truncate"
+                                                                        onClick={() => {
+                                                                            setEditTitle(t);
+                                                                            setShowTitleDropdown(null);
+                                                                        }}
+                                                                    >
+                                                                        {t}
+                                                                    </Dropdown.Item>
+                                                                ))
+                                                            )}
+                                                        </Dropdown.Menu>
+                                                    </Dropdown>
+                                                    <textarea 
+                                                        className="form-control form-control-sm border-0 shadow-none bg-body" 
+                                                        rows="3"
+                                                        value={editText}
+                                                        onChange={(e) => setEditText(e.target.value)}
+                                                        style={{ fontSize: '0.9rem', padding: '8px' }}
+                                                    ></textarea>
+                                                    <div className="d-flex justify-content-end gap-2 mt-1">
+                                                        <button className="btn btn-link btn-sm text-muted text-decoration-none p-0" onClick={handleCancelEdit}>İptal</button>
+                                                        <button className="btn btn-sm btn-primary px-3 rounded-pill" onClick={handleSaveEdit}>Kaydet</button>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <>
+                                                    {note.title && <div className="sticky-note-title fw-bold small text-primary mb-1">{note.title}</div>}
+                                                    <p className="sticky-note-text mb-1" style={{ whiteSpace: 'pre-wrap' }}>"{note.text}"</p>
+                                                    <div className="d-flex align-items-center justify-content-between mt-2">
+                                                        <span className="sticky-note-date">{dateStr}</span>
+                                                        <div className="d-flex gap-2">
+                                                            <button
+                                                                className="btn btn-sm sticky-note-edit-btn p-0 opacity-50 hover-opacity-100"
+                                                                onClick={() => handleStartEdit(note)}
+                                                                title="Notu Düzenle"
+                                                                style={{ border: 'none', background: 'none' }}
+                                                            >
+                                                                 <i className="bi bi-pencil-square text-primary"></i>
+                                                            </button>
+                                                            <button
+                                                                className="btn btn-sm sticky-note-delete-btn p-0 opacity-50 hover-opacity-100"
+                                                                onClick={() => onDeleteNote && onDeleteNote(note.id)}
+                                                                title="Notu Sil"
+                                                                style={{ border: 'none', background: 'none' }}
+                                                            >
+                                                                <i className="bi bi-trash3 text-danger"></i>
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                </>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
+
                     {word.meanings && word.meanings.length > 0 && (
                         <div className="mb-5">
                             <h5 className="text-uppercase text-muted fw-bold small letter-spacing-1 border-bottom border-opacity-10 pb-2 mb-4">Anlamları ve Örnek Cümleler</h5>
@@ -616,55 +913,7 @@ function WordDetailModal({
                         </div>
                     )}
 
-                    {/* ── STICKY NOTES SECTION ── */}
-                    <div className="sticky-notes-section mt-5">
-                        <h5 className="text-uppercase fw-bold small letter-spacing-2 border-bottom border-opacity-10 pb-2 mb-4 d-flex align-items-center gap-2 sticky-notes-title">
-                            <i className="bi bi-pin-angle-fill text-warning"></i>
-                            Sticky Notlarım
-                            {wordNotes.length > 0 && (
-                                <span className="badge rounded-pill ms-1" style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)', fontSize: '0.7rem' }}>
-                                    {wordNotes.length}
-                                </span>
-                            )}
-                        </h5>
 
-                        {wordNotes.length === 0 ? (
-                            <div className="sticky-notes-empty text-center py-4">
-                                <i className="bi bi-pin-angle text-muted opacity-25" style={{ fontSize: '2.5rem' }}></i>
-                                <p className="text-muted small mt-2 mb-0">
-                                    Herhangi bir metni seçip <strong>Sticky Not</strong> butonuna basarak not ekleyebilirsin.
-                                </p>
-                            </div>
-                        ) : (
-                            <div className="d-flex flex-column gap-3">
-                                {wordNotes.map((note) => {
-                                    const dateStr = note.createdAt
-                                        ? (note.createdAt.toDate
-                                            ? note.createdAt.toDate().toLocaleString('tr-TR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
-                                            : new Date(note.createdAt).toLocaleString('tr-TR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }))
-                                        : '';
-                                    return (
-                                        <div key={note.id} className="sticky-note-card position-relative">
-                                            <div className="sticky-note-pin">
-                                                <i className="bi bi-pin-angle-fill"></i>
-                                            </div>
-                                            <p className="sticky-note-text mb-1" style={{ whiteSpace: 'pre-wrap' }}>"{note.text}"</p>
-                                            <div className="d-flex align-items-center justify-content-between mt-2">
-                                                <span className="sticky-note-date">{dateStr}</span>
-                                                <button
-                                                    className="btn btn-sm sticky-note-delete-btn"
-                                                    onClick={() => onDeleteNote && onDeleteNote(note.id)}
-                                                    title="Notu Sil"
-                                                >
-                                                    <i className="bi bi-trash3"></i>
-                                                </button>
-                                            </div>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        )}
-                    </div>
 
                 </Modal.Body>
             </Modal>

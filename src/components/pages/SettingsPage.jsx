@@ -37,7 +37,7 @@ const SettingsPage = ({ theme, setTheme, viewMode, setViewMode, wordsPerPage, se
 
         await Swal.fire({
           title: 'Başarılı!',
-          text: 'Önbellek temizlendi. Uygulama v2.1.0 olarak yenilenecek.',
+          text: 'Önbellek temizlendi. Uygulama v2.1.1 olarak yenilenecek.',
           icon: 'success',
           timer: 1500,
           showConfirmButton: false,
@@ -170,7 +170,7 @@ const SettingsPage = ({ theme, setTheme, viewMode, setViewMode, wordsPerPage, se
                   <h5 className="fw-bold mb-1">Sözlük Projesi</h5>
                   <p className="text-muted small mb-2 flex-grow-1">Bireysel Kelime Öğrenme Asistanı</p>
                   <div className="d-flex flex-column gap-2 align-items-center">
-                    <div className="badge bg-primary bg-opacity-10 text-primary px-3 py-2 rounded-pill">Sürüm v2.1.0</div>
+                    <div className="badge bg-primary bg-opacity-10 text-primary px-3 py-2 rounded-pill">Sürüm v2.1.1</div>
                     <div className="text-success small fw-medium">
                       <i className="bi bi-cloud-check-fill me-1"></i> Multi-Device Sync Aktif
                     </div>

@@ -156,6 +156,21 @@ body {
   color: var(--bs-body-color) !important;
 }
 
+.submit-test-btn:focus {
+  background-color: #198754 !important;
+  border-color: #198754 !important;
+  color: white !important;
+  box-shadow: 0 0 0 0.25rem rgba(25, 135, 84, 0.5) !important;
+  transform: scale(1.02);
+  transition: all 0.2s ease-in-out;
+}
+
+[data-bs-theme="dark"] .submit-test-btn:focus {
+  background-color: #20c997 !important;
+  border-color: #20c997 !important;
+  box-shadow: 0 0 0 0.25rem rgba(32, 201, 151, 0.5) !important;
+}
+
 [data-bs-theme="dark"] .hover-bg-secondary:hover {
   background-color: rgba(108, 117, 125, 0.15) !important;
   color: #ffffff !important;
@@ -405,11 +420,11 @@ mark.sticky-highlight:hover {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  color: #d97706;
+  color: #d90692;
   opacity: 0.8;
 }
 [data-bs-theme="dark"] .sticky-note-list-word-tag {
-  color: #fbbf24;
+  color: #f472b6;
 }
 
 .sticky-note-list-text {
@@ -735,6 +750,20 @@ html, body {
 /* Hide dropdown arrow */
 .no-caret::after {
   display: none !important;
+}
+
+/* ─── Sticky Sidebar ─── */
+.sticky-sidebar {
+  position: sticky;
+  top: 1rem;
+  z-index: 1020;
+  align-self: flex-start;
+}
+
+@media (max-width: 767.98px) {
+  .sticky-sidebar {
+    position: static;
+  }
 }
 
 /* ─── Jump Highlight ─── */

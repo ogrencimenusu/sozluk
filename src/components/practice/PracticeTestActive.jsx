@@ -7,7 +7,7 @@ import { levenshteinDistance } from '../../utils/stringUtils';
 import DailyGoalTracker from '../DailyGoalTracker';
 import Swal from 'sweetalert2';
 
-function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpdateStage, onUpdateStagesBatch, onToggleStar, onDelete, onEdit, onRetakeSame, onRetakeNew, onRetakeMissed, onLogTestResults, dailyStats, testId, initialTestState, onSaveTest, customLists, onAddWordsToList, onRemoveWordFromList }) {
+function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpdateStage, onUpdateStagesBatch, onToggleStar, onDelete, onEdit, onRetakeSame, onRetakeNew, onRetakeMissed, onLogTestResults, dailyStats, testId, initialTestState, onSaveTest, customLists, onAddWordsToList, onRemoveWordFromList, stickyNotes, onUpdateNote }) {
     const [answers, setAnswers] = useState(() => initialTestState?.answers || {}); // { [questionIdx]: { selected: OptionObj } }
     const [writtenInputs, setWrittenInputs] = useState(() => initialTestState?.writtenInputs || {}); // { [questionIdx]: string } for 'written' type
     const [completed, setCompleted] = useState(() => initialTestState?.completed || false);
@@ -1166,7 +1166,7 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                                         {bulkActionStatus === 'starring-errors' ? <span>%{bulkProgress} Yıldızlanıyor</span> : <><i className="bi bi-star-fill"></i> <span className="small fw-bold">Hataları Yıldızla ({errorWordsUniqueCount})</span></>}
                                                     </Button>
                                                 </Col>
-                                                <Col sm={4} md={2}>
+                                                <Col sm={6} md={3}>
                                                     <Button 
                                                         variant="outline-secondary" 
                                                         className="w-100 rounded-3 py-2 border-2 transition-all hover-opacity-75 position-relative overflow-hidden" 
@@ -1186,7 +1186,7 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                                         {bulkActionStatus === 'starring-blanks' ? <span>%{bulkProgress}</span> : <span className="small fw-bold">Boşlar ({blankCount})</span>}
                                                     </Button>
                                                 </Col>
-                                                <Col sm={4} md={2}>
+                                                <Col sm={6} md={3}>
                                                     <Button 
                                                         variant="outline-danger" 
                                                         className="w-100 rounded-3 py-2 border-2 transition-all hover-opacity-75 position-relative overflow-hidden" 
@@ -1204,26 +1204,6 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                                         disabled={bulkActionStatus !== null || wrongCount === 0}
                                                     >
                                                         {bulkActionStatus === 'starring-wrongs' ? <span>%{bulkProgress}</span> : <span className="small fw-bold">Yanlışlar ({wrongCount})</span>}
-                                                    </Button>
-                                                </Col>
-                                                <Col sm={4} md={2}>
-                                                    <Button 
-                                                        variant="outline-warning" 
-                                                        className="w-100 rounded-3 py-2 border-2 transition-all hover-opacity-75 position-relative overflow-hidden" 
-                                                        onClick={async () => {
-                                                            const ids = Array.from(new Set(typoQuestions.map(q => q.wordId)));
-                                                            const targets = ids.map(id => words.find(w => w.id === id)).filter(w => w && !w.isStarred);
-                                                            if (targets.length === 0) return;
-                                                            setBulkActionStatus('starring-typos'); setBulkProgress(0);
-                                                            for (let i = 0; i < targets.length; i++) {
-                                                                await onToggleStar(null, targets[i]);
-                                                                setBulkProgress(Math.round(((i + 1) / targets.length) * 100));
-                                                            }
-                                                            setTimeout(() => { setBulkActionStatus(null); setBulkProgress(0); }, 1000);
-                                                        }}
-                                                        disabled={bulkActionStatus !== null || typoCount === 0}
-                                                    >
-                                                        {bulkActionStatus === 'starring-typos' ? <span>%{bulkProgress}</span> : <span className="small fw-bold">Hatalar ({typoCount})</span>}
                                                     </Button>
                                                 </Col>
                                             </Row>
@@ -1324,6 +1304,10 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                                 } else {
                                                     if (submitBtnRef.current) {
                                                         submitBtnRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                                        setTimeout(() => {
+                                                            const btn = document.getElementById('submit-test-btn');
+                                                            if (btn) btn.focus();
+                                                        }, 100);
                                                     }
                                                 }
                                             }
@@ -1359,6 +1343,7 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                         setSelectedWordForModal={setSelectedWordForModal}
                                         setWrittenInputs={setWrittenInputs}
                                         questions={questions}
+                                        stickyNotes={stickyNotes}
                                     />
                                 </div>
                             ))}
@@ -1377,7 +1362,8 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                 <Button
                                     variant={allAnswered ? "primary" : "outline-primary"}
                                     size="lg"
-                                    className="rounded-pill px-5 py-3 fw-bold shadow-lg w-100"
+                                    id="submit-test-btn"
+                                    className="rounded-pill px-5 py-3 fw-bold shadow-lg w-100 submit-test-btn"
                                     style={{ maxWidth: '400px' }}
                                     onClick={handleSubmit}
                                 >
@@ -1397,6 +1383,8 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                     setSelectedWordForModal(null);
                     onEdit && onEdit(null, word);
                 }}
+                stickyNotes={stickyNotes}
+                onUpdateNote={onUpdateNote}
             />
 
             {/* MOBILE NAVIGATION SIDEBAR (Offcanvas) */}
