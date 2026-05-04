@@ -39,7 +39,8 @@ function highlightText(text, highlights) {
 function WordDetailModal({ 
     word, onHide, onSpeak, onEdit, onToggleStar, onAddToList, 
     customLists = [], onAddWordsToList, onRemoveWordFromList,
-    stickyNotes = [], onAddNote, onUpdateNote, onDeleteNote, stickyHighlights = [], onOpenNotesModal 
+    stickyNotes = [], onAddNote, onUpdateNote, onDeleteNote, 
+    onUpdateStatus, stickyHighlights = [], onOpenNotesModal 
 }) {
     const [selectionTooltip, setSelectionTooltip] = useState(null); // { x, y, text }
     const [savedNoteFlash, setSavedNoteFlash] = useState(false);
@@ -174,7 +175,10 @@ function WordDetailModal({
     };
 
     // Filter notes for current word
-    const wordNotes = stickyNotes.filter(n => n.wordId === word?.id);
+    const wordNotes = stickyNotes.filter(n => 
+        n.wordId === word?.id || 
+        (n.selectedWords && n.selectedWords.some(sw => sw.toLowerCase() === word?.term?.toLowerCase()))
+    );
 
     if (!word) return null;
 
@@ -261,14 +265,46 @@ function WordDetailModal({
                         ></i>
                         <div className="d-flex align-items-center flex-wrap gap-2">
                             <Modal.Title className="display-6 fw-bold m-0 text-break text-body">{word.term}</Modal.Title>
-                            <Badge 
-                                bg={word.learningStatus === 'Öğrendi' ? 'success' : word.learningStatus === 'Öğreniyor' ? 'warning' : 'info'} 
-                                pill 
-                                className="ms-md-2 px-3 py-2 fw-bold shadow-sm"
-                                style={{ fontSize: '0.8rem', letterSpacing: '0.5px' }}
+                            <Dropdown 
+                                className="ms-md-2"
+                                onSelect={(eventKey) => {
+                                    if (onUpdateStatus && word) {
+                                        onUpdateStatus(word.id, eventKey);
+                                    }
+                                }}
                             >
-                                {word.learningStatus || 'Yeni'}
-                            </Badge>
+                                <Dropdown.Toggle 
+                                    as={Badge}
+                                    bg={word.learningStatus === 'Öğrendi' ? 'success' : word.learningStatus === 'Öğreniyor' ? 'warning' : 'info'} 
+                                    pill 
+                                    className="px-3 py-2 fw-bold shadow-sm cursor-pointer border-0 d-inline-flex align-items-center gap-2 no-caret"
+                                    style={{ fontSize: '0.8rem', letterSpacing: '0.5px' }}
+                                >
+                                    {word.learningStatus || 'Yeni'}
+                                    <i className="bi bi-chevron-down small"></i>
+                                </Dropdown.Toggle>
+
+                                <Dropdown.Menu className="shadow-lg border-0 bg-body-tertiary rounded-3 mt-1 py-2">
+                                    <Dropdown.Header className="small fw-bold text-muted border-bottom border-opacity-10 mb-2 pb-2">Öğrenim Durumu</Dropdown.Header>
+                                    {[
+                                        { key: 'Yeni', bg: 'info', icon: 'bi-star' },
+                                        { key: 'Öğreniyor', bg: 'warning', icon: 'bi-book' },
+                                        { key: 'Öğrendi', bg: 'success', icon: 'bi-check-circle' }
+                                    ].map(status => (
+                                        <Dropdown.Item 
+                                            key={status.key} 
+                                            eventKey={status.key}
+                                            active={word.learningStatus === status.key || (!word.learningStatus && status.key === 'Yeni')}
+                                            className="d-flex align-items-center gap-3 py-2 px-3 transition-all"
+                                        >
+                                            <div className={`rounded-circle bg-${status.bg} bg-opacity-10 d-flex align-items-center justify-content-center`} style={{ width: '28px', height: '28px' }}>
+                                                <i className={`bi ${status.icon} text-${status.bg}`}></i>
+                                            </div>
+                                            <span className="fw-medium">{status.key}</span>
+                                        </Dropdown.Item>
+                                    ))}
+                                </Dropdown.Menu>
+                            </Dropdown>
                         </div>
                     </div>
                     <div className="ms-auto d-flex align-items-center gap-2">
@@ -401,6 +437,14 @@ function WordDetailModal({
                                 <span className="text-muted small italic">
                                     {word.cefrLevel.includes(' ') || word.cefrLevel.includes('(') ? word.cefrLevel.substring(word.cefrLevel.split(/[(\/\s]/)[0].length) : ''}
                                 </span>
+                            </div>
+                        )}
+                        {word.variants && word.variants.length > 0 && (
+                            <div className="mt-3 d-flex flex-wrap gap-2">
+                                <span className="text-muted small fw-bold text-uppercase letter-spacing-1 d-block w-100 mb-1" style={{ fontSize: '0.7rem' }}>Varyantlar:</span>
+                                {word.variants.map((v, i) => (
+                                    <Badge key={i} bg="info" className="bg-opacity-10 text-info fw-normal border border-info border-opacity-25" style={{ fontSize: '0.75rem' }}>{v}</Badge>
+                                ))}
                             </div>
                         )}
                     </div>
@@ -554,10 +598,18 @@ function WordDetailModal({
                                             : new Date(note.createdAt).toLocaleString('tr-TR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }))
                                         : '';
                                     
+                                    const isAssociated = note.wordId === word?.id;
                                     const isEditing = editingNoteId === note.id;
 
                                     return (
-                                        <div key={note.id} className={`sticky-note-card position-relative ${isEditing ? 'editing' : ''}`}>
+                                        <div 
+                                            key={note.id} 
+                                            className={`sticky-note-card position-relative ${isEditing ? 'editing' : ''} ${isAssociated ? 'associated-note' : ''}`}
+                                            style={isAssociated ? { 
+                                                background: 'linear-gradient(135deg, #002c3d 0%, #003d4a 100%)',
+                                                border: '1px solid rgba(0, 150, 255, 0.2)'
+                                            } : {}}
+                                        >
                                             <div className="sticky-note-pin">
                                                 <i className="bi bi-pin-angle-fill"></i>
                                             </div>
@@ -646,7 +698,27 @@ function WordDetailModal({
                                             ) : (
                                                 <>
                                                     {note.title && <div className="sticky-note-title fw-bold small text-primary mb-1">{note.title}</div>}
-                                                    <p className="sticky-note-text mb-1" style={{ whiteSpace: 'pre-wrap' }}>"{note.text}"</p>
+                                                    <div 
+                                                        className="sticky-note-text mb-1" 
+                                                        style={{ 
+                                                            fontSize: isAssociated ? '0.9rem' : '0.95rem', 
+                                                            lineHeight: '1.6',
+                                                            color: isAssociated ? 'rgba(255, 255, 255, 0.9)' : 'inherit',
+                                                            whiteSpace: 'pre-wrap'
+                                                        }}
+                                                        dangerouslySetInnerHTML={{ 
+                                                            __html: (() => {
+                                                                if (isAssociated || !note.text || !word.term) return note.text;
+                                                                const tempDiv = document.createElement('div');
+                                                                tempDiv.innerHTML = note.text;
+                                                                const blocks = Array.from(tempDiv.querySelectorAll('p, blockquote, li, h1, h2, h3, h4, h5, h6'));
+                                                                if (blocks.length === 0) return note.text;
+                                                                const termLower = word.term.toLowerCase();
+                                                                const relevant = blocks.filter(b => b.textContent.toLowerCase().includes(termLower));
+                                                                return relevant.length > 0 ? relevant.map(b => b.outerHTML).join('') : note.text;
+                                                            })()
+                                                        }} 
+                                                    />
                                                     <div className="d-flex align-items-center justify-content-between mt-2">
                                                         <span className="sticky-note-date">{dateStr}</span>
                                                         <div className="d-flex gap-2">

@@ -6,8 +6,9 @@ import LearningStageBar from '../LearningStageBar';
 import { levenshteinDistance } from '../../utils/stringUtils';
 import DailyGoalTracker from '../DailyGoalTracker';
 import Swal from 'sweetalert2';
+import nlp from 'compromise';
 
-function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpdateStage, onUpdateStagesBatch, onToggleStar, onDelete, onEdit, onRetakeSame, onRetakeNew, onRetakeMissed, onLogTestResults, dailyStats, testId, initialTestState, onSaveTest, customLists, onAddWordsToList, onRemoveWordFromList, stickyNotes, onUpdateNote }) {
+function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpdateStage, onUpdateStagesBatch, onToggleStar, onDelete, onEdit, onRetakeSame, onRetakeNew, onRetakeMissed, onLogTestResults, dailyStats, testId, initialTestState, onSaveTest, customLists, onAddWordsToList, onRemoveWordFromList, stickyNotes, onUpdateNote, onUpdateStatus }) {
     const [answers, setAnswers] = useState(() => initialTestState?.answers || {}); // { [questionIdx]: { selected: OptionObj } }
     const [writtenInputs, setWrittenInputs] = useState(() => initialTestState?.writtenInputs || {}); // { [questionIdx]: string } for 'written' type
     const [completed, setCompleted] = useState(() => initialTestState?.completed || false);
@@ -355,8 +356,24 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
         let isCorrect = typed === correct;
 
         if (!isCorrect && typed.length > 0) {
-            const distance = levenshteinDistance(typed, correct);
-            if (distance <= 3) isCorrect = true;
+            const wordObj = words.find(w => w.id === questions[qIdx].wordId);
+            const isVariant = wordObj?.variants?.some(v => v.toLowerCase() === typed);
+            
+            if (isVariant) {
+                isCorrect = true;
+            } else {
+                // Try NLP matching by comparing roots of both words
+                const typedRoot = nlp(typed).verbs().toInfinitive().text() || nlp(typed).nouns().toSingular().text() || typed;
+                const correctRoot = nlp(correct).verbs().toInfinitive().text() || nlp(correct).nouns().toSingular().text() || correct;
+                const isNlpMatch = typedRoot.toLowerCase() === correctRoot.toLowerCase();
+                
+                if (isNlpMatch) {
+                    isCorrect = true;
+                } else {
+                    const distance = levenshteinDistance(typed, correct);
+                    if (distance <= 3) isCorrect = true;
+                }
+            }
         }
 
         // Gamification effects
@@ -635,12 +652,23 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                         if (typed.toLowerCase() === correct.toLowerCase()) {
                             isCorrect = true;
                         } else {
-                            // Check Levenshtein distance
-                            const distance = levenshteinDistance(typed.toLowerCase(), correct.toLowerCase());
-                            // Allow up to 3 typos
-                            if (distance <= 3) {
+                            const wordObj = words.find(w => w.id === q.wordId);
+                            const isVariant = wordObj?.variants?.some(v => v.toLowerCase() === typed.toLowerCase());
+                            
+                            const typedRoot = nlp(typed).verbs().toInfinitive().text() || nlp(typed).nouns().toSingular().text() || typed;
+                            const correctRoot = nlp(correct).verbs().toInfinitive().text() || nlp(correct).nouns().toSingular().text() || correct;
+                            const isNlpMatch = typedRoot.toLowerCase() === correctRoot.toLowerCase();
+
+                            if (isVariant || isNlpMatch) {
                                 isCorrect = true;
-                                hasTypo = true;
+                            } else {
+                                // Check Levenshtein distance
+                                const distance = levenshteinDistance(typed.toLowerCase(), correct.toLowerCase());
+                                // Allow up to 3 typos
+                                if (distance <= 3) {
+                                    isCorrect = true;
+                                    hasTypo = true;
+                                }
                             }
                         }
                     }
@@ -1385,6 +1413,12 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                 }}
                 stickyNotes={stickyNotes}
                 onUpdateNote={onUpdateNote}
+                onUpdateStatus={(wordId, newStatus) => {
+                    if (onUpdateStatus) onUpdateStatus(wordId, newStatus);
+                    if (selectedWordForModal && selectedWordForModal.id === wordId) {
+                        setSelectedWordForModal(prev => ({ ...prev, learningStatus: newStatus }));
+                    }
+                }}
             />
 
             {/* MOBILE NAVIGATION SIDEBAR (Offcanvas) */}

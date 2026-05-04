@@ -30,9 +30,38 @@ import SettingsPage from './components/pages/SettingsPage';
 import DailyGoalTracker from './components/DailyGoalTracker';
 import CustomListsPage from './components/pages/CustomListsPage';
 import ListDetailPage from './components/pages/ListDetailPage';
+import nlp from 'compromise';
 import Swal from 'sweetalert2';
 
 const isConfigMissing = false; // Config is now in .env
+
+const getWordVariants = (word) => {
+  if (!word) return [];
+  try {
+    const doc = nlp(word);
+    const variants = new Set();
+    
+    // Nouns
+    doc.nouns().toPlural().forEach(m => variants.add(m.text()));
+    doc.nouns().toSingular().forEach(m => variants.add(m.text()));
+    
+    // Verbs
+    const verbs = doc.verbs();
+    verbs.conjugate().forEach(c => {
+      Object.values(c).forEach(v => {
+        if (typeof v === 'string') variants.add(v);
+        else if (Array.isArray(v)) v.forEach(item => variants.add(item));
+      });
+    });
+
+    return Array.from(variants)
+      .map(v => v.trim())
+      .filter(v => v && v.toLowerCase() !== word.toLowerCase());
+  } catch (e) {
+    console.error("Variant generation error:", e);
+    return [];
+  }
+};
 
 const parseTemplate = (text) => {
   const lines = text.split('\n').map(l => l.trim()).filter(l => l);
@@ -50,6 +79,7 @@ const parseTemplate = (text) => {
     wordFamily: [],
     tips: [],
     grammar: [],
+    variants: [],
     templateName: '',
     raw: text
   };
@@ -75,6 +105,11 @@ const parseTemplate = (text) => {
     } else if (lowerLine.startsWith('zorluk seviyesi')) {
       const idx = cleanLine.indexOf(':');
       data.cefrLevel = idx !== -1 ? cleanLine.substring(idx + 1).trim() : cleanLine;
+    } else if (lowerLine.startsWith('varyantlar:')) {
+      const content = cleanLine.substring(11).trim();
+      if (content) {
+        data.variants = content.split(',').map(v => v.trim()).filter(v => v);
+      }
     }
     // Section routing
     else if (lowerLine.includes('anlamları ve örnek cümleler')) {
@@ -148,6 +183,16 @@ const parseTemplate = (text) => {
       }
     } else if (currentSection === 'grammar' && (cleanLine.includes(':') || cleanLine.includes('–') || originalLine.trim().startsWith('-'))) {
       data.grammar.push(cleanLine);
+      // Extra check for root word if V1 is found
+      if (lowerLine.includes('yalın hal (v1):')) {
+        const parts = cleanLine.split(':');
+        if (parts.length > 1) {
+          const rootVal = parts[1].split('(')[0].trim();
+          if (rootVal && rootVal.toLowerCase() !== data.term.toLowerCase()) {
+            data.rootWord = rootVal;
+          }
+        }
+      }
     } else if (currentSection === 'collocations' && cleanLine.trim() !== '') {
       if ((originalLine.trim().startsWith('(') || originalLine.trim().startsWith('[')) && data.collocations.length > 0) {
         data.collocations[data.collocations.length - 1] += '\n' + cleanLine;
@@ -246,6 +291,7 @@ function App() {
   const [dailyStats, setDailyStats] = useState({});
   const [searchQuery, setSearchQuery] = useState('');
   const [showDuplicates, setShowDuplicates] = useState(false);
+  const [showSameRoots, setShowSameRoots] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedWord, setSelectedWord] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -305,6 +351,7 @@ function App() {
   const [editingNoteId, setEditingNoteId] = useState(null);
   const [inlineEditingText, setInlineEditingText] = useState('');
   const [inlineEditingTitle, setInlineEditingTitle] = useState('');
+  const [inlineEditingSelectedWords, setInlineEditingSelectedWords] = useState([]);
 
   // Custom Lists State
   const [customLists, setCustomLists] = useState([]);
@@ -556,6 +603,67 @@ function App() {
   const [directPracticeWords, setDirectPracticeWords] = useState(null);
   const [bulkActionStatus, setBulkActionStatus] = useState('idle'); // idle, processing, completed
   const [bulkProgress, setBulkProgress] = useState(0);
+
+  const [bulkExportFields, setBulkExportFields] = useState(() => {
+    try {
+      const saved = localStorage.getItem('bulkExportFields');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.error('Failed to load bulkExportFields from localStorage', e);
+    }
+    return {
+      term: true,
+      pronunciation: true,
+      shortMeanings: true,
+      generalDefinition: true,
+      cefrLevel: true,
+      learningStatus: true,
+      learningStage: false,
+      isStarred: false,
+      createdAt: false,
+      synonyms: true,
+      antonyms: true,
+      meanings: true,
+      examples: true,
+      collocations: false,
+      idioms: false,
+      wordFamily: false,
+      grammar: false,
+      tips: false
+    };
+  });
+
+  useEffect(() => {
+    localStorage.setItem('bulkExportFields', JSON.stringify(bulkExportFields));
+  }, [bulkExportFields]);
+
+  const downloadCSV = (data, filename) => {
+    if (data.length === 0) return;
+    
+    const headers = Object.keys(data[0]);
+    const csvContent = [
+      headers.join(','),
+      ...data.map(row => headers.map(header => {
+        let cell = row[header] === null || row[header] === undefined ? '' : String(row[header]);
+        // Escape double quotes and wrap in double quotes
+        cell = cell.replace(/"/g, '""');
+        if (cell.search(/("|,|\n)/g) >= 0) {
+          cell = `"${cell}"`;
+        }
+        return cell;
+      }).join(','))
+    ].join('\n');
+
+    const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', filename);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   const [theme, setTheme] = useState(() => {
     return localStorage.getItem('theme') || 'dark';
@@ -931,21 +1039,22 @@ function App() {
     }
   };
 
-  const handleUpdateNote = async (noteId, text, title = '') => {
+  const handleUpdateNote = useCallback(async (noteId, text, title = '', selectedWords = []) => {
     if (!text || !text.trim()) return;
     try {
       if (!isConfigMissing) {
         await updateDoc(doc(db, 'sticky_notes', noteId), {
           text,
-          title: title || ''
+          title: title || '',
+          selectedWords: selectedWords || []
         });
       } else {
-        setStickyNotes(prev => prev.map(n => n.id === noteId ? { ...n, text, title: title || '' } : n));
+        setStickyNotes(prev => prev.map(n => n.id === noteId ? { ...n, text, title: title || '', selectedWords: selectedWords || [] } : n));
       }
     } catch (err) {
       console.error('Sticky not güncellenemedi:', err);
     }
-  };
+  }, [isConfigMissing]);
 
   const handleDeleteNote = async (noteId) => {
     const result = await Swal.fire({
@@ -1232,6 +1341,74 @@ function App() {
     setCurrentView('add-word');
   };
 
+  const handleAddWordsToDictionary = async (terms) => {
+    if (!terms || terms.length === 0) return;
+    
+    const date = new Date();
+    const newWords = terms.map(term => ({
+      term: term.charAt(0).toUpperCase() + term.slice(1).toLowerCase(),
+      shortMeanings: '',
+      pronunciation: '',
+      generalDefinition: '',
+      meanings: [],
+      grammar: [],
+      collocations: [],
+      idioms: [],
+      wordFamily: [],
+      tips: [],
+      createdAt: date,
+      learningStatus: 'Yeni',
+      learningStage: 0,
+      isStarred: false,
+      userId: authUser.uid
+    }));
+
+    try {
+      if (!isConfigMissing) {
+        await Promise.all(newWords.map(w => addDoc(collection(db, 'words'), w)));
+      } else {
+        const newWordsWithIds = newWords.map((w, i) => ({ id: (Date.now() + i).toString(), ...w }));
+        setWords(prev => [...newWordsWithIds, ...prev]);
+      }
+      Swal.fire({
+        icon: 'success',
+        title: 'Kelimeler Eklendi',
+        text: `${terms.length} kelime başarıyla sözlüğe eklendi.`,
+        timer: 1500,
+        showConfirmButton: false
+      });
+    } catch (error) {
+      console.error("Kelime ekleme hatası: ", error);
+      Swal.fire({
+        icon: 'error',
+        title: 'Hata',
+        text: 'Kelimeler eklenirken bir hata oluştu.'
+      });
+    }
+  };
+
+  const calculateRootWord = useCallback((term) => {
+    if (!term) return '';
+    const t = term.toLowerCase().trim();
+    
+    // Strategy 1: Context-aware Verb Check (Much more accurate for -ed/-ing)
+    // By adding "He ", compromise identifies the word as a verb much better
+    const contextDoc = nlp(`He ${t}`);
+    let root = contextDoc.verbs().toInfinitive().text().toLowerCase().replace(/^he\s+/, '');
+    
+    // Strategy 2: Forced Verb Tag if strategy 1 failed or returned same term
+    if ((!root || root === t) && (t.endsWith('ing') || t.endsWith('ed'))) {
+      root = nlp(t).tag('Verb').verbs().toInfinitive().text().toLowerCase();
+    }
+    
+    // Strategy 3: Noun Singularization
+    if (!root || root === t) {
+      root = nlp(t).nouns().toSingular().text().toLowerCase();
+    }
+    
+    return (root && root.toLowerCase() !== t && root.length > 1) ? root : '';
+  }, []);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!termText.trim()) return;
@@ -1263,8 +1440,10 @@ function App() {
       let savedWordIds = [];
 
       if (editingWordId) {
+        const parsed = parsedItems[0];
         const newWordData = {
-          ...parsedItems[0],
+          ...parsed,
+          rootWord: parsed.rootWord || calculateRootWord(parsed.term),
           createdAt: customDate,
           learningStatus: learningStatus,
           userId: authUser.uid
@@ -1279,6 +1458,7 @@ function App() {
       } else {
         const newWords = parsedItems.map((parsedData) => ({
           ...parsedData,
+          rootWord: parsedData.rootWord || calculateRootWord(parsedData.term),
           createdAt: customDate,
           learningStatus: learningStatus,
           learningStage: 0,
@@ -1415,6 +1595,62 @@ function App() {
     setSelectedListIds([]);
   };
 
+  const handleFixRoots = async (onProgress) => {
+    if (isConfigMissing) {
+      setWords(prev => prev.map(w => ({ ...w, rootWord: calculateRootWord(w.term) })));
+      if (onProgress) onProgress(100);
+      return words.length;
+    }
+
+    try {
+      let count = 0;
+      const getBestRoot = (word) => {
+        if (word.raw) {
+          const parsed = parseTemplate(word.raw);
+          if (parsed.rootWord) return parsed.rootWord;
+        }
+        return calculateRootWord(word.term);
+      };
+
+      const wordsToUpdate = words.filter(word => {
+        const bestRoot = getBestRoot(word);
+        return word.rootWord !== bestRoot;
+      });
+
+      if (wordsToUpdate.length === 0) {
+        if (onProgress) onProgress(100);
+        return 0;
+      }
+
+      const total = wordsToUpdate.length;
+      const chunks = [];
+      for (let i = 0; i < total; i += 500) {
+        chunks.push(wordsToUpdate.slice(i, i + 500));
+      }
+
+      for (let i = 0; i < chunks.length; i++) {
+        const chunk = chunks[i];
+        const batch = writeBatch(db);
+        chunk.forEach(word => {
+          batch.update(doc(db, 'words', word.id), { 
+            rootWord: getBestRoot(word) 
+          });
+          count++;
+        });
+        await batch.commit();
+        if (onProgress) {
+          const percent = Math.round((count / total) * 100);
+          onProgress(percent);
+        }
+      }
+      return count;
+    } catch (error) {
+      console.error("Roots fix error:", error);
+      throw error;
+    }
+  };
+
+
   const handleToggleStar = async (e, word) => {
     if (e && e.stopPropagation) e.stopPropagation();
     if (isSelectionMode) {
@@ -1436,6 +1672,24 @@ function App() {
       }
     } catch (error) {
       console.error("Yıldız güncellenirken hata:", error);
+    }
+  };
+
+  const handleUpdateStatus = async (wordId, newStatus) => {
+    try {
+      if (!isConfigMissing) {
+        await updateDoc(doc(db, 'words', wordId), {
+          learningStatus: newStatus
+        });
+      }
+      
+      // Local state sync for the modal
+      if (selectedWord && selectedWord.id === wordId) {
+        setSelectedWord(prev => ({ ...prev, learningStatus: newStatus }));
+      }
+    } catch (error) {
+      console.error("Durum güncellenirken hata:", error);
+      Swal.fire('Hata', 'Durum güncellenirken bir hata oluştu.', 'error');
     }
   };
 
@@ -1522,6 +1776,95 @@ function App() {
           setBulkActionStatus('idle');
           Swal.fire({ icon: 'error', title: 'Hata', text: 'Toplu silme sırasında hata oluştu.', confirmButtonText: 'Tamam' });
         }
+      }
+      return;
+    }
+
+    if (bulkActionType === 'export') {
+      const selectedFields = Object.keys(bulkExportFields).filter(k => bulkExportFields[k]);
+      if (selectedFields.length === 0) {
+        Swal.fire({ icon: 'warning', title: 'Uyarı', text: 'Lütfen dışarı aktarılacak en az bir alan seçin.' });
+        return;
+      }
+
+      setBulkActionStatus('processing');
+      setBulkProgress(0);
+
+      try {
+        const wordsToExport = words.filter(w => selectedWords.includes(w.id));
+        const exportData = wordsToExport.map(word => {
+          const row = {};
+          selectedFields.forEach(field => {
+            let value = word[field];
+            
+            // Format specific fields
+            if (field === 'createdAt' && value) {
+              const d = value.toDate ? value.toDate() : new Date(value);
+              const day = String(d.getDate()).padStart(2, '0');
+              const month = String(d.getMonth() + 1).padStart(2, '0');
+              const year = d.getFullYear();
+              // Notion and most importers prefer ISO format (YYYY-MM-DD) for reliable date recognition
+              value = `${year}-${month}-${day}`;
+            } else if (field === 'isStarred') {
+              value = value ? 'Yıldızlı' : 'Yıldızsız';
+            } else if (field === 'meanings' && Array.isArray(value)) {
+              value = value.map(m => `${m.context ? `[${m.context}] ` : ''}${m.definition}`).join('; ');
+            } else if (field === 'examples') {
+               // Extract all examples from all meanings
+               value = Array.isArray(word.meanings) ? word.meanings.flatMap(m => m.examples || []).join('; ') : '';
+            } else if (Array.isArray(value)) {
+              value = value.join('; ');
+            } else if (value === undefined || value === null) {
+              value = '';
+            }
+            
+            // Map field key to user-friendly header
+            const labels = {
+              term: 'Kelime',
+              pronunciation: 'Okunuş',
+              shortMeanings: 'Kısa Anlamlar',
+              generalDefinition: 'Genel Tanım',
+              cefrLevel: 'CEFR Seviyesi',
+              learningStatus: 'Öğrenme Durumu',
+              learningStage: 'Öğrenme Aşaması',
+              isStarred: 'Yıldız',
+              createdAt: 'Eklenme Tarihi',
+              synonyms: 'Eş Anlamlılar',
+              antonyms: 'Zıt Anlamlılar',
+              meanings: 'Anlamlar',
+              examples: 'Örnek Cümleler',
+              collocations: 'Dizimler',
+              idioms: 'Deyimler',
+              wordFamily: 'Kelime Ailesi',
+              grammar: 'Gramer',
+              tips: 'İpuçları'
+            };
+            row[labels[field] || field] = value;
+          });
+          return row;
+        });
+
+        // Simulate progress
+        for (let p = 0; p <= 100; p += 25) {
+          setBulkProgress(p);
+          await new Promise(r => setTimeout(r, 100));
+        }
+
+        const dateStr = new Date().toISOString().split('T')[0];
+        downloadCSV(exportData, `sozluk_export_${dateStr}.csv`);
+
+        setBulkActionStatus('completed');
+        setTimeout(() => {
+          setBulkActionStatus('idle');
+          setBulkProgress(0);
+          setShowBulkEditModal(false);
+          setSelectedWords([]);
+          setIsSelectionMode(false);
+        }, 1000);
+      } catch (error) {
+        console.error('Export error:', error);
+        setBulkActionStatus('idle');
+        Swal.fire({ icon: 'error', title: 'Hata', text: 'Dışarı aktarma sırasında bir hata oluştu.' });
       }
       return;
     }
@@ -1710,9 +2053,43 @@ function App() {
     }
     return dups;
   }, [words, showDuplicates]);
+  
+  const sameRootIds = useMemo(() => {
+    if (!showSameRoots) return new Set();
+    const resultIds = new Set();
+    
+    // Analyze all words
+    const analyzedWords = words.map(w => {
+      const term = w.term.toLowerCase().trim();
+      // Find the base form (lemma)
+      const root = nlp(term).verbs().toInfinitive().text() || nlp(term).nouns().toSingular().text() || term;
+      const isInflected = term !== root.toLowerCase();
+      return { id: w.id, term, root: root.toLowerCase(), isInflected };
+    });
+
+    // 1. Group by root to find families
+    const rootMap = {};
+    analyzedWords.forEach(aw => {
+      if (!rootMap[aw.root]) rootMap[aw.root] = [];
+      rootMap[aw.root].push(aw.id);
+    });
+
+    // 2. Identify words that are either part of a family or are inflected forms
+    analyzedWords.forEach(aw => {
+      const isPartOfFamily = rootMap[aw.root].length > 1;
+      const isNotBaseForm = aw.isInflected;
+
+      if (isPartOfFamily || isNotBaseForm) {
+        resultIds.add(aw.id);
+      }
+    });
+
+    return resultIds;
+  }, [words, showSameRoots]);
 
   let processedWords = words.filter(word => {
     if (showDuplicates && !duplicateIds.has(word.id)) return false;
+    if (showSameRoots && !sameRootIds.has(word.id)) return false;
 
     const searchMatch = word.term.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (word.shortMeanings && word.shortMeanings.toLowerCase().includes(searchQuery.toLowerCase())) ||
@@ -1758,7 +2135,7 @@ function App() {
     return true;
   });
 
-  if (showDuplicates) {
+  if (showDuplicates || showSameRoots) {
     processedWords.sort((a, b) => {
       const aVal = a.term.toLowerCase();
       const bVal = b.term.toLowerCase();
@@ -1824,6 +2201,7 @@ function App() {
 
   const projectedCount = words.filter(word => {
     if (showDuplicates && !duplicateIds.has(word.id)) return false;
+    if (showSameRoots && !sameRootIds.has(word.id)) return false;
 
     const searchMatch = word.term.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (word.shortMeanings && word.shortMeanings.toLowerCase().includes(searchQuery.toLowerCase())) ||
@@ -1944,8 +2322,14 @@ function App() {
                   <i
                     className={`bi bi-intersect ${showDuplicates ? 'text-primary' : 'text-muted'}`}
                     style={{ fontSize: '16px', cursor: 'pointer', transition: 'color 0.2s ease-in-out' }}
-                    onClick={(e) => { e.stopPropagation(); setShowDuplicates(!showDuplicates); }}
+                    onClick={(e) => { e.stopPropagation(); setShowDuplicates(!showDuplicates); if (!showDuplicates) setShowSameRoots(false); }}
                     title="Sadece Benzer/Aynı Kelimeleri Göster"
+                  ></i>
+                  <i
+                    className={`bi bi-tree ${showSameRoots ? 'text-primary' : 'text-muted'}`}
+                    style={{ fontSize: '16px', cursor: 'pointer', transition: 'color 0.2s ease-in-out' }}
+                    onClick={(e) => { e.stopPropagation(); setShowSameRoots(!showSameRoots); if (!showSameRoots) setShowDuplicates(false); }}
+                    title="Aynı Köke Sahip Kelimeleri Göster"
                   ></i>
                 </InputGroup.Text>
                 <Form.Control
@@ -1981,7 +2365,11 @@ function App() {
               </div>
 
               <div className="d-none d-md-flex gap-2 flex-shrink-0">
-                <Button variant="info" className="rounded-pill d-flex align-items-center justify-content-center gap-2 px-3 fw-bold shadow-sm text-dark text-nowrap" style={{ backgroundColor: '#4fd1c5', border: 'none', height: '40px' }} onClick={() => setCurrentView('practice-test')}>
+                <Button variant="info" className="rounded-pill d-flex align-items-center justify-content-center gap-2 px-3 fw-bold shadow-sm text-dark text-nowrap" style={{ backgroundColor: '#4fd1c5', border: 'none', height: '40px' }} onClick={() => {
+                  setDirectPracticeConfig(null);
+                  setDirectPracticeWords(null);
+                  setCurrentView('practice-test');
+                }}>
                   <i className="bi bi-controller" style={{ fontSize: '20px' }}></i> <span className="d-none d-lg-inline">Test Çöz</span>
                 </Button>
                 <Button variant="primary" className="rounded-pill d-flex align-items-center justify-content-center gap-2 px-3 fw-semibold shadow-sm text-nowrap" style={{ minWidth: '40px', height: '40px' }} onClick={() => setCurrentView('add-word')}>
@@ -2600,14 +2988,21 @@ function App() {
                                 </Badge>
                               )}
                               {word.cefrLevel && (
-                                <Badge
-                                  bg="primary"
-                                  text="light"
-                                  className="rounded-pill px-2"
-                                  style={{ fontSize: '0.7rem', fontWeight: 'bold' }}
-                                >
-                                  {word.cefrLevel.split(' ')[0]}
-                                </Badge>
+                                <div className="d-flex align-items-center gap-1">
+                                  <Badge
+                                    bg="primary"
+                                    text="light"
+                                    className="rounded-pill px-2"
+                                    style={{ fontSize: '0.7rem', fontWeight: 'bold' }}
+                                  >
+                                    {word.cefrLevel.split(' ')[0]}
+                                  </Badge>
+                                  {word.rootWord && word.rootWord.toLowerCase() !== word.term.toLowerCase() && (
+                                    <span className="text-muted small fst-italic ms-1" style={{ fontSize: '0.65rem', opacity: 0.8 }}>
+                                      ({word.rootWord})
+                                    </span>
+                                  )}
+                                </div>
                               )}
                             </div>
 
@@ -2692,14 +3087,18 @@ function App() {
               title="Test Çöz" 
               icon="bi-controller" 
               onBack={() => {
-                if (practiceTestRef.current) {
-                  const handled = practiceTestRef.current.goBack();
-                  if (!handled) {
+                  if (practiceTestRef.current) {
+                    const handled = practiceTestRef.current.goBack();
+                    if (!handled) {
+                      setCurrentView('home');
+                      setDirectPracticeConfig(null);
+                      setDirectPracticeWords(null);
+                    }
+                  } else {
                     setCurrentView('home');
+                    setDirectPracticeConfig(null);
+                    setDirectPracticeWords(null);
                   }
-                } else {
-                  setCurrentView('home');
-                }
               }} 
               dailyStats={dailyStats}
             />
@@ -2715,6 +3114,7 @@ function App() {
             }}
             savedOptions={practiceOptions}
             onSaveOptions={setPracticeOptions}
+            onUpdateStatus={handleUpdateStatus}
             onUpdateStage={handleUpdateStage}
             onUpdateStagesBatch={handleUpdateStagesBatch}
             onToggleStar={handleToggleStar}
@@ -2782,10 +3182,15 @@ function App() {
           setInlineEditingText={setInlineEditingText}
           inlineEditingTitle={inlineEditingTitle}
           setInlineEditingTitle={setInlineEditingTitle}
+          inlineEditingSelectedWords={inlineEditingSelectedWords}
+          setInlineEditingSelectedWords={setInlineEditingSelectedWords}
           handleUpdateNote={handleUpdateNote}
+          handleAddWordsToDictionary={handleAddWordsToDictionary}
+          onWordClick={setSelectedWord}
           theme={theme}
           setCurrentView={setCurrentView}
           dailyStats={dailyStats}
+          words={words}
         />
       )}
 
@@ -2802,6 +3207,7 @@ function App() {
           dailyStats={dailyStats}
           authUser={authUser}
           onLogout={handleLogout}
+          onFixRoots={handleFixRoots}
         />
       )}
 
@@ -2868,7 +3274,11 @@ function App() {
 
           <button 
             className="mobile-nav-center-btn" 
-            onClick={() => setCurrentView('practice-test')}
+            onClick={() => {
+              setDirectPracticeConfig(null);
+              setDirectPracticeWords(null);
+              setCurrentView('practice-test');
+            }}
           >
             <i className="bi bi-controller"></i>
           </button>
@@ -2948,6 +3358,7 @@ function App() {
         onAddNote={handleAddNote}
         onUpdateNote={handleUpdateNote}
         onDeleteNote={handleDeleteNote}
+        onUpdateStatus={handleUpdateStatus}
         stickyHighlights={selectedWord ? stickyNotes.filter(n => n.wordId === selectedWord.id).map(n => n.text) : []}
         onOpenNotesModal={() => setCurrentView('sticky-notes')}
       />
@@ -3214,6 +3625,7 @@ function App() {
                 { key: 'reset_learning', icon: 'bi-arrow-counterclockwise', label: 'Sıfırla' },
                 { key: 'list', icon: 'bi-collection-play', label: 'Listeye Ekle' },
                 { key: 'date', icon: 'bi-calendar', label: 'Tarih' },
+                { key: 'export', icon: 'bi-file-earmark-arrow-down', label: 'Dışarı Aktar' },
                 { key: 'delete', icon: 'bi-trash', label: 'Sil', danger: true },
               ].map(({ key, icon, label, danger }) => (
                 <button
@@ -3442,6 +3854,57 @@ function App() {
                    </div>
                 </div>
               </div>
+            )}
+
+            {/* Export Fields Selection */}
+            {bulkActionType === 'export' && (
+              <>
+                <p className="fw-medium text-muted small text-uppercase letter-spacing-1 mb-2">Dışarı Aktarılacak Alanlar</p>
+                <div className="row g-2 mb-3" style={{ maxHeight: '250px', overflowY: 'auto', padding: '2px' }}>
+                  {[
+                    { key: 'term', label: 'Kelime' },
+                    { key: 'pronunciation', label: 'Okunuş' },
+                    { key: 'shortMeanings', label: 'Kısa Anlamlar' },
+                    { key: 'generalDefinition', label: 'Genel Tanım' },
+                    { key: 'cefrLevel', label: 'CEFR Seviyesi' },
+                    { key: 'learningStatus', label: 'Durum' },
+                    { key: 'learningStage', label: 'Aşama' },
+                    { key: 'isStarred', label: 'Yıldız' },
+                    { key: 'createdAt', label: 'Tarih' },
+                    { key: 'synonyms', label: 'Eş Anlam' },
+                    { key: 'antonyms', label: 'Zıt Anlam' },
+                    { key: 'meanings', label: 'Detaylı Anlam' },
+                    { key: 'examples', label: 'Örnekler' },
+                    { key: 'collocations', label: 'Dizimler' },
+                    { key: 'idioms', label: 'Deyimler' },
+                    { key: 'wordFamily', label: 'Aile' },
+                    { key: 'grammar', label: 'Gramer' },
+                    { key: 'tips', label: 'İpuçları' },
+                  ].map(({ key, label }) => (
+                    <div key={key} className="col-6 col-md-4">
+                      <div 
+                        className={`d-flex align-items-center justify-content-between p-2 rounded-3 border transition-all ${bulkExportFields[key] ? 'border-primary bg-primary bg-opacity-10' : 'border-secondary border-opacity-10 bg-body'}`}
+                        style={{ cursor: 'pointer', fontSize: '0.85rem' }}
+                        onClick={() => setBulkExportFields(prev => ({ ...prev, [key]: !prev[key] }))}
+                      >
+                        <span className={bulkExportFields[key] ? 'text-primary fw-bold' : 'text-muted'}>{label}</span>
+                        <i className={`bi ${bulkExportFields[key] ? 'bi-check-circle-fill text-primary' : 'bi-circle text-muted'}`}></i>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="d-flex gap-2 mb-4">
+                  <Button variant="link" size="sm" className="p-0 text-decoration-none" onClick={() => {
+                    const allSelected = Object.keys(bulkExportFields).reduce((acc, k) => ({ ...acc, [k]: true }), {});
+                    setBulkExportFields(allSelected);
+                  }}>Hepsini Seç</Button>
+                  <span className="text-muted opacity-25">|</span>
+                  <Button variant="link" size="sm" className="p-0 text-decoration-none text-muted" onClick={() => {
+                    const noneSelected = Object.keys(bulkExportFields).reduce((acc, k) => ({ ...acc, [k]: false }), {});
+                    setBulkExportFields(noneSelected);
+                  }}>Hepsini Kaldır</Button>
+                </div>
+              </>
             )}
 
             {/* Delete */}

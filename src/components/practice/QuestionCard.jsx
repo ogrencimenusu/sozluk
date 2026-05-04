@@ -1,5 +1,6 @@
 import React, { memo } from 'react';
 import { Button, Row, Col, Card, Badge, OverlayTrigger, Popover, Dropdown } from 'react-bootstrap';
+import nlp from 'compromise';
 import LearningStageBar from '../LearningStageBar';
 
 const QuestionCard = memo(({
@@ -453,17 +454,27 @@ const QuestionCard = memo(({
                                         const isLengthMatch = typed.length === target.length;
                                         const isExactMatch = typed === target;
 
+                                        // NLP Root Check
+                                        const typedRoot = nlp(typed).verbs().toInfinitive().text() || nlp(typed).nouns().toSingular().text() || typed;
+                                        const targetRoot = nlp(target).verbs().toInfinitive().text() || nlp(target).nouns().toSingular().text() || target;
+                                        const isRootMatch = typed.length > 0 && typedRoot.toLowerCase() === targetRoot.toLowerCase() && !isExactMatch;
+
                                         let colorClass = 'text-danger';
+                                        let customStyle = { fontSize: '0.75rem', fontWeight: (isLengthMatch || isRootMatch) ? 'bold' : 'normal' };
+
                                         if (isLengthMatch) {
                                             if (isExactMatch && helps.colorOnExactMatch) {
                                                 colorClass = 'text-primary';
                                             } else if (helps.colorOnLengthMatch) {
                                                 colorClass = 'text-success';
                                             }
+                                        } else if (isRootMatch) {
+                                            colorClass = '';
+                                            customStyle.color = 'rgb(62, 214, 232)'; // Turquoise color for root match
                                         }
 
                                         return (
-                                            <small className={`ms-1 ${colorClass}`} style={{ fontSize: '0.75rem', fontWeight: isLengthMatch ? 'bold' : 'normal' }}>
+                                            <small className={`ms-1 ${colorClass}`} style={customStyle}>
                                                 {typed.length} / {target.length} harf
                                             </small>
                                         );

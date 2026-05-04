@@ -296,8 +296,15 @@ const AddWordPage = ({
                     <div className="p-4">
                       {parsedPreview.map((item, idx) => (
                         <div key={idx} className="bg-body p-3 rounded-4 shadow-sm border border-opacity-10">
-                          <div className="fw-bold text-primary mb-2 border-bottom border-opacity-10 pb-2">
-                            {item.term || 'Bilinmeyen Kelime'}
+                          <div className="fw-bold text-primary mb-2 border-bottom border-opacity-10 pb-2 d-flex justify-content-between align-items-center">
+                            <span>{item.term || 'Bilinmeyen Kelime'}</span>
+                            {item.variants && item.variants.length > 0 && (
+                              <div className="d-flex gap-1 flex-wrap justify-content-end">
+                                {item.variants.map((v, i) => (
+                                  <Badge key={i} bg="info" className="bg-opacity-10 text-info fw-normal" style={{ fontSize: '0.65rem' }}>{v}</Badge>
+                                ))}
+                              </div>
+                            )}
                           </div>
                           <div className="d-flex flex-wrap gap-2" style={{ fontSize: '0.85em' }}>
                             {/* Check badges visually */}

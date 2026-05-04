@@ -1,6 +1,160 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Container, Row, Col, Card, Form, Button, Spinner, Dropdown, Offcanvas } from 'react-bootstrap';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { Container, Row, Col, Card, Form, Button, Spinner, Dropdown, Offcanvas, Badge } from 'react-bootstrap';
+import DOMPurify from 'dompurify';
+import nlp from 'compromise';
 import PageHeader from '../layout/PageHeader';
+
+const RichTextEditor = ({ value, onChange, placeholder, className, onBlur, onAddWord, highlightTags }) => {
+  const editorRef = useRef(null);
+  const [tooltip, setTooltip] = useState(null); // { x, y, text }
+
+  const handleSelection = useCallback(() => {
+    const selection = window.getSelection();
+    if (!selection || selection.isCollapsed || !selection.toString().trim()) {
+      setTooltip(null);
+      return;
+    }
+
+    const range = selection.getRangeAt(0);
+    // Ensure selection is within this editor
+    if (!editorRef.current || !editorRef.current.contains(range.commonAncestorContainer)) {
+      setTooltip(null);
+      return;
+    }
+
+    const rect = range.getBoundingClientRect();
+    setTooltip({
+      x: rect.left + rect.width / 2,
+      y: rect.top,
+      text: selection.toString().trim()
+    });
+  }, []);
+
+  useEffect(() => {
+    document.addEventListener('selectionchange', handleSelection);
+    return () => document.removeEventListener('selectionchange', handleSelection);
+  }, [handleSelection]);
+
+  // Function to apply highlights to editor content without losing cursor
+  const applyHighlights = useCallback((html, tags) => {
+    if (!tags || tags.length === 0 || !html) return html;
+    
+    // Simple way to highlight without complex range saving:
+    // Only apply if the HTML doesn't already have marks for these tags
+    // This is a basic implementation. For full cursor preservation, 
+    // more complex logic would be needed.
+    let newHtml = html;
+    tags.forEach(tag => {
+      const exists = words.some(w => w.term.toLowerCase() === tag.toLowerCase());
+      const color = exists ? '#716619' : '#711919';
+      const escapedTag = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(`(?<!<[^>]*)\\b(${escapedTag})\\b(?![^<]*>)`, 'gi');
+      // Replace with mark if not already wrapped
+      newHtml = newHtml.replace(regex, (match) => {
+        return `<mark style="background-color: ${color}; color: white; padding: 0 2px; border-radius: 2px;">${match}</mark>`;
+      });
+    });
+    return newHtml;
+  }, []);
+
+  // Update editor content only if it's different from the value prop
+  useEffect(() => {
+    if (editorRef.current) {
+      const currentHtml = editorRef.current.innerHTML;
+      if (currentHtml !== value) {
+        editorRef.current.innerHTML = value || '';
+      }
+    }
+  }, [value]);
+
+  const execCommand = (command) => {
+    document.execCommand(command, false, null);
+    if (editorRef.current) {
+      editorRef.current.focus();
+      onChange(editorRef.current.innerHTML);
+    }
+  };
+
+  return (
+    <div className={`rich-editor-container w-100 ${className || ''}`}>
+      <div className="editor-toolbar">
+        <button type="button" className="toolbar-btn" onClick={() => execCommand('bold')} title="Kalın"><i className="bi bi-type-bold"></i></button>
+        <button type="button" className="toolbar-btn" onClick={() => execCommand('italic')} title="İtalik"><i className="bi bi-type-italic"></i></button>
+        <button type="button" className="toolbar-btn" onClick={() => execCommand('underline')} title="Altı Çizili"><i className="bi bi-type-underline"></i></button>
+        <button type="button" className="toolbar-btn" onClick={() => execCommand('strikethrough')} title="Üstü Çizili"><i className="bi bi-type-strikethrough"></i></button>
+        <div className="border-start mx-1 opacity-25"></div>
+        <button type="button" className="toolbar-btn" onClick={() => {
+          const selection = window.getSelection();
+          if (selection && selection.rangeCount > 0) {
+            const container = selection.getRangeAt(0).commonAncestorContainer;
+            const node = container.nodeType === 3 ? container.parentNode : container;
+            if (node.closest('blockquote')) {
+              document.execCommand('formatBlock', false, 'p');
+            } else {
+              document.execCommand('formatBlock', false, 'blockquote');
+            }
+            if (editorRef.current) onChange(editorRef.current.innerHTML);
+          }
+        }} title="Alıntı"><i className="bi bi-quote"></i></button>
+      </div>
+      <div
+        ref={editorRef}
+        contentEditable
+        className="rich-text-editor"
+        placeholder={placeholder}
+        onInput={(e) => onChange(e.target.innerHTML)}
+        onBlur={(e) => {
+          onChange(e.target.innerHTML);
+          if (onBlur) onBlur(e);
+        }}
+      />
+
+      {/* Floating Selection Tooltip */}
+      {tooltip && (
+        <div 
+          className="position-fixed sticky-note-tooltip"
+          style={{ 
+            top: `${tooltip.y - 12}px`, 
+            left: `${tooltip.x}px`,
+            transform: 'translate(-50%, -100%)',
+            zIndex: 9999,
+            pointerEvents: 'auto'
+          }}
+        >
+          <button
+            type="button"
+            className="sticky-note-save-btn d-flex align-items-center gap-2"
+            style={{ 
+              background: 'linear-gradient(135deg, #f59e0b, #d97706)', // Orange theme to match Sticky Note
+              boxShadow: '0 4px 15px rgba(245, 158, 11, 0.4)',
+              border: 'none',
+              color: 'white',
+              padding: '6px 12px',
+              borderRadius: '20px',
+              fontSize: '0.8rem',
+              fontWeight: '600'
+            }}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onAddWord(tooltip.text);
+              setTooltip(null);
+              // Clear selection to hide tooltip
+              window.getSelection().removeAllRanges();
+            }}
+          >
+            <i className="bi bi-sticky-fill"></i>
+            <span>Kelime Olarak Ekle</span>
+          </button>
+          <div 
+            className="sticky-note-tooltip-arrow" 
+            style={{ borderTopColor: '#f59e0b' }}
+          ></div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 const StickyNotesPage = ({
   stickyNotes,
@@ -18,11 +172,36 @@ const StickyNotesPage = ({
   inlineEditingTitle,
   setInlineEditingTitle,
   handleUpdateNote,
+  handleAddWordsToDictionary,
+  inlineEditingSelectedWords,
+  setInlineEditingSelectedWords,
   theme,
   setCurrentView,
-  dailyStats
+  dailyStats,
+  words,
+  onWordClick
 }) => {
+  const handleWordClickInternal = useCallback((wordText) => {
+    if (!onWordClick || !wordText || !words) return;
+    const wt = wordText.toLowerCase();
+    
+    let found = words.find(w => w.term.toLowerCase() === wt);
+    if (!found) {
+      found = words.find(w => 
+        (w.variants && w.variants.some(v => v.toLowerCase() === wt)) ||
+        nlp(wt).nouns().toSingular().text().toLowerCase() === w.term.toLowerCase() ||
+        nlp(wt).verbs().toInfinitive().text().toLowerCase() === w.term.toLowerCase()
+      );
+    }
+    
+    if (found) {
+      onWordClick(found);
+    }
+  }, [onWordClick, words]);
+
   const [justUpdatedNoteId, setJustUpdatedNoteId] = useState(null);
+  const [wordSearchTerm, setWordSearchTerm] = useState('');
+  const [expandedManualNotes, setExpandedManualNotes] = useState([]);
   const [expandedDates, setExpandedDates] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [saveStatus, setSaveStatus] = useState('idle'); // 'idle', 'saving', 'saved'
@@ -134,6 +313,16 @@ const StickyNotesPage = ({
     return () => observer.disconnect();
   }, [visibleCount, filteredNotes.length]);
 
+  const saveCurrentNote = useCallback(() => {
+    if (editingNoteId && inlineEditingText && inlineEditingText.trim()) {
+      handleUpdateNote(editingNoteId, inlineEditingText, inlineEditingTitle, inlineEditingSelectedWords);
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+      }
+      setSaveStatus('saved');
+    }
+  }, [editingNoteId, inlineEditingText, inlineEditingTitle, inlineEditingSelectedWords, handleUpdateNote]);
+
   // Auto-save logic
   useEffect(() => {
     if (!editingNoteId) {
@@ -149,23 +338,35 @@ const StickyNotesPage = ({
     // Don't save if text is empty
     if (!inlineEditingText || !inlineEditingText.trim()) return;
 
+    // IMPORTANT: Check if content is actually different from the original note 
+    // to prevent infinite save loops when App re-renders.
+    const currentNote = stickyNotes.find(n => n.id === editingNoteId);
+    if (currentNote) {
+      const isSameText = currentNote.text === inlineEditingText;
+      const isSameTitle = (currentNote.title || '') === (inlineEditingTitle || '');
+      const isSameWords = JSON.stringify(currentNote.selectedWords || []) === JSON.stringify(inlineEditingSelectedWords || []);
+      
+      if (isSameText && isSameTitle && isSameWords) {
+        setSaveStatus('idle');
+        return;
+      }
+    }
+
     // Set status to saving
     setSaveStatus('saving');
 
     // Set new timer for auto-save
     autoSaveTimerRef.current = setTimeout(() => {
-      handleUpdateNote(editingNoteId, inlineEditingText, inlineEditingTitle);
+      saveCurrentNote();
       setJustUpdatedNoteId(editingNoteId);
-      setSaveStatus('saved');
       setTimeout(() => setJustUpdatedNoteId(null), 2000);
     }, 1000); // 1 second debounce
 
     return () => {
-      if (autoSaveTimerRef.current) {
-        clearTimeout(autoSaveTimerRef.current);
-      }
+      // We don't clear the timeout here if we want it to finish, 
+      // but usually we should save immediately on close.
     };
-  }, [inlineEditingText, inlineEditingTitle, editingNoteId, handleUpdateNote]);
+  }, [inlineEditingText, inlineEditingTitle, inlineEditingSelectedWords, editingNoteId, saveCurrentNote]);
 
   const renderHighlightedText = (text, query) => {
     if (!query || !text) return text;
@@ -177,23 +378,74 @@ const StickyNotesPage = ({
     );
   };
 
+  const getWordStatus = useCallback((wordText) => {
+    if (!wordText || !words) return 'none';
+    const wt = wordText.toLowerCase();
+    
+    // 1. Check exact match
+    const isExact = words.some(w => w.term.toLowerCase() === wt);
+    if (isExact) return 'exact';
+    
+    // 2. Check root/variant match
+    const isRootMatch = words.some(w => 
+      (w.variants && w.variants.some(v => v.toLowerCase() === wt)) ||
+      nlp(wt).nouns().toSingular().text().toLowerCase() === w.term.toLowerCase() ||
+      nlp(wt).verbs().toInfinitive().text().toLowerCase() === w.term.toLowerCase()
+    );
+    if (isRootMatch) return 'root';
+    
+    return 'none';
+  }, [words]);
+
+  const highlightWordsInHtml = (html, selectedWords) => {
+    if (!selectedWords || selectedWords.length === 0 || !html) return html;
+    
+    let sanitized = DOMPurify.sanitize(html);
+    const escapedWords = selectedWords.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    const regex = new RegExp(`(?<!<[^>]*)\\b(${escapedWords.join('|')})\\b(?![^<]*>)`, 'gi');
+    
+    return sanitized.replace(regex, (match) => {
+      const status = getWordStatus(match);
+      let color = '#711919'; // Default Red
+      if (status === 'exact') color = '#0d6efd'; // Blue
+      else if (status === 'root') color = '#e83e8c'; // Pink
+      
+      return `<mark style="background-color: ${color}; color: white; padding: 0 2px; border-radius: 2px;">${match}</mark>`;
+    });
+  };
+
   const scrollToNote = (id) => {
-    const element = document.getElementById(`note-${id}`);
-    if (element) {
-      const offset = 100; // Account for sticky header
-      const bodyRect = document.body.getBoundingClientRect().top;
-      const elementRect = element.getBoundingClientRect().top;
-      const elementPosition = elementRect - bodyRect;
-      const offsetPosition = elementPosition - offset;
+    const performScroll = (noteId) => {
+      const element = document.getElementById(`note-${noteId}`);
+      if (element) {
+        const offset = 100; // Account for sticky header
+        const bodyRect = document.body.getBoundingClientRect().top;
+        const elementRect = element.getBoundingClientRect().top;
+        const elementPosition = elementRect - bodyRect;
+        const offsetPosition = elementPosition - offset;
 
-      window.scrollTo({
-        top: offsetPosition,
-        behavior: 'smooth'
-      });
+        window.scrollTo({
+          top: offsetPosition,
+          behavior: 'smooth'
+        });
 
-      // Briefly highlight the jumped note
-      element.classList.add('jump-highlight');
-      setTimeout(() => element.classList.remove('jump-highlight'), 2000);
+        // Briefly highlight the jumped note
+        element.classList.add('jump-highlight');
+        setTimeout(() => element.classList.remove('jump-highlight'), 2000);
+      }
+    };
+
+    const existingElement = document.getElementById(`note-${id}`);
+    if (existingElement) {
+      performScroll(id);
+    } else {
+      // Find the index of the note and increase visibleCount if needed
+      const noteIndex = filteredNotes.findIndex(n => n.id === id);
+      if (noteIndex !== -1) {
+        setVisibleCount(Math.max(visibleCount, noteIndex + 1));
+        // Wait for React to render the newly visible items
+        setTimeout(() => performScroll(id), 100);
+      }
     }
   };
 
@@ -391,20 +643,18 @@ const StickyNotesPage = ({
                     )}
                   </Dropdown.Menu>
                 </Dropdown>
-                <div className="d-flex flex-column flex-sm-row gap-3 align-items-start align-items-sm-center">
-                  <Form.Control
-                    as="textarea"
+                <div className="d-flex flex-column flex-sm-row gap-3 align-items-stretch align-items-sm-start w-100">
+                  <RichTextEditor
                     placeholder="Kelime bağlamı olmadan genel bir not ekleyin..."
                     value={manualNoteText}
-                    onChange={(e) => setManualNoteText(e.target.value)}
-                    className="bg-body-secondary border-0 shadow-none px-4 py-3 rounded-4 flex-grow-1"
-                    style={{ resize: 'none', height: '100px' }}
+                    onChange={setManualNoteText}
+                    className="flex-grow-1"
                   />
                   <Button
                     variant="primary"
-                    className="rounded-pill px-4 py-3 fw-semibold shadow-sm text-nowrap d-flex align-items-center gap-2"
+                    className="rounded-pill px-4 py-3 fw-semibold shadow-sm text-nowrap d-flex align-items-center justify-content-center gap-2 mt-sm-5"
                     onClick={() => handleAddNote(null, null, manualNoteText, manualNoteTitle)}
-                    disabled={!manualNoteText.trim()}
+                    disabled={!manualNoteText || !manualNoteText.trim() || manualNoteText === '<br>'}
                   >
                     <i className="bi bi-plus-lg"></i> Not Ekle
                   </Button>
@@ -473,7 +723,18 @@ const StickyNotesPage = ({
                                       <i className="bi bi-link-45deg me-1 opacity-50" style={{ fontSize: '0.8rem' }}></i>
                                       {(note.wordTerm === 'Manuel Not' || note.wordTerm === 'MANUEL NOT' || !note.wordTerm) 
                                         ? 'Not' 
-                                        : <>İlişkili Kelime: {renderHighlightedText(note.wordTerm, searchQuery)}</>}
+                                        : (
+                                          <span 
+                                            className="cursor-pointer hover-opacity-100 opacity-75 transition-all d-inline-flex align-items-center"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleWordClickInternal(note.wordTerm);
+                                            }}
+                                            title="Kelime detaylarını gör"
+                                          >
+                                            İlişkili Kelime: <strong className="ms-1">{renderHighlightedText(note.wordTerm, searchQuery)}</strong>
+                                          </span>
+                                        )}
                                     </div>
                                   )}
 
@@ -544,55 +805,196 @@ const StickyNotesPage = ({
                                           )}
                                         </Dropdown.Menu>
                                       </Dropdown>
-                                      <Form.Control
-                                        as="textarea"
+                                      <RichTextEditor
                                         value={inlineEditingText}
-                                        onChange={(e) => setInlineEditingText(e.target.value)}
-                                        className="border border-opacity-25 shadow-none bg-body mb-2 rounded-3 p-3"
-                                        style={{
-                                          resize: 'none',
-                                          borderColor: '#f59e0b',
-                                          height: 'auto',
-                                          overflow: 'hidden'
-                                        }}
-                                        onInput={(e) => {
-                                          e.target.style.height = 'auto';
-                                          e.target.style.height = e.target.scrollHeight + 'px';
-                                        }}
-                                        onKeyDown={(e) => {
-                                          if (e.key === 'Escape') {
-                                            setEditingNoteId(null);
+                                        onChange={setInlineEditingText}
+                                        className="mb-2"
+                                        highlightTags={inlineEditingSelectedWords}
+                                        onAddWord={(word) => {
+                                          if (!inlineEditingSelectedWords.includes(word)) {
+                                            const newWords = [...inlineEditingSelectedWords, word];
+                                            setInlineEditingSelectedWords(newWords);
+                                            // Apply highlight to editor immediately
+                                            const exists = words.some(w => w.term.toLowerCase() === word.toLowerCase());
+                                            const color = exists ? '#716619' : '#711919';
+                                            const escapedWord = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                                            const regex = new RegExp(`(?<!<[^>]*)\\b(${escapedWord})\\b(?![^<]*>)`, 'gi');
+                                            setInlineEditingText(prev => prev.replace(regex, `<mark style="background-color: ${color}; color: white; padding: 0 2px; border-radius: 2px;">${word}</mark>`));
                                           }
                                         }}
                                         onBlur={(e) => {
-                                          // Small delay to allow clicking between title and text without closing
-                                          setTimeout(() => {
-                                            const activeElement = document.activeElement;
-                                            if (
-                                              activeElement && 
-                                              (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA') && 
-                                              activeElement.closest('.sticky-note-list-item')
-                                            ) {
-                                              return;
-                                            }
-                                            setEditingNoteId(null);
-                                          }, 200);
-                                        }}
-                                        ref={(tag) => {
-                                          if (tag) {
-                                            tag.style.height = 'auto';
-                                            tag.style.height = tag.scrollHeight + 'px';
-                                            
-                                            // Focus and set cursor to end on initial edit
-                                            if (editingNoteId && !hasFocusedTextarea.current) {
-                                              tag.focus();
-                                              const len = tag.value.length;
-                                              tag.setSelectionRange(len, len);
-                                              hasFocusedTextarea.current = true;
-                                            }
-                                          }
+                                          // Do nothing on blur to prevent auto-closing
                                         }}
                                       />
+                                      
+                                      {/* Word Selection Field */}
+                                      <div className="mb-2 p-3 bg-body-tertiary rounded-3 border border-opacity-10">
+                                        <div className="small fw-bold text-primary mb-2 d-flex align-items-center justify-content-between">
+                                          <div className="d-flex align-items-center gap-1">
+                                            <i className="bi bi-search"></i> Sözlükten Kelime Ara ve Ekle
+                                          </div>
+                                          <div className="d-flex align-items-center gap-2">
+                                            <Button 
+                                              variant="link" 
+                                              size="sm" 
+                                              className="text-primary p-0 text-decoration-none"
+                                              title="Üstü çizili kelimeleri tara ve ekle"
+                                              onClick={() => {
+                                                const tempDiv = document.createElement('div');
+                                                tempDiv.innerHTML = inlineEditingText;
+                                                const strikeElements = tempDiv.querySelectorAll('s, strike, del, [style*="line-through"]');
+                                                const strikeWords = Array.from(strikeElements)
+                                                  .map(el => el.innerText.trim())
+                                                  .filter(w => w.length > 0);
+                                                
+                                                if (strikeWords.length > 0) {
+                                                  const newWords = [...new Set([...inlineEditingSelectedWords, ...strikeWords])];
+                                                  setInlineEditingSelectedWords(newWords);
+                                                  
+                                                  // Apply highlights to editor content
+                                                  let newHtml = inlineEditingText;
+                                                  strikeWords.forEach(word => {
+                                                    const exists = words.some(w => w.term.toLowerCase() === word.toLowerCase());
+                                                    const color = exists ? '#716619' : '#711919';
+                                                    const escapedWord = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                                                    const regex = new RegExp(`(?<!<[^>]*)\\b(${escapedWord})\\b(?![^<]*>)`, 'gi');
+                                                    newHtml = newHtml.replace(regex, `<mark style="background-color: ${color}; color: white; padding: 0 2px; border-radius: 2px;">${word}</mark>`);
+                                                  });
+                                                  setInlineEditingText(newHtml);
+                                                }
+                                              }}
+                                            >
+                                              <i className="bi bi-type-strikethrough fs-5"></i>
+                                            </Button>
+                                            {inlineEditingSelectedWords.length > 0 && (
+                                              <div className="d-flex align-items-center gap-3">
+                                                <Button 
+                                                  variant="link" 
+                                                  size="sm" 
+                                                  className="text-danger p-0 text-decoration-none small"
+                                                  onClick={() => {
+                                                    setInlineEditingSelectedWords([]);
+                                                    // More robust way to remove all highlights using DOM parsing
+                                                    setInlineEditingText(prev => {
+                                                      const tempDiv = document.createElement('div');
+                                                      tempDiv.innerHTML = prev;
+                                                      const marks = tempDiv.querySelectorAll('mark');
+                                                      marks.forEach(mark => {
+                                                        const text = document.createTextNode(mark.textContent);
+                                                        mark.parentNode.replaceChild(text, mark);
+                                                      });
+                                                      return tempDiv.innerHTML;
+                                                    });
+                                                  }}
+                                                >
+                                                  <i className="bi bi-trash-fill me-1"></i>Tümünü Temizle
+                                                </Button>
+
+                                                {inlineEditingSelectedWords.some(w => !words.some(word => word.term.toLowerCase() === w.toLowerCase())) && (
+                                                  <Button
+                                                    variant="link"
+                                                    size="sm"
+                                                    className="text-primary p-0 text-decoration-none small d-flex align-items-center gap-1 fw-semibold"
+                                                    onClick={() => {
+                                                      const redWords = inlineEditingSelectedWords.filter(w => !words.some(word => word.term.toLowerCase() === w.toLowerCase()));
+                                                      handleAddWordsToDictionary(redWords);
+                                                    }}
+                                                  >
+                                                    <i className="bi bi-plus-circle-fill"></i>Kırmızıları Sözlüğe Ekle
+                                                  </Button>
+                                                )}
+                                              </div>
+                                            )}
+                                          </div>
+                                        </div>
+                                        
+                                        {/* Search Input */}
+                                        <div className="position-relative mb-3">
+                                          <i className="bi bi-search position-absolute top-50 start-0 translate-middle-y ms-3 text-muted small"></i>
+                                          <Form.Control
+                                            type="text"
+                                            size="sm"
+                                            placeholder="Kelime ara..."
+                                            value={wordSearchTerm}
+                                            onChange={(e) => setWordSearchTerm(e.target.value)}
+                                            className="bg-body border-0 shadow-none ps-5 pe-4 py-2 rounded-pill small border border-opacity-10"
+                                            onKeyDown={(e) => {
+                                              if (e.key === 'Enter') e.preventDefault();
+                                            }}
+                                          />
+                                        </div>
+
+                                        {/* Search Results */}
+                                        {wordSearchTerm.trim().length >= 1 && (
+                                          <div className="d-flex flex-wrap gap-2 mb-3 p-2 bg-body rounded-3 border border-dashed" style={{ maxHeight: '150px', overflowY: 'auto' }}>
+                                            {(() => {
+                                              const results = words.filter(w => 
+                                                w.term.toLowerCase().includes(wordSearchTerm.toLowerCase()) && 
+                                                !inlineEditingSelectedWords.includes(w.term)
+                                              ).slice(0, 10);
+                                              
+                                              if (results.length === 0) return <small className="text-muted w-100 text-center py-2">Sonuç bulunamadı.</small>;
+                                              
+                                              return results.map((w, i) => (
+                                                <Badge
+                                                  key={i}
+                                                  bg="light"
+                                                  text="dark"
+                                                  className="cursor-pointer border border-opacity-10 rounded-pill px-3 py-2 hover-bg-primary transition-all"
+                                                  onClick={() => {
+                                                    setInlineEditingSelectedWords(prev => [...prev, w.term]);
+                                                    setWordSearchTerm('');
+                                                  }}
+                                                >
+                                                  <i className="bi bi-plus-lg me-1 text-primary"></i>{w.term}
+                                                </Badge>
+                                              ));
+                                            })()}
+                                          </div>
+                                        )}
+
+                                        {/* Selected Words */}
+                                        <div className="d-flex flex-wrap gap-2">
+                                          {inlineEditingSelectedWords.length === 0 ? (
+                                            <small className="text-muted fst-italic">Henüz kelime seçilmedi.</small>
+                                          ) : (
+                                            inlineEditingSelectedWords.map((w, i) => {
+                                              const status = getWordStatus(w);
+                                              return (
+                                                <Badge
+                                                  key={i}
+                                                  bg={status === 'exact' ? 'primary' : status === 'root' ? 'pink' : 'danger'}
+                                                   style={{ 
+                                                     backgroundColor: status === 'root' ? '#e83e8c' : undefined,
+                                                     cursor: status !== 'none' ? 'pointer' : 'default'
+                                                   }}
+                                                   className="d-flex align-items-center gap-2 rounded-pill px-3 py-2 shadow-sm border-0 transition-all hover-scale-sm"
+                                                   onClick={(e) => {
+                                                     if (status !== 'none') {
+                                                       handleWordClickInternal(w);
+                                                     }
+                                                   }}
+                                                 >
+                                                   <span>{w}</span>
+                                                   <i 
+                                                     className="bi bi-x-lg cursor-pointer hover-opacity-100 opacity-75 ms-1"
+                                                     onClick={(e) => {
+                                                       e.stopPropagation();
+                                                       setInlineEditingSelectedWords(prev => prev.filter(sw => sw !== w));
+                                                       setInlineEditingText(prev => {
+                                                         const escapedWord = w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                                                         const regex = new RegExp(`<mark[^>]*>(${escapedWord})</mark>`, 'gi');
+                                                         return prev.replace(regex, '$1');
+                                                       });
+                                                     }}
+                                                   ></i>
+                                                 </Badge>
+                                              );
+                                            })
+                                          )}
+                                        </div>
+                                      </div>
+
                                       <div className="d-flex justify-content-end mt-1">
                                         <small className={`transition-all ${saveStatus === 'saved' ? 'text-success' : 'text-muted'} opacity-75`} style={{ fontSize: '0.75rem', fontWeight: '500' }}>
                                           {saveStatus === 'saving' ? (
@@ -604,31 +1006,85 @@ const StickyNotesPage = ({
                                       </div>
                                     </div>
                                   ) : (
-                                    <div
-                                      className="cursor-pointer"
-                                      onClick={() => {
-                                        setEditingNoteId(note.id);
-                                        setInlineEditingText(note.text);
-                                        setInlineEditingTitle(note.title || '');
-                                      }}
-                                    >
-                                      {note.title && (
-                                        <div className={`sticky-note-list-title h6 fw-bold mb-2 ${note.isCompleted ? 'opacity-50' : 'text-body'}`}>
-                                          {renderHighlightedText(note.title, searchQuery)}
-                                        </div>
-                                      )}
-
                                       <div
-                                        className="sticky-note-list-text mb-2 bg-body p-3 rounded-3 border border-opacity-10 shadow-sm"
-                                        style={{
-                                          backgroundColor: theme === 'light' ? '#fef9c3 !important' : 'rgba(234, 179, 8, 0.1) !important',
-                                          whiteSpace: 'pre-wrap',
-                                          wordBreak: 'break-word'
+                                        className="cursor-pointer"
+                                        onClick={() => {
+                                          setEditingNoteId(note.id);
+                                          // Robust line break conversion for the HTML editor
+                                          let textToEdit = note.text || '';
+                                          if (!textToEdit.includes('<br') && !textToEdit.includes('<div') && !textToEdit.includes('<p')) {
+                                            textToEdit = textToEdit.replace(/\n/g, '<br>');
+                                          }
+                                          setInlineEditingText(textToEdit);
+                                          setInlineEditingTitle(note.title || '');
+                                          setInlineEditingSelectedWords(note.selectedWords || []);
+                                          // Auto-expand manual notes when editing so they don't collapse when clicking away
+                                          if (!expandedManualNotes.includes(note.id)) {
+                                            setExpandedManualNotes(prev => [...prev, note.id]);
+                                          }
                                         }}
                                       >
-                                        {renderHighlightedText(note.text, searchQuery)}
+                                        {note.title && (
+                                          <div className={`sticky-note-list-title h6 fw-bold mb-2 ${note.isCompleted ? 'opacity-50' : 'text-body'}`}>
+                                            {renderHighlightedText(note.title, searchQuery)}
+                                          </div>
+                                        )}
+
+                                        <div
+                                          className={`sticky-note-list-text mb-2 bg-body p-3 rounded-3 border border-opacity-10 shadow-sm ${(!note.wordId || note.wordTerm === 'Manuel Not' || note.wordTerm === 'MANUEL NOT') && !expandedManualNotes.includes(note.id) ? 'line-clamp-5' : ''}`}
+                                          style={{
+                                            backgroundColor: theme === 'light' ? '#fef9c3 !important' : 'rgba(234, 179, 8, 0.1) !important',
+                                            whiteSpace: 'pre-wrap',
+                                            wordBreak: 'break-word'
+                                          }}
+                                          dangerouslySetInnerHTML={{ __html: highlightWordsInHtml(note.text, note.selectedWords) }}
+                                        />
+
+                                        {/* Show More Button for Manual Notes */}
+                                        {(!note.wordId || note.wordTerm === 'Manuel Not' || note.wordTerm === 'MANUEL NOT') && (
+                                          <div className="d-flex flex-column align-items-center mt-n2 mb-2">
+                                            <Button 
+                                              variant="link" 
+                                              size="sm" 
+                                              className="text-primary text-decoration-none py-0 fw-semibold d-flex align-items-center gap-1"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                setExpandedManualNotes(prev => 
+                                                  prev.includes(note.id) ? prev.filter(id => id !== note.id) : [...prev, note.id]
+                                                );
+                                              }}
+                                            >
+                                              {expandedManualNotes.includes(note.id) ? (
+                                                <><i className="bi bi-chevron-up"></i> Daha Az Gör</>
+                                              ) : (
+                                                <><i className="bi bi-chevron-down"></i> Devamını Gör</>
+                                              )}
+                                            </Button>
+
+                                            {/* Selected Words Tags - Now below the button */}
+                                            {note.selectedWords && note.selectedWords.length > 0 && (
+                                              <div className="d-flex flex-wrap justify-content-center gap-1 mt-2">
+                                                {note.selectedWords.map((w, i) => {
+                                                  const status = getWordStatus(w);
+                                                  return (
+                                                    <span 
+                                                      key={i} 
+                                                      className={`badge ${status === 'exact' ? 'bg-primary' : status === 'root' ? 'pink' : 'bg-danger'} bg-opacity-10 ${status === 'exact' ? 'text-primary' : status === 'root' ? 'pink' : 'text-danger'} border ${status === 'exact' ? 'border-primary' : status === 'root' ? 'pink' : 'border-danger'} border-opacity-25 rounded-pill ${status !== 'none' ? 'cursor-pointer hover-bg-opacity-20' : ''}`} 
+                                                      style={{ fontSize: '0.7rem', fontWeight: '500' }}
+                                                      onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        if (status !== 'none') handleWordClickInternal(w);
+                                                      }}
+                                                    >
+                                                      <i className="bi bi-tag-fill me-1"></i>{w}
+                                                    </span>
+                                                  );
+                                                })}
+                                              </div>
+                                            )}
+                                          </div>
+                                        )}
                                       </div>
-                                    </div>
                                   )}
 
                                   <div className="d-flex justify-content-between align-items-center mt-2 px-1">
@@ -640,11 +1096,75 @@ const StickyNotesPage = ({
                                       </span>
                                     </span>
                                     <div className="d-flex gap-3 align-items-center">
+                                      {editingNoteId === note.id && (
+                                        <a
+                                          href="#!"
+                                          className="sticky-note-list-complete fw-semibold d-flex align-items-center gap-1 text-primary"
+                                          onClick={(e) => { 
+                                            e.preventDefault(); 
+                                            // 1. Prepare dictionary sets for ultra-fast lookup
+                                            const dictTerms = new Set(words.map(w => w.term.toLowerCase()));
+                                            const dictVariants = new Set();
+                                            words.forEach(w => {
+                                              if (w.variants) w.variants.forEach(v => dictVariants.add(v.toLowerCase()));
+                                            });
+
+                                            // 2. Scan text words
+                                            const plainText = inlineEditingText.replace(/<[^>]*>/g, ' ');
+                                            const doc = nlp(plainText);
+                                            const textWords = doc.terms().json().map(t => t.text.toLowerCase().replace(/[.,!?;:]/g, ''));
+                                            const uniqueTextWords = [...new Set(textWords)];
+                                            
+                                            const foundWords = [];
+                                            uniqueTextWords.forEach(tw => {
+                                              if (!tw || tw.length < 2) return;
+                                              
+                                              // Check direct match
+                                              if (dictTerms.has(tw) || dictVariants.has(tw)) {
+                                                foundWords.push(tw);
+                                                return;
+                                              }
+                                              
+                                              // Check root match (NLP check only if direct fails)
+                                              const twDoc = nlp(tw);
+                                              const singular = twDoc.nouns().toSingular().text().toLowerCase();
+                                              const infinitive = twDoc.verbs().toInfinitive().text().toLowerCase();
+                                              
+                                              if (dictTerms.has(singular) || dictTerms.has(infinitive)) {
+                                                foundWords.push(tw);
+                                              }
+                                            });
+                                            
+                                            if (foundWords.length > 0) {
+                                              const newWords = [...new Set([...inlineEditingSelectedWords, ...foundWords])];
+                                              setInlineEditingSelectedWords(newWords);
+                                              
+                                              // Apply highlights to editor content
+                                              let newHtml = inlineEditingText;
+                                              newWords.forEach(word => {
+                                                const exists = words.some(w => w.term.toLowerCase() === word.toLowerCase());
+                                                const color = exists ? '#716619' : '#711919';
+                                                const escapedWord = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                                                const regex = new RegExp(`(?<!<[^>]*)\\b(${escapedWord})\\b(?![^<]*>)`, 'gi');
+                                                newHtml = newHtml.replace(regex, `<mark style="background-color: ${color}; color: white; padding: 0 2px; border-radius: 2px;">${word}</mark>`);
+                                              });
+                                              setInlineEditingText(newHtml);
+                                            }
+                                          }}
+                                        >
+                                          <i className="bi bi-search"></i> Metni Tara
+                                        </a>
+                                      )}
                                       {!note.wordId && (
                                         <a
                                           href="#!"
                                           className={`sticky-note-list-complete fw-semibold d-flex align-items-center gap-1 ${note.isCompleted ? 'text-secondary' : 'text-success'}`}
-                                          onClick={(e) => { e.preventDefault(); handleToggleNoteCompletion(note.id, note.isCompleted); }}
+                                          onClick={(e) => { 
+                                            e.preventDefault(); 
+                                            saveCurrentNote();
+                                            handleToggleNoteCompletion(note.id, note.isCompleted); 
+                                            setEditingNoteId(null);
+                                          }}
                                         >
                                           <i className={`bi ${note.isCompleted ? 'bi-arrow-counterclockwise' : 'bi-check2-circle'}`}></i>
                                           {note.isCompleted ? 'Geri Al' : 'Tamamlandı'}
