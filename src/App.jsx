@@ -270,6 +270,58 @@ function App() {
   const [authUser, setAuthUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [currentView, setCurrentView] = useState('home');
+
+  // --- View and Title Management (Routing) ---
+  const viewConfigs = useMemo(() => ({
+    home: { title: 'Sözlük | Ana Sayfa', path: '/' },
+    'add-word': { title: 'Sözlük | Kelime Ekle/Düzenle', path: '/add' },
+    'custom-lists': { title: 'Sözlük | Özel Listelerim', path: '/lists' },
+    'list-detail': { title: 'Sözlük | Liste Detayı', path: '/list-detail' },
+    practice: { title: 'Sözlük | Pratik Yap', path: '/practice' },
+    'practice-test': { title: 'Sözlük | Test Çöz', path: '/test' },
+    stats: { title: 'Sözlük | İstatistikler', path: '/stats' },
+    'sticky-notes': { title: 'Sözlük | Sticky Notlar', path: '/notes' },
+    history: { title: 'Sözlük | Geçmiş', path: '/history' },
+    'search-history': { title: 'Sözlük | Arama Geçmişi', path: '/search-history' },
+    'settings': { title: 'Sözlük | Ayarlar', path: '/settings' }
+  }), []);
+
+  // Main navigation function
+  const navigateTo = useCallback((view) => {
+    const config = viewConfigs[view] || viewConfigs.home;
+    document.title = config.title;
+    
+    // Update URL without reloading page
+    if (window.location.pathname !== config.path) {
+      window.history.pushState({ view }, config.title, config.path);
+    }
+    setCurrentView(view);
+  }, [viewConfigs]);
+
+  // Handle browser back/forward buttons
+  useEffect(() => {
+    const handlePopState = (event) => {
+      if (event.state && event.state.view) {
+        setCurrentView(event.state.view);
+        const config = viewConfigs[event.state.view] || viewConfigs.home;
+        document.title = config.title;
+      } else {
+        // Default to home if no state
+        setCurrentView('home');
+        document.title = viewConfigs.home.title;
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    
+    // Initial sync
+    const initialConfig = viewConfigs[currentView] || viewConfigs.home;
+    document.title = initialConfig.title;
+    window.history.replaceState({ view: currentView }, initialConfig.title, window.location.pathname);
+
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [viewConfigs]);
+
   const [words, setWords] = useState([]);
   const [practiceTests, setPracticeTests] = useState([]);
   const [stickyNotes, setStickyNotes] = useState([]);
@@ -292,6 +344,7 @@ function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [showDuplicates, setShowDuplicates] = useState(false);
   const [showSameRoots, setShowSameRoots] = useState(false);
+  const [showFamilyMatches, setShowFamilyMatches] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedWord, setSelectedWord] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -680,7 +733,7 @@ function App() {
   // Reset pagination when any filter/sort changes
   useEffect(() => {
     setVisibleCount(wordsPerPage);
-  }, [searchQuery, filters, sortRules, showDuplicates, showOnlyStarred, quickStatusFilter, wordsPerPage]);
+  }, [searchQuery, filters, sortRules, showDuplicates, showSameRoots, showFamilyMatches, showOnlyStarred, quickStatusFilter, wordsPerPage]);
 
   const [practiceOptions, setPracticeOptions] = useState(null);
 
@@ -1587,7 +1640,7 @@ function App() {
   };
 
   const closeModal = () => {
-    setCurrentView('home');
+    navigateTo('home');
     setTermText('');
     setSelectedDate(new Date().toISOString().split('T')[0]);
     setEditingWordId(null);
@@ -2087,9 +2140,49 @@ function App() {
     return resultIds;
   }, [words, showSameRoots]);
 
+  const familyMatchIds = useMemo(() => {
+    if (!showFamilyMatches) return new Set();
+    const resultIds = new Set();
+    
+    // 1. Create a set of all words that appear in any wordFamily entry
+    const allFamilyWords = new Set();
+    words.forEach(w => {
+      if (w.wordFamily && Array.isArray(w.wordFamily)) {
+        w.wordFamily.forEach(familyStr => {
+          // Extract word before any parenthesis or dash
+          const match = familyStr.match(/^([^(–-]+)/);
+          if (match) {
+            allFamilyWords.add(match[1].trim().toLowerCase());
+          }
+        });
+      }
+    });
+
+    // 2. Find words in dictionary that are also in someone's family
+    // AND the words that HAVE those family members (to see them side by side)
+    words.forEach(w => {
+      const isChildMatch = allFamilyWords.has(w.term.toLowerCase());
+      
+      let isParentMatch = false;
+      if (w.wordFamily && Array.isArray(w.wordFamily)) {
+        isParentMatch = w.wordFamily.some(familyStr => {
+          const match = familyStr.match(/^([^(–-]+)/);
+          return match && words.some(otherW => otherW.term.toLowerCase() === match[1].trim().toLowerCase());
+        });
+      }
+
+      if (isChildMatch || isParentMatch) {
+        resultIds.add(w.id);
+      }
+    });
+
+    return resultIds;
+  }, [words, showFamilyMatches]);
+
   let processedWords = words.filter(word => {
     if (showDuplicates && !duplicateIds.has(word.id)) return false;
     if (showSameRoots && !sameRootIds.has(word.id)) return false;
+    if (showFamilyMatches && !familyMatchIds.has(word.id)) return false;
 
     const searchMatch = word.term.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (word.shortMeanings && word.shortMeanings.toLowerCase().includes(searchQuery.toLowerCase())) ||
@@ -2135,12 +2228,20 @@ function App() {
     return true;
   });
 
-  if (showDuplicates || showSameRoots) {
+  if (showDuplicates || showSameRoots || showFamilyMatches) {
     processedWords.sort((a, b) => {
-      const aVal = a.term.toLowerCase();
-      const bVal = b.term.toLowerCase();
-      if (aVal < bVal) return -1;
-      if (aVal > bVal) return 1;
+      // Group by rootWord first to ensure relatives are side-by-side
+      const aKey = (a.rootWord || a.term).toLowerCase();
+      const bKey = (b.rootWord || b.term).toLowerCase();
+      
+      if (aKey < bKey) return -1;
+      if (aKey > bKey) return 1;
+      
+      // If roots are same, sort by term
+      const aTerm = a.term.toLowerCase();
+      const bTerm = b.term.toLowerCase();
+      if (aTerm < bTerm) return -1;
+      if (aTerm > bTerm) return 1;
       return 0;
     });
   } else if (sortRules.length > 0) {
@@ -2310,7 +2411,8 @@ function App() {
       })()}
       {currentView === 'home' && (
       <Container fluid className="main-app-container">
-            <Navbar className="glass-navbar border border-opacity-25 rounded-4 mb-4 px-2 px-md-4 py-2 py-md-3 shadow-sm d-flex flex-row align-items-center justify-content-between flex-nowrap bg-body-tertiary sticky-top" style={{ top: '10px', zIndex: 1020 }}>
+            <div className={`sticky-top pt-2 ${showFiltersCollapse || isSelectionMode ? 'bg-body shadow-sm pb-3' : 'pb-1'} px-1 transition-all`} style={{ zIndex: 1020, top: 0 }}>
+              <Navbar className="glass-navbar border border-opacity-25 rounded-4 mb-2 px-2 px-md-4 py-2 py-md-3 shadow-sm d-flex flex-row align-items-center justify-content-between flex-nowrap bg-body-tertiary" style={{ zIndex: 1021 }}>
               <Navbar.Brand className="d-flex align-items-center gap-2 m-0 p-0 h1 fs-4 fw-bold flex-shrink-0">
                 <img src="/iconv2.png" alt="Sözlük Logo" style={{ width: '36px', height: '36px', objectFit: 'contain' }} />
 
@@ -2322,14 +2424,20 @@ function App() {
                   <i
                     className={`bi bi-intersect ${showDuplicates ? 'text-primary' : 'text-muted'}`}
                     style={{ fontSize: '16px', cursor: 'pointer', transition: 'color 0.2s ease-in-out' }}
-                    onClick={(e) => { e.stopPropagation(); setShowDuplicates(!showDuplicates); if (!showDuplicates) setShowSameRoots(false); }}
+                    onClick={(e) => { e.stopPropagation(); setShowDuplicates(!showDuplicates); if (!showDuplicates) { setShowSameRoots(false); setShowFamilyMatches(false); } }}
                     title="Sadece Benzer/Aynı Kelimeleri Göster"
                   ></i>
                   <i
                     className={`bi bi-tree ${showSameRoots ? 'text-primary' : 'text-muted'}`}
                     style={{ fontSize: '16px', cursor: 'pointer', transition: 'color 0.2s ease-in-out' }}
-                    onClick={(e) => { e.stopPropagation(); setShowSameRoots(!showSameRoots); if (!showSameRoots) setShowDuplicates(false); }}
+                    onClick={(e) => { e.stopPropagation(); setShowSameRoots(!showSameRoots); if (!showSameRoots) { setShowDuplicates(false); setShowFamilyMatches(false); } }}
                     title="Aynı Köke Sahip Kelimeleri Göster"
+                  ></i>
+                  <i
+                    className={`bi bi-people ${showFamilyMatches ? 'text-primary' : 'text-muted'}`}
+                    style={{ fontSize: '16px', cursor: 'pointer', transition: 'color 0.2s ease-in-out' }}
+                    onClick={(e) => { e.stopPropagation(); setShowFamilyMatches(!showFamilyMatches); if (!showFamilyMatches) { setShowDuplicates(false); setShowSameRoots(false); } }}
+                    title="Hem Kelime Olarak Ekli Hem De Başka Bir Kelimenin Ailesinde Olanları Göster"
                   ></i>
                 </InputGroup.Text>
                 <Form.Control
@@ -2368,18 +2476,18 @@ function App() {
                 <Button variant="info" className="rounded-pill d-flex align-items-center justify-content-center gap-2 px-3 fw-bold shadow-sm text-dark text-nowrap" style={{ backgroundColor: '#4fd1c5', border: 'none', height: '40px' }} onClick={() => {
                   setDirectPracticeConfig(null);
                   setDirectPracticeWords(null);
-                  setCurrentView('practice-test');
+                  navigateTo('practice-test');
                 }}>
                   <i className="bi bi-controller" style={{ fontSize: '20px' }}></i> <span className="d-none d-lg-inline">Test Çöz</span>
                 </Button>
-                <Button variant="primary" className="rounded-pill d-flex align-items-center justify-content-center gap-2 px-3 fw-semibold shadow-sm text-nowrap" style={{ minWidth: '40px', height: '40px' }} onClick={() => setCurrentView('add-word')}>
+                <Button variant="primary" className="rounded-pill d-flex align-items-center justify-content-center gap-2 px-3 fw-semibold shadow-sm text-nowrap" style={{ minWidth: '40px', height: '40px' }} onClick={() => navigateTo('add-word')}>
                   <i className="bi bi-plus-lg" style={{ fontSize: '20px' }}></i> <span className="d-none d-lg-inline">Yeni Kelime</span>
                 </Button>
                 <Button
                   variant="outline-secondary"
                   className="rounded-circle d-flex align-items-center justify-content-center border-0 bg-body-secondary position-relative"
                   style={{ width: '40px', height: '40px', minWidth: '40px' }}
-                  onClick={() => setCurrentView('custom-lists')}
+                  onClick={() => navigateTo('custom-lists')}
                   title="Özel Listelerim"
                 >
                   <i className="bi bi-collection-play-fill" style={{ fontSize: '18px', color: '#3b82f6' }}></i>
@@ -2400,7 +2508,7 @@ function App() {
                   variant="outline-secondary"
                   className="rounded-circle d-flex align-items-center justify-content-center border-0 bg-body-secondary position-relative"
                   style={{ width: '40px', height: '40px', minWidth: '40px' }}
-                  onClick={() => setCurrentView('sticky-notes')}
+                  onClick={() => navigateTo('sticky-notes')}
                   title="Sticky Notlarım"
                 >
                   <i className="bi bi-pin-angle-fill" style={{ fontSize: '18px', color: '#f59e0b' }}></i>
@@ -2417,183 +2525,148 @@ function App() {
                     </span>
                   )}
                 </Button>
-                <Button variant="outline-secondary" className="rounded-circle d-flex align-items-center justify-content-center border-0 bg-body-secondary text-body" style={{ width: '40px', height: '40px', minWidth: '40px' }} onClick={() => setCurrentView('settings')} title="Ayarlar">
+                <Button variant="outline-secondary" className="rounded-circle d-flex align-items-center justify-content-center border-0 bg-body-secondary text-body" style={{ width: '40px', height: '40px', minWidth: '40px' }} onClick={() => navigateTo('settings')} title="Ayarlar">
                   <i className="bi bi-gear-fill" style={{ fontSize: '20px' }}></i>
                 </Button>
               </div>
             </Navbar>
 
 
-                <div className="mb-4 px-2">
-                {/* Mobile View: Selection Tools (Filters removed from here) */}
-                <div className="d-flex justify-content-end align-items-center mb-2 d-md-none">
-                  {isSelectionMode && (
-                    <div className="d-flex gap-2 align-items-center bg-primary bg-opacity-10 px-3 py-1 rounded-pill border border-primary border-opacity-25 animated fadeIn">
-                      <Form.Check
-                        type="checkbox"
-                        id="select-all-mobile"
-                        label={<span className="fw-medium small d-none d-sm-inline">Tümünü Seç</span>}
-                        onChange={handleSelectAll}
-                        checked={filteredWords.length > 0 && selectedWords.length === filteredWords.length}
-                        className="me-2"
-                      />
-                      <span className="fw-bold text-primary small me-2">{selectedWords.length} <span className="d-none d-sm-inline">Seçili</span></span>
-                      <Button variant="primary" size="sm" className="rounded-pill px-3" disabled={selectedWords.length === 0} onClick={() => setShowBulkEditModal(true)}>
-                        İşlem Yap
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              </div>
-
               <Collapse in={showFiltersCollapse}>
                 <div className="w-100">
-                  <div className="d-flex flex-wrap gap-2 mt-2">
-                    <div className="d-flex gap-2">
-                      <ButtonGroup size="sm" className="shadow-sm rounded-pill w-auto">
+                  <div className="row g-2 mt-1 mx-0">
+                    <div className="col-12 mb-1">
+                      <ButtonGroup size="sm" className="shadow-sm rounded-pill w-100">
                         <Button
                           variant={viewMode === 'grid' ? 'primary' : 'outline-primary'}
-                          className={`rounded-start-pill py-2 px-3 ${viewMode === 'grid' ? '' : 'bg-body'}`}
+                          className={`rounded-start-pill py-2 px-3 flex-grow-1 ${viewMode === 'grid' ? '' : 'bg-body'}`}
                           onClick={() => setViewMode('grid')}
                         >
-                          <i className="bi bi-grid-3x3-gap-fill me-2"></i>Klasik Tasarım
+                          <i className="bi bi-grid-3x3-gap-fill me-2"></i>Klasik
                         </Button>
                         <Button
                           variant={viewMode === 'detailed' ? 'primary' : 'outline-primary'}
-                          className={`rounded-end-pill py-2 px-3 ${viewMode === 'detailed' ? '' : 'bg-body'}`}
+                          className={`rounded-end-pill py-2 px-3 flex-grow-1 ${viewMode === 'detailed' ? '' : 'bg-body'}`}
                           onClick={() => setViewMode('detailed')}
                         >
-                          <i className="bi bi-view-list me-2"></i>Detaylı Tasarım
+                          <i className="bi bi-view-list me-2"></i>Detaylı
                         </Button>
                       </ButtonGroup>
                     </div>
 
-                    <Button variant="outline-primary" size="sm" className="rounded-pill px-3 py-2 shadow-sm bg-body fw-medium d-flex align-items-center gap-2 w-auto" onClick={() => setShowFilterModal(true)}>
-                      <div className="d-flex align-items-center gap-2">
+                    <div className="col-6 col-md-auto">
+                      <Button variant="outline-primary" size="sm" className="rounded-pill px-3 py-2 shadow-sm bg-body fw-medium d-flex align-items-center justify-content-center gap-2 w-100" onClick={() => setShowFilterModal(true)}>
                         <i className="bi bi-funnel-fill"></i>
                         <span>Filtrele</span>
-                      </div>
-                      <div className="d-flex align-items-center gap-2">
-                        <Badge bg="primary" className="rounded-pill fw-bold">{filteredWords.length}</Badge>
-                        {(Object.values(filters.status).some(x => x) || Object.values(filters.starred).some(x => x) || filters.startDate || filters.endDate) && (
-                          <span
-                            className="text-danger fw-bold"
-                            style={{ cursor: 'pointer', fontSize: '14px', lineHeight: 1 }}
-                            title="Filtreyi Sıfırla"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setFilters({ status: { Yeni: false, Öğreniyor: false, Öğrendi: false }, starred: { starred: false, unstarred: false }, startDate: '', endDate: '', listId: '' });
-                            }}
-                          >
-                            <i className="bi bi-x-circle-fill"></i>
-                          </span>
-                        )}
-                      </div>
-                    </Button>
+                        <Badge bg="primary" className="rounded-pill fw-bold ms-1">{filteredWords.length}</Badge>
+                      </Button>
+                    </div>
 
-                    <Button variant="outline-primary" size="sm" className="rounded-pill px-3 py-2 shadow-sm bg-body fw-medium d-flex align-items-center gap-2 w-auto" onClick={() => setShowSortModal(true)}>
-                      <div className="d-flex align-items-center gap-2"><i className="bi bi-sort-down"></i> Sırala</div>
-                      {sortRules.length > 0 && <Badge bg="primary" className="rounded-pill">{sortRules.length}</Badge>}
-                    </Button>
+                    <div className="col-6 col-md-auto">
+                      <Button variant="outline-primary" size="sm" className="rounded-pill px-3 py-2 shadow-sm bg-body fw-medium d-flex align-items-center justify-content-center gap-2 w-100" onClick={() => setShowSortModal(true)}>
+                        <i className="bi bi-sort-down"></i>
+                        <span>Sırala</span>
+                        {sortRules.length > 0 && <Badge bg="primary" className="rounded-pill ms-1">{sortRules.length}</Badge>}
+                      </Button>
+                    </div>
 
-                    <Dropdown onSelect={id => setFilters({ ...filters, listId: id })} className="w-auto">
-                      <Dropdown.Toggle 
-                        variant={filters.listId ? "primary" : "outline-primary"} 
-                        size="sm" 
-                        className="rounded-pill px-3 py-2 shadow-sm bg-body fw-medium d-flex align-items-center gap-2 dropdown-toggle-no-caret w-auto"
-                        id="quick-list-dropdown-mobile"
+                    <div className="col-12 col-md-auto">
+                      <Dropdown onSelect={id => setFilters({ ...filters, listId: id })} className="w-100">
+                        <Dropdown.Toggle 
+                          variant={filters.listId ? "primary" : "outline-primary"} 
+                          size="sm" 
+                          className="rounded-pill px-3 py-2 shadow-sm bg-body fw-medium d-flex align-items-center justify-content-between dropdown-toggle-no-caret w-100"
+                          id="quick-list-dropdown-mobile"
+                        >
+                          <div className="d-flex align-items-center gap-2">
+                            <i className="bi bi-collection-play-fill text-primary"></i>
+                            <span className="text-truncate" style={{ maxWidth: '120px' }}>{
+                              filters.listId === 'all_listed' ? 'Tüm Listeler' :
+                              filters.listId ? customLists.find(l => l.id === filters.listId)?.name : 
+                              'Listeler'
+                            }</span>
+                          </div>
+                          <i className="bi bi-chevron-down small opacity-50"></i>
+                        </Dropdown.Toggle>
+                        <Dropdown.Menu className="w-100 shadow-lg border-0 rounded-4 mt-2 overflow-hidden">
+                          <Dropdown.Item eventKey="" active={!filters.listId} className="py-3">
+                            <i className="bi bi-grid-fill me-2 opacity-50"></i> Tüm Sözlük
+                          </Dropdown.Item>
+                          <Dropdown.Item eventKey="all_listed" active={filters.listId === 'all_listed'} className="py-3 d-flex justify-content-between align-items-center">
+                            <div><i className="bi bi-collection-play-fill me-2 text-primary"></i> Tüm Listelerim</div>
+                          </Dropdown.Item>
+                          {customLists.length > 0 && <Dropdown.Divider className="m-0 border-opacity-10" />}
+                          <div style={{ maxHeight: '250px', overflowY: 'auto' }}>
+                            {customLists.map(list => (
+                              <Dropdown.Item key={list.id} eventKey={list.id} active={filters.listId === list.id} className="py-3">
+                                {list.name}
+                              </Dropdown.Item>
+                            ))}
+                          </div>
+                        </Dropdown.Menu>
+                      </Dropdown>
+                    </div>
+
+                    <div className="col-6 col-md-auto">
+                      <Button variant={isSelectionMode ? "primary" : "outline-secondary"} size="sm" className="rounded-pill px-3 py-2 shadow-sm fw-medium d-flex align-items-center justify-content-center gap-2 w-100" onClick={() => { setIsSelectionMode(!isSelectionMode); setSelectedWords([]); }}>
+                        <i className="bi bi-check2-square"></i>
+                        <span>{isSelectionMode ? 'İptal' : 'Seç'}</span>
+                      </Button>
+                    </div>
+
+                    <div className="col-6 col-md-auto">
+                      <Button
+                        variant={showOnlyStarred ? "warning" : "outline-warning"}
+                        size="sm"
+                        className="rounded-pill px-3 py-2 shadow-sm fw-medium d-flex align-items-center justify-content-center gap-2 w-100"
+                        onClick={() => setShowOnlyStarred(!showOnlyStarred)}
                       >
-                        <div className="d-flex align-items-center gap-2">
-                          <i className="bi bi-collection-play-fill text-primary"></i>
-                          <span>{
-                            filters.listId === 'all_listed' ? 'Tüm Listelerim' :
-                            filters.listId ? customLists.find(l => l.id === filters.listId)?.name : 
-                            'Listeye Göre Filtrele'
-                          }</span>
-                        </div>
-                        <i className="bi bi-chevron-down small opacity-50"></i>
-                      </Dropdown.Toggle>
+                        <i className={`bi ${showOnlyStarred ? 'bi-star-fill' : 'bi-star'}`}></i>
+                        <span>Yıldızlılar</span>
+                      </Button>
+                    </div>
 
-                      <Dropdown.Menu className="w-100 shadow-lg border-0 rounded-4 mt-2 overflow-hidden">
-                        <Dropdown.Item eventKey="" active={!filters.listId} className="py-3">
-                          <i className="bi bi-grid-fill me-2 opacity-50"></i> Tüm Sözlük
-                        </Dropdown.Item>
-                        <Dropdown.Item eventKey="all_listed" active={filters.listId === 'all_listed'} className="py-3 d-flex justify-content-between align-items-center">
-                          <div><i className="bi bi-collection-play-fill me-2 text-primary"></i> Tüm Listelerim</div>
-                          <Badge bg="primary" className="rounded-pill">
-                            {new Set(customLists.flatMap(l => l.wordIds || [])).size}
-                          </Badge>
-                        </Dropdown.Item>
-                        {customLists.length > 0 && <Dropdown.Divider className="m-0 border-opacity-10" />}
-                        <div style={{ maxHeight: '250px', overflowY: 'auto' }}>
-                          {[...customLists].sort((a, b) => {
-                            const orderA = a.order ?? Number.MAX_SAFE_INTEGER;
-                            const orderB = b.order ?? Number.MAX_SAFE_INTEGER;
-                            if (orderA !== orderB) return orderA - orderB;
-                            return new Date(b.createdAt) - new Date(a.createdAt);
-                          }).map(list => (
-                            <Dropdown.Item key={list.id} eventKey={list.id} active={filters.listId === list.id} className="py-3 d-flex justify-content-between align-items-center">
-                              <span>{list.name}</span>
-                              <Badge bg="secondary" className="rounded-pill opacity-50">{list.wordIds?.length || 0}</Badge>
-                            </Dropdown.Item>
-                          ))}
-                        </div>
-                      </Dropdown.Menu>
-                    </Dropdown>
-
-                    <Button variant={isSelectionMode ? "primary" : "outline-secondary"} size="sm" className="rounded-pill px-3 py-2 shadow-sm fw-medium d-flex align-items-center gap-2 w-auto" onClick={() => { setIsSelectionMode(!isSelectionMode); setSelectedWords([]); }}>
-                      <div className="d-flex align-items-center gap-2"><i className="bi bi-check2-square"></i> Seç</div>
-                    </Button>
-
-                    <Button
-                      variant={showOnlyStarred ? "warning" : "outline-warning"}
-                      size="sm"
-                      className="rounded-pill px-3 py-2 shadow-sm fw-medium d-flex align-items-center gap-2 w-auto"
-                      onClick={() => setShowOnlyStarred(!showOnlyStarred)}
-                      title="Sadece Yıldızlıları Göster"
-                    >
-                      <div className="d-flex align-items-center gap-2"><i className={`bi ${showOnlyStarred ? 'bi-star-fill' : 'bi-star'}`}></i> Sadece Yıldızlılar</div>
-                      <Badge bg={showOnlyStarred ? 'light' : 'warning'} text={showOnlyStarred ? 'warning' : 'white'} className="rounded-pill fw-bold">{words.filter(w => w.isStarred).length}</Badge>
-                    </Button>
-
-                    {/* Quick Status Filters */}
+                    {/* Quick Status Filters - 2 columns on mobile */}
                     {[['Yeni', 'primary'], ['Öğreniyor', 'warning'], ['Öğrendi', 'success']].map(([status, color]) => {
-                      const count = words.filter(w => w.learningStatus === status).length;
                       const isActive = quickStatusFilter === status;
                       return (
-                        <Button
-                          key={status}
-                          variant={isActive ? color : `outline-${color}`}
-                          size="sm"
-                          className="rounded-pill px-3 py-2 shadow-sm fw-medium d-flex align-items-center gap-2 w-auto"
-                          onClick={() => setQuickStatusFilter(isActive ? '' : status)}
-                          title={`${status} kelimeler`}
-                        >
-                          <span className="small">{status}</span>
-                          <Badge bg={isActive ? 'light' : color} text={isActive ? color : 'white'} className="rounded-pill fw-bold">{count}</Badge>
-                        </Button>
+                        <div key={status} className="col-6 col-md-auto">
+                          <Button
+                            variant={isActive ? color : `outline-${color}`}
+                            size="sm"
+                            className="rounded-pill px-3 py-2 shadow-sm fw-medium d-flex align-items-center justify-content-center gap-2 w-100"
+                            onClick={() => setQuickStatusFilter(isActive ? '' : status)}
+                          >
+                            <span className="small">{status}</span>
+                            <Badge bg={isActive ? 'light' : color} text={isActive ? color : 'white'} className="rounded-pill fw-bold">{words.filter(w => w.learningStatus === status).length}</Badge>
+                          </Button>
+                        </div>
                       );
                     })}
-
-                    {isSelectionMode && (
-                      <div className="d-none d-md-flex gap-2 align-items-center bg-primary bg-opacity-10 px-3 py-1 rounded-pill border border-primary border-opacity-25 animated fadeIn text-nowrap ms-auto">
-                        <Form.Check
-                          type="checkbox"
-                          id="select-all-desktop"
-                          label={<span className="fw-medium small d-none d-lg-inline">Tümünü Seç</span>}
-                          onChange={handleSelectAll}
-                          checked={filteredWords.length > 0 && selectedWords.length === filteredWords.length}
-                          className="me-2"
-                        />
-                        <span className="fw-bold text-primary small me-2">{selectedWords.length} <span className="d-none d-lg-inline">Seçili</span></span>
-                        <Button variant="primary" size="sm" className="rounded-pill px-3" disabled={selectedWords.length === 0} onClick={() => setShowBulkEditModal(true)}>
-                          İşlem Yap
-                        </Button>
-                      </div>
-                    )}
                   </div>
                 </div>
               </Collapse>
+
+              {/* Bulk Action Bar - Now below filters and sticky */}
+              {isSelectionMode && (
+                <div className="mt-2 px-1 animated fadeIn">
+                  <div className="d-flex align-items-center justify-content-between bg-primary bg-opacity-10 px-3 py-2 rounded-4 border border-primary border-opacity-25 shadow-sm">
+                    <div className="d-flex align-items-center gap-2">
+                      <Form.Check
+                        type="checkbox"
+                        id="select-all-main"
+                        onChange={handleSelectAll}
+                        checked={filteredWords.length > 0 && selectedWords.length === filteredWords.length}
+                      />
+                      <span className="fw-bold text-primary small">{selectedWords.length} Seçili</span>
+                    </div>
+                    <Button variant="primary" size="sm" className="rounded-pill px-4 fw-bold" disabled={selectedWords.length === 0} onClick={() => setShowBulkEditModal(true)}>
+                      İşlem Yap
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
 
 
               <main>
@@ -2774,7 +2847,7 @@ function App() {
                               {highlightText(
                                 word.shortMeanings,
                                 stickyNotes.filter(n => n.wordId === word.id).map(n => n.text),
-                                () => setCurrentView('sticky-notes')
+                                () => navigateTo('sticky-notes')
                               )}
                             </Card.Text>
                           )}
@@ -2785,7 +2858,7 @@ function App() {
                               {highlightText(
                                 word.generalDefinition,
                                 stickyNotes.filter(n => n.wordId === word.id).map(n => n.text),
-                                () => setCurrentView('sticky-notes')
+                                () => navigateTo('sticky-notes')
                               )}
                             </Card.Text>
                           )}
@@ -2795,7 +2868,7 @@ function App() {
                               <strong className="small text-body opacity-75 d-block mb-1">Anlamları ve Örnek Cümleler:</strong>
                               {word.meanings.map((meaning, mIdx) => {
                                 const hl = stickyNotes.filter(n => n.wordId === word.id).map(n => n.text);
-                                const openNotes = () => setCurrentView('sticky-notes');
+                                const openNotes = () => navigateTo('sticky-notes');
                                 return (
                                   <div key={mIdx} className="mb-2 ps-2 border-start border-2 border-primary border-opacity-25">
                                     <div className="small fw-medium text-body d-flex align-items-start gap-1">
@@ -2866,7 +2939,7 @@ function App() {
                                         {highlightText(
                                           g,
                                           stickyNotes.filter(n => n.wordId === word.id).map(n => n.text),
-                                          () => setCurrentView('sticky-notes')
+                                          () => navigateTo('sticky-notes')
                                         )}
                                       </span>
                                     </li>
@@ -2900,14 +2973,14 @@ function App() {
                                           {highlightText(
                                             parts[0]?.trim(),
                                             stickyNotes.filter(n => n.wordId === word.id).map(n => n.text),
-                                            () => setCurrentView('sticky-notes')
+                                            () => navigateTo('sticky-notes')
                                           )}
                                         </span>
                                         {parts[1] && (
                                           <span className="ms-1 fst-italic">— {highlightText(
                                             parts[1].trim(),
                                             stickyNotes.filter(n => n.wordId === word.id).map(n => n.text),
-                                            () => setCurrentView('sticky-notes')
+                                            () => navigateTo('sticky-notes')
                                           )}</span>
                                         )}
                                       </div>
@@ -3155,7 +3228,7 @@ function App() {
           handleSubmit={handleSubmit}
           editingWordId={editingWordId}
           theme={theme}
-          setCurrentView={setCurrentView}
+          navigateTo={navigateTo}
           closeModal={closeModal}
           onWordClick={setSelectedWord}
           dailyStats={dailyStats}
@@ -3188,7 +3261,7 @@ function App() {
           handleAddWordsToDictionary={handleAddWordsToDictionary}
           onWordClick={setSelectedWord}
           theme={theme}
-          setCurrentView={setCurrentView}
+          navigateTo={navigateTo}
           dailyStats={dailyStats}
           words={words}
         />
@@ -3203,7 +3276,7 @@ function App() {
           setViewMode={setViewMode}
           wordsPerPage={wordsPerPage}
           setWordsPerPage={setWordsPerPage}
-          setCurrentView={setCurrentView}
+          navigateTo={navigateTo}
           dailyStats={dailyStats}
           authUser={authUser}
           onLogout={handleLogout}
@@ -3219,7 +3292,7 @@ function App() {
           handleUpdateList={handleUpdateList}
           handleDeleteList={handleDeleteList}
           handleMoveList={handleMoveList}
-          setCurrentView={setCurrentView}
+          navigateTo={navigateTo}
           setCurrentListId={setCurrentListId}
           dailyStats={dailyStats}
         />
@@ -3232,7 +3305,7 @@ function App() {
           customLists={customLists}
           words={words}
           handleRemoveWordFromList={handleRemoveWordFromList}
-          setCurrentView={setCurrentView}
+          navigateTo={navigateTo}
           onWordClick={setSelectedWord}
           handleSpeak={handleSpeak}
           dailyStats={dailyStats}
@@ -3245,7 +3318,7 @@ function App() {
         <div className="mobile-bottom-nav d-md-none">
           <button
             className={`mobile-nav-item ${currentView === 'home' ? 'active' : ''}`}
-            onClick={() => setCurrentView('home')}
+            onClick={() => navigateTo('home')}
           >
             <i className={currentView === 'home' ? "bi bi-house-door-fill text-primary" : "bi bi-house-door"}></i>
             <span className={currentView === 'home' ? "text-primary fw-bold" : ""}>Ana Sayfa</span>
@@ -3254,7 +3327,7 @@ function App() {
 
           <button 
             className={`mobile-nav-item position-relative ${currentView === 'sticky-notes' ? 'active' : ''}`} 
-            onClick={() => setCurrentView('sticky-notes')}
+            onClick={() => navigateTo('sticky-notes')}
           >
             <i className={currentView === 'sticky-notes' ? "bi bi-pin-angle-fill text-primary" : "bi bi-pin-angle"} style={{ color: currentView === 'sticky-notes' ? '' : '#f59e0b' }}></i>
             <span className={currentView === 'sticky-notes' ? "text-primary fw-bold" : ""}>Notlarım</span>
@@ -3277,7 +3350,7 @@ function App() {
             onClick={() => {
               setDirectPracticeConfig(null);
               setDirectPracticeWords(null);
-              setCurrentView('practice-test');
+              navigateTo('practice-test');
             }}
           >
             <i className="bi bi-controller"></i>
@@ -3285,7 +3358,7 @@ function App() {
 
           <button 
             className={`mobile-nav-item position-relative ${currentView === 'custom-lists' || currentView === 'list-detail' ? 'active' : ''}`} 
-            onClick={() => setCurrentView('custom-lists')}
+            onClick={() => navigateTo('custom-lists')}
           >
             <i className={currentView === 'custom-lists' || currentView === 'list-detail' ? "bi bi-collection-play-fill text-primary" : "bi bi-collection-play"} style={{ color: (currentView === 'custom-lists' || currentView === 'list-detail') ? '' : '#3b82f6' }}></i>
             <span className={currentView === 'custom-lists' || currentView === 'list-detail' ? "text-primary fw-bold" : ""}>Listelerim</span>
@@ -3305,7 +3378,7 @@ function App() {
 
           <button 
             className={`mobile-nav-item ${currentView === 'settings' ? 'active' : ''}`} 
-            onClick={() => setCurrentView('settings')}
+            onClick={() => navigateTo('settings')}
           >
             <i className={currentView === 'settings' ? "bi bi-gear-fill text-primary" : "bi bi-gear"}></i>
             <span className={currentView === 'settings' ? "text-primary fw-bold" : ""}>Ayarlar</span>

@@ -4,7 +4,7 @@ import { Container, Row, Col, Card, Button } from 'react-bootstrap';
 import PageHeader from '../layout/PageHeader';
 import Swal from 'sweetalert2';
 
-const SettingsPage = ({ theme, setTheme, viewMode, setViewMode, wordsPerPage, setWordsPerPage, setCurrentView, dailyStats, authUser, onLogout, onFixRoots }) => {
+const SettingsPage = ({ theme, setTheme, viewMode, setViewMode, wordsPerPage, setWordsPerPage, navigateTo, dailyStats, authUser, onLogout, onFixRoots }) => {
   const [isFixingRoots, setIsFixingRoots] = React.useState(false);
   const [fixProgress, setFixProgress] = React.useState(0);
 
@@ -78,7 +78,7 @@ const SettingsPage = ({ theme, setTheme, viewMode, setViewMode, wordsPerPage, se
         }
         await Swal.fire({
           title: 'Başarılı!',
-          text: 'Önbellek temizlendi. Uygulama v2.1.2 olarak yenilenecek.',
+          text: 'Önbellek temizlendi. Uygulama v2.1.3 olarak yenilenecek.',
           icon: 'success',
           timer: 1500,
           showConfirmButton: false,
@@ -104,7 +104,7 @@ const SettingsPage = ({ theme, setTheme, viewMode, setViewMode, wordsPerPage, se
       <PageHeader
         title="Ayarlar"
         icon="bi-gear-fill"
-        onBack={() => setCurrentView('home')}
+        onBack={() => navigateTo('home')}
         dailyStats={dailyStats}
       />
       <Container className="py-4 px-2 px-md-4" style={{ maxWidth: "100%", overflowX: "hidden" }}>
@@ -147,16 +147,16 @@ const SettingsPage = ({ theme, setTheme, viewMode, setViewMode, wordsPerPage, se
                   <i className="bi bi-palette-fill"></i>
                   Kişiselleştirme
                 </h5>
-                <div className="d-flex align-items-center justify-content-between mb-4 border-bottom border-opacity-10 pb-4">
+                <div className="d-flex flex-column flex-md-row align-items-md-center justify-content-between mb-4 border-bottom border-opacity-10 pb-4 gap-3">
                   <div>
                     <h6 className="fw-semibold mb-1">Tema Seçimi</h6>
                     <p className="text-muted small mb-0">Uygulamanın genel renk temasını değiştirin.</p>
                   </div>
-                  <div className="d-flex gap-2">
+                  <div className="d-flex gap-2 w-100 w-md-auto">
                     {['light', 'dark', 'system'].map(t => (
                       <button
                         key={t}
-                        className={`btn btn-sm rounded-pill px-3 transition-all ${theme === t ? 'btn-primary shadow-sm' : 'btn-outline-secondary border-opacity-25'}`}
+                        className={`btn btn-sm rounded-pill px-3 transition-all flex-grow-1 flex-md-grow-0 ${theme === t ? 'btn-primary shadow-sm' : 'btn-outline-secondary border-opacity-25'}`}
                         onClick={() => setTheme(t)}
                       >
                         <i className={`bi bi-${t === 'light' ? 'sun' : t === 'dark' ? 'moon' : 'laptop'}-fill me-1`}></i> {t.charAt(0).toUpperCase() + t.slice(1)}
@@ -164,16 +164,16 @@ const SettingsPage = ({ theme, setTheme, viewMode, setViewMode, wordsPerPage, se
                     ))}
                   </div>
                 </div>
-                <div className="d-flex align-items-center justify-content-between mt-4">
+                <div className="d-flex flex-column flex-md-row align-items-md-center justify-content-between mt-4 gap-3">
                   <div>
                     <h6 className="fw-semibold mb-1">Sayfa Başına Kelime</h6>
                     <p className="text-muted small mb-0">Ana sayfada tek seferde kaç kelime yükleneceğini belirleyin.</p>
                   </div>
-                  <div className="d-flex gap-2">
+                  <div className="d-flex gap-2 w-100 w-md-auto flex-wrap">
                     {[20, 50, 100, 200].map(count => (
                       <button
                         key={count}
-                        className={`btn btn-sm rounded-pill px-3 transition-all ${wordsPerPage === count ? 'btn-primary shadow-sm' : 'btn-outline-secondary border-opacity-25'}`}
+                        className={`btn btn-sm rounded-pill px-3 transition-all flex-grow-1 flex-md-grow-0 ${wordsPerPage === count ? 'btn-primary shadow-sm' : 'btn-outline-secondary border-opacity-25'}`}
                         onClick={() => setWordsPerPage(count)}
                       >
                         {count}
@@ -196,7 +196,7 @@ const SettingsPage = ({ theme, setTheme, viewMode, setViewMode, wordsPerPage, se
                   <h5 className="fw-bold mb-1">Sözlük Projesi</h5>
                   <p className="text-muted small mb-2 flex-grow-1">Bireysel Kelime Öğrenme Asistanı</p>
                   <div className="d-flex flex-column gap-2 align-items-center">
-                    <div className="badge bg-primary bg-opacity-10 text-primary px-3 py-2 rounded-pill">Sürüm v2.1.2</div>
+                    <div className="badge bg-primary bg-opacity-10 text-primary px-3 py-2 rounded-pill">Sürüm v2.1.3</div>
                     <div className="text-success small fw-medium">
                       <i className="bi bi-cloud-check-fill me-1"></i> Multi-Device Sync Aktif
                     </div>
@@ -212,22 +212,22 @@ const SettingsPage = ({ theme, setTheme, viewMode, setViewMode, wordsPerPage, se
                   <i className="bi bi-tools"></i>
                   Sistem ve Bakım
                 </h5>
-                <div className="d-flex align-items-center justify-content-between mb-4 border-bottom border-opacity-10 pb-4">
+                <div className="d-flex flex-column flex-md-row align-items-md-center justify-content-between mb-4 border-bottom border-opacity-10 pb-4 gap-3">
                   <div>
                     <h6 className="fw-semibold mb-1">Uygulama Önbelleği</h6>
                     <p className="text-muted small mb-0">Eğer uygulama güncellenmiyorsa önbelleği temizlemeyi deneyin.</p>
                   </div>
-                  <Button variant="outline-danger" className="rounded-3 px-3 py-2 d-flex align-items-center gap-2" onClick={handleClearCache}>
+                  <Button variant="outline-danger" className="rounded-3 px-3 py-2 d-flex align-items-center justify-content-center gap-2 w-100 w-md-auto" onClick={handleClearCache}>
                     <i className="bi bi-trash3-fill"></i>
                     <span>Temizle</span>
                   </Button>
                 </div>
-                <div className="d-flex align-items-center justify-content-between">
+                <div className="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3">
                   <div>
                     <h6 className="fw-semibold mb-1">Kelime Köklerini Onar</h6>
                     <p className="text-muted small mb-0">Eski kelimelerin kök bilgilerini otomatik olarak hesapla ve güncelle.</p>
                   </div>
-                  <div className="position-relative" style={{ minWidth: '140px' }}>
+                  <div className="position-relative w-100 w-md-auto" style={{ minWidth: '140px' }}>
                     <Button 
                       variant={isFixingRoots ? "primary" : "outline-primary"}
                       className={`rounded-3 px-3 py-2 d-flex align-items-center justify-content-center gap-2 w-100 transition-all position-relative overflow-hidden ${isFixingRoots ? 'border-0' : ''}`}

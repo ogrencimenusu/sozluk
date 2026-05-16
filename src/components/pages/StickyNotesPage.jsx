@@ -4,7 +4,7 @@ import DOMPurify from 'dompurify';
 import nlp from 'compromise';
 import PageHeader from '../layout/PageHeader';
 
-const RichTextEditor = ({ value, onChange, placeholder, className, onBlur, onAddWord, highlightTags }) => {
+const RichTextEditor = React.memo(({ value, onChange, placeholder, className, onBlur, onAddWord, highlightTags, words, getWordStatus }) => {
   const editorRef = useRef(null);
   const [tooltip, setTooltip] = useState(null); // { x, y, text }
 
@@ -34,28 +34,6 @@ const RichTextEditor = ({ value, onChange, placeholder, className, onBlur, onAdd
     document.addEventListener('selectionchange', handleSelection);
     return () => document.removeEventListener('selectionchange', handleSelection);
   }, [handleSelection]);
-
-  // Function to apply highlights to editor content without losing cursor
-  const applyHighlights = useCallback((html, tags) => {
-    if (!tags || tags.length === 0 || !html) return html;
-    
-    // Simple way to highlight without complex range saving:
-    // Only apply if the HTML doesn't already have marks for these tags
-    // This is a basic implementation. For full cursor preservation, 
-    // more complex logic would be needed.
-    let newHtml = html;
-    tags.forEach(tag => {
-      const exists = words.some(w => w.term.toLowerCase() === tag.toLowerCase());
-      const color = exists ? '#716619' : '#711919';
-      const escapedTag = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const regex = new RegExp(`(?<!<[^>]*)\\b(${escapedTag})\\b(?![^<]*>)`, 'gi');
-      // Replace with mark if not already wrapped
-      newHtml = newHtml.replace(regex, (match) => {
-        return `<mark style="background-color: ${color}; color: white; padding: 0 2px; border-radius: 2px;">${match}</mark>`;
-      });
-    });
-    return newHtml;
-  }, []);
 
   // Update editor content only if it's different from the value prop
   useEffect(() => {
@@ -154,7 +132,408 @@ const RichTextEditor = ({ value, onChange, placeholder, className, onBlur, onAdd
       )}
     </div>
   );
-};
+});
+
+// NEW: Memoized Note Item for high performance list rendering
+const NoteItem = React.memo(({ 
+    note, 
+    editingNoteId, 
+    setEditingNoteId,
+    setInlineEditingText,
+    setInlineEditingTitle,
+    setInlineEditingSelectedWords,
+    expandedManualNotes,
+    setExpandedManualNotes,
+    searchQuery,
+    renderHighlightedText,
+    highlightWordsInHtml,
+    getWordStatus,
+    handleWordClickInternal,
+    handleToggleNoteCompletion,
+    handleDeleteNote,
+    saveCurrentNote,
+    justUpdatedNoteId,
+    theme,
+    words,
+    wordSearchTerm,
+    setWordSearchTerm,
+    inlineEditingText,
+    inlineEditingTitle,
+    inlineEditingSelectedWords,
+    showTitleDropdown,
+    setShowTitleDropdown,
+    titleSearchTerm,
+    setTitleSearchTerm,
+    filteredTitles,
+    handleAddWordsToDictionary
+}) => {
+    const noteDate = note.createdAt?.toDate ? note.createdAt.toDate() : new Date(note.createdAt);
+    const isValidDate = noteDate instanceof Date && !isNaN(noteDate);
+    const isEditing = editingNoteId === note.id;
+
+    return (
+        <div
+          id={`note-${note.id}`}
+          className={`sticky-note-list-item d-flex align-items-start gap-3 p-3 overflow-hidden transition-all ${justUpdatedNoteId === note.id ? 'just-updated' : ''} ${!note.wordId && note.isCompleted ? 'completed' : ''}`}
+        >
+          <div className={`sticky-note-list-pin flex-shrink-0 ${!note.wordId && note.isCompleted ? 'text-success' : ''}`}>
+            <i className={`bi ${!note.wordId && note.isCompleted ? 'bi-check-circle-fill' : 'bi-pin-angle-fill'}`}></i>
+          </div>
+          <div className="flex-grow-1 min-w-0">
+            {note.wordTerm && (
+              <div className="sticky-note-list-word-tag mb-2">
+                <i className="bi bi-link-45deg me-1 opacity-50" style={{ fontSize: '0.8rem' }}></i>
+                {(note.wordTerm === 'Manuel Not' || note.wordTerm === 'MANUEL NOT' || !note.wordTerm) 
+                  ? 'Not' 
+                  : (
+                    <span 
+                      className="cursor-pointer hover-opacity-100 opacity-75 transition-all d-inline-flex align-items-center"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleWordClickInternal(note.wordTerm);
+                      }}
+                      title="Kelime detaylarını gör"
+                    >
+                      İlişkili Kelime: <strong className="ms-1">{renderHighlightedText(note.wordTerm, searchQuery)}</strong>
+                    </span>
+                  )}
+              </div>
+            )}
+
+            {isEditing ? (
+              <div className="mb-2">
+                {/* Title Edit Input */}
+                <Dropdown 
+                  show={showTitleDropdown === note.id} 
+                  onToggle={(isOpen, meta) => {
+                    if (meta && meta.source === 'rootClose') {
+                      setShowTitleDropdown(null);
+                    }
+                  }}
+                  className="w-100 mb-2"
+                >
+                  <div className="d-flex bg-body rounded-3 border border-opacity-25 align-items-center pe-1" style={{ borderColor: '#f59e0b' }}>
+                    <Form.Control
+                      type="text"
+                      value={inlineEditingTitle}
+                      onChange={(e) => setInlineEditingTitle(e.target.value)}
+                      onClick={() => setShowTitleDropdown(note.id)}
+                      placeholder="Not Başlığı (İsteğe bağlı)..."
+                      className="border-0 shadow-none bg-transparent px-3 py-2 fw-bold text-body flex-grow-1"
+                    />
+                    {inlineEditingTitle && (
+                      <Button 
+                        variant="link" 
+                        className="border-0 shadow-none text-muted p-1 text-decoration-none d-flex align-items-center justify-content-center"
+                        onClick={() => { setInlineEditingTitle(''); setShowTitleDropdown(note.id); }}
+                      >
+                        <i className="bi bi-x-circle-fill opacity-50 hover-opacity-100"></i>
+                      </Button>
+                    )}
+                    <Dropdown.Toggle 
+                      variant="link" 
+                      className="border-0 shadow-none text-muted p-2 text-decoration-none"
+                      onClick={() => setShowTitleDropdown(showTitleDropdown === note.id ? null : note.id)}
+                    >
+                    </Dropdown.Toggle>
+                  </div>
+                  <Dropdown.Menu className="w-100 p-2 shadow-lg border-0 mt-1 rounded-3" style={{ maxHeight: '250px', overflowY: 'auto' }}>
+                    <div className="px-1 pb-2 mb-2 border-bottom border-opacity-10">
+                      <Form.Control
+                        type="text"
+                        size="sm"
+                        placeholder="Kayıtlı başlıklarda ara..."
+                        value={titleSearchTerm}
+                        onChange={(e) => setTitleSearchTerm(e.target.value)}
+                        onClick={(e) => e.stopPropagation()}
+                        autoFocus
+                      />
+                    </div>
+                    {filteredTitles.length === 0 ? (
+                      <div className="text-muted small text-center p-2 fst-italic">Kayıtlı başlık bulunamadı.</div>
+                    ) : (
+                      filteredTitles.map((t, i) => (
+                        <Dropdown.Item 
+                          key={i} 
+                          className="small rounded-2 py-2 text-truncate"
+                          onClick={() => {
+                            setInlineEditingTitle(t);
+                            setShowTitleDropdown(null);
+                          }}
+                        >
+                          {t}
+                        </Dropdown.Item>
+                      ))
+                    )}
+                  </Dropdown.Menu>
+                </Dropdown>
+                <RichTextEditor
+                  value={inlineEditingText}
+                  onChange={setInlineEditingText}
+                  className="mb-2"
+                  highlightTags={inlineEditingSelectedWords}
+                  onAddWord={(word) => {
+                    if (!inlineEditingSelectedWords.includes(word)) {
+                      const newWords = [...inlineEditingSelectedWords, word];
+                      setInlineEditingSelectedWords(newWords);
+                      // Apply highlight to editor immediately
+                      const exists = words.some(w => w.term.toLowerCase() === word.toLowerCase());
+                      const color = exists ? '#716619' : '#711919';
+                      const escapedWord = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                      const regex = new RegExp(`(?<!<[^>]*)\\b(${escapedWord})\\b(?![^<]*>)`, 'gi');
+                      setInlineEditingText(prev => prev.replace(regex, `<mark style="background-color: ${color}; color: white; padding: 0 2px; border-radius: 2px;">${word}</mark>`));
+                    }
+                  }}
+                  onBlur={(e) => {}}
+                />
+                
+                {/* Word Selection Field */}
+                <div className="mb-2 p-3 bg-body-tertiary rounded-3 border border-opacity-10">
+                  <div className="small fw-bold text-primary mb-2 d-flex align-items-center justify-content-between">
+                    <div className="d-flex align-items-center gap-1">
+                      <i className="bi bi-search"></i> Sözlükten Kelime Ara ve Ekle
+                    </div>
+                    <div className="d-flex align-items-center gap-2">
+                      <Button 
+                        variant="link" 
+                        size="sm" 
+                        className="text-primary p-0 text-decoration-none"
+                        title="Üstü çizili kelimeleri tara ve ekle"
+                        onClick={() => {
+                          const tempDiv = document.createElement('div');
+                          tempDiv.innerHTML = inlineEditingText;
+                          const strikeElements = tempDiv.querySelectorAll('s, strike, del, [style*="line-through"]');
+                          const strikeWords = Array.from(strikeElements)
+                            .map(el => el.innerText.trim())
+                            .filter(w => w.length > 0);
+                          
+                          if (strikeWords.length > 0) {
+                            const newWords = [...new Set([...inlineEditingSelectedWords, ...strikeWords])];
+                            setInlineEditingSelectedWords(newWords);
+                            
+                            // Re-apply all highlights efficiently
+                            setInlineEditingText(prev => highlightWordsInHtml(prev, newWords));
+                          }
+                        }}
+                      >
+                        <i className="bi bi-type-strikethrough fs-5"></i>
+                      </Button>
+                      {inlineEditingSelectedWords.length > 0 && (
+                        <div className="d-flex align-items-center gap-3">
+                          <Button 
+                            variant="link" 
+                            size="sm" 
+                            className="text-danger p-0 text-decoration-none small"
+                            onClick={() => {
+                              setInlineEditingSelectedWords([]);
+                              setInlineEditingText(prev => {
+                                const tempDiv = document.createElement('div');
+                                tempDiv.innerHTML = prev;
+                                const marks = tempDiv.querySelectorAll('mark');
+                                marks.forEach(mark => {
+                                  const text = document.createTextNode(mark.textContent);
+                                  mark.parentNode.replaceChild(text, mark);
+                                });
+                                return tempDiv.innerHTML;
+                              });
+                            }}
+                          >
+                            <i className="bi bi-trash-fill me-1"></i>Tümünü Temizle
+                          </Button>
+
+                          {inlineEditingSelectedWords.some(w => getWordStatus(w) === 'none') && (
+                            <Button
+                              variant="link"
+                              size="sm"
+                              className="text-primary p-0 text-decoration-none small d-flex align-items-center gap-1 fw-semibold"
+                              onClick={() => {
+                                const redWords = inlineEditingSelectedWords.filter(w => getWordStatus(w) === 'none');
+                                handleAddWordsToDictionary(redWords);
+                              }}
+                            >
+                              <i className="bi bi-plus-circle-fill"></i>Kırmızıları Sözlüğe Ekle
+                            </Button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  
+                  {/* Search Input */}
+                  <div className="position-relative mb-3">
+                    <i className="bi bi-search position-absolute top-50 start-0 translate-middle-y ms-3 text-muted small"></i>
+                    <Form.Control
+                      type="text"
+                      size="sm"
+                      placeholder="Kelime ara..."
+                      value={wordSearchTerm}
+                      onChange={(e) => setWordSearchTerm(e.target.value)}
+                      className="bg-body border-0 shadow-none ps-5 pe-4 py-2 rounded-pill small border border-opacity-10"
+                    />
+                  </div>
+
+                  {/* Selected Words */}
+                  <div className="d-flex flex-wrap gap-2">
+                    {inlineEditingSelectedWords.map((w, i) => {
+                      const status = getWordStatus(w);
+                      return (
+                        <Badge
+                          key={i}
+                          bg={status === 'exact' ? 'primary' : status === 'root' ? 'pink' : 'danger'}
+                           style={{ backgroundColor: status === 'root' ? '#e83e8c' : undefined, cursor: 'pointer' }}
+                           className="d-flex align-items-center gap-2 rounded-pill px-3 py-2 shadow-sm border-0 transition-all hover-scale-sm"
+                           onClick={() => status !== 'none' && handleWordClickInternal(w)}
+                         >
+                           <span>{w}</span>
+                           <i 
+                             className="bi bi-x-lg cursor-pointer hover-opacity-100 opacity-75 ms-1"
+                             onClick={(e) => {
+                               e.stopPropagation();
+                               const newSelected = inlineEditingSelectedWords.filter(sw => sw !== w);
+                               setInlineEditingSelectedWords(newSelected);
+                               setInlineEditingText(prev => {
+                                 const escapedWord = w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                                 const regex = new RegExp(`<mark[^>]*>(${escapedWord})</mark>`, 'gi');
+                                 return prev.replace(regex, '$1');
+                               });
+                             }}
+                           ></i>
+                         </Badge>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            ) : (
+                <div
+                  className="cursor-pointer"
+                  onClick={() => {
+                    setEditingNoteId(note.id);
+                    let textToEdit = note.text || '';
+                    if (!textToEdit.includes('<br') && !textToEdit.includes('<div') && !textToEdit.includes('<p')) {
+                      textToEdit = textToEdit.replace(/\n/g, '<br>');
+                    }
+                    setInlineEditingText(textToEdit);
+                    setInlineEditingTitle(note.title || '');
+                    setInlineEditingSelectedWords(note.selectedWords || []);
+                    if (!expandedManualNotes.includes(note.id)) {
+                      setExpandedManualNotes(prev => [...prev, note.id]);
+                    }
+                  }}
+                >
+                  {note.title && (
+                    <div className={`sticky-note-list-title h6 fw-bold mb-2 ${note.isCompleted ? 'opacity-50' : 'text-body'}`}>
+                      {renderHighlightedText(note.title, searchQuery)}
+                    </div>
+                  )}
+
+                  <div
+                    className={`sticky-note-list-text mb-2 bg-body p-3 rounded-3 border border-opacity-10 shadow-sm ${(!note.wordId || note.wordTerm === 'Manuel Not' || note.wordTerm === 'MANUEL NOT') && !expandedManualNotes.includes(note.id) ? 'line-clamp-5' : ''}`}
+                    style={{
+                      backgroundColor: theme === 'light' ? '#fef9c3 !important' : 'rgba(234, 179, 8, 0.1) !important',
+                      whiteSpace: 'pre-wrap',
+                      wordBreak: 'break-word'
+                    }}
+                    dangerouslySetInnerHTML={{ __html: highlightWordsInHtml(note.text, note.selectedWords) }}
+                  />
+
+                  {/* Show More Button */}
+                  {(!note.wordId || note.wordTerm === 'Manuel Not' || note.wordTerm === 'MANUEL NOT') && (
+                    <div className="d-flex flex-column align-items-center mt-n2 mb-2">
+                      <Button 
+                        variant="link" 
+                        size="sm" 
+                        className="text-primary text-decoration-none py-0 fw-semibold d-flex align-items-center gap-1"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setExpandedManualNotes(prev => prev.includes(note.id) ? prev.filter(id => id !== note.id) : [...prev, note.id]);
+                        }}
+                      >
+                        {expandedManualNotes.includes(note.id) ? <><i className="bi bi-chevron-up"></i> Daha Az Gör</> : <><i className="bi bi-chevron-down"></i> Devamını Gör</>}
+                      </Button>
+
+                      {note.selectedWords && note.selectedWords.length > 0 && (
+                        <div className="d-flex flex-wrap justify-content-center gap-1 mt-2">
+                          {note.selectedWords.map((w, i) => {
+                            const status = getWordStatus(w);
+                            return (
+                              <span 
+                                key={i} 
+                                className={`badge ${status === 'exact' ? 'bg-primary' : status === 'root' ? 'pink' : 'bg-danger'} bg-opacity-10 ${status === 'exact' ? 'text-primary' : status === 'root' ? 'pink' : 'text-danger'} border ${status === 'exact' ? 'border-primary' : status === 'root' ? 'pink' : 'border-danger'} border-opacity-25 rounded-pill`} 
+                                style={{ fontSize: '0.7rem', fontWeight: '500', cursor: status !== 'none' ? 'pointer' : 'default' }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (status !== 'none') handleWordClickInternal(w);
+                                }}
+                              >
+                                <i className="bi bi-tag-fill me-1"></i>{w}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+            )}
+
+            <div className="d-flex justify-content-between align-items-center mt-2 px-1">
+              <span className="sticky-note-list-date d-flex align-items-center gap-1">
+                <i className="bi bi-clock"></i>
+                {isValidDate ? noteDate.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : '—'}
+              </span>
+              <div className="d-flex gap-3 align-items-center">
+                {isEditing && (
+                  <a
+                    href="#!"
+                    className="sticky-note-list-complete fw-semibold d-flex align-items-center gap-1 text-primary"
+                    onClick={(e) => { 
+                      e.preventDefault(); 
+                      // Optimized Text Scan
+                      const plainText = inlineEditingText.replace(/<[^>]*>/g, ' ');
+                      const doc = nlp(plainText);
+                      const textWords = doc.terms().json().map(t => t.text.toLowerCase().replace(/[.,!?;:]/g, ''));
+                      
+                      const foundWords = [...new Set(textWords)].filter(tw => tw && tw.length > 2 && getWordStatus(tw) !== 'none');
+                      
+                      if (foundWords.length > 0) {
+                        const newWords = [...new Set([...inlineEditingSelectedWords, ...foundWords])];
+                        setInlineEditingSelectedWords(newWords);
+                        setInlineEditingText(prev => highlightWordsInHtml(prev, newWords));
+                      }
+                    }}
+                  >
+                    <i className="bi bi-search"></i> Metni Tara
+                  </a>
+                )}
+                {!note.wordId && (
+                  <a
+                    href="#!"
+                    className={`sticky-note-list-complete fw-semibold d-flex align-items-center gap-1 ${note.isCompleted ? 'text-secondary' : 'text-success'}`}
+                    onClick={(e) => { 
+                      e.preventDefault(); 
+                      saveCurrentNote();
+                      handleToggleNoteCompletion(note.id, note.isCompleted); 
+                      setEditingNoteId(null);
+                    }}
+                  >
+                    <i className={`bi ${note.isCompleted ? 'bi-arrow-counterclockwise' : 'bi-check2-circle'}`}></i>
+                    {note.isCompleted ? 'Geri Al' : 'Tamamlandı'}
+                  </a>
+                )}
+                <a
+                  href="#!"
+                  className="sticky-note-list-delete fw-semibold d-flex align-items-center gap-1 text-danger"
+                  onClick={(e) => { e.preventDefault(); handleDeleteNote(note.id); }}
+                >
+                  <i className="bi bi-trash"></i> Sil
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+    );
+});
 
 const StickyNotesPage = ({
   stickyNotes,
@@ -176,7 +555,7 @@ const StickyNotesPage = ({
   inlineEditingSelectedWords,
   setInlineEditingSelectedWords,
   theme,
-  setCurrentView,
+  navigateTo,
   dailyStats,
   words,
   onWordClick
@@ -198,6 +577,52 @@ const StickyNotesPage = ({
       onWordClick(found);
     }
   }, [onWordClick, words]);
+
+  // ULTRA OPTIMIZATION: Pre-calculate a map of all words, variants and their roots
+  // This avoids calling NLP inside loops/renders
+  const wordStatusMap = useMemo(() => {
+    if (!words) return new Map();
+    const map = new Map(); // term -> 'exact' | 'root'
+    
+    words.forEach(w => {
+        const termLower = w.term.toLowerCase();
+        map.set(termLower, 'exact');
+        
+        // Add variants
+        if (w.variants) {
+            w.variants.forEach(v => {
+                const vLower = v.toLowerCase();
+                if (!map.has(vLower)) map.set(vLower, 'root');
+            });
+        }
+        
+        // Add root forms if possible (basic ones)
+        if (w.rootWord) {
+            const rLower = w.rootWord.toLowerCase();
+            if (!map.has(rLower)) map.set(rLower, 'root');
+        }
+    });
+    return map;
+  }, [words]);
+
+  // Fast lookup function using the map
+  const getWordStatus = useCallback((wordText) => {
+    if (!wordText) return 'none';
+    const wt = wordText.toLowerCase();
+    
+    const status = wordStatusMap.get(wt);
+    if (status) return status;
+    
+    // Fallback for plural/verb forms only if not in map
+    // We limit this to very short logic to stay fast
+    const singular = nlp(wt).nouns().toSingular().text().toLowerCase();
+    if (wordStatusMap.get(singular) === 'exact') return 'root';
+    
+    const infinitive = nlp(wt).verbs().toInfinitive().text().toLowerCase();
+    if (wordStatusMap.get(infinitive) === 'exact') return 'root';
+
+    return 'none';
+  }, [wordStatusMap]);
 
   const [justUpdatedNoteId, setJustUpdatedNoteId] = useState(null);
   const [wordSearchTerm, setWordSearchTerm] = useState('');
@@ -378,7 +803,7 @@ const StickyNotesPage = ({
     );
   };
 
-  const getWordStatus = useCallback((wordText) => {
+  const getWordStatusOld = useCallback((wordText) => {
     if (!wordText || !words) return 'none';
     const wt = wordText.toLowerCase();
     
@@ -397,11 +822,18 @@ const StickyNotesPage = ({
     return 'none';
   }, [words]);
 
-  const highlightWordsInHtml = (html, selectedWords) => {
+  const highlightWordsInHtml = useCallback((html, selectedWords) => {
     if (!selectedWords || selectedWords.length === 0 || !html) return html;
     
     let sanitized = DOMPurify.sanitize(html);
-    const escapedWords = selectedWords.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    // Optimization: Use a single regex for all words instead of multiple passes
+    const escapedWords = selectedWords
+        .filter(w => w && w.length > 1)
+        .map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+        .sort((a, b) => b.length - a.length); // Longest first to avoid partial matches
+    
+    if (escapedWords.length === 0) return sanitized;
+
     const regex = new RegExp(`(?<!<[^>]*)\\b(${escapedWords.join('|')})\\b(?![^<]*>)`, 'gi');
     
     return sanitized.replace(regex, (match) => {
@@ -412,7 +844,7 @@ const StickyNotesPage = ({
       
       return `<mark style="background-color: ${color}; color: white; padding: 0 2px; border-radius: 2px;">${match}</mark>`;
     });
-  };
+  }, [getWordStatus]);
 
   const scrollToNote = (id) => {
     const performScroll = (noteId) => {
@@ -454,7 +886,7 @@ const StickyNotesPage = ({
       <PageHeader
         title="Sticky Notlarım"
         icon="bi-pin-angle-fill"
-        onBack={() => setCurrentView('home')}
+        onBack={() => navigateTo('home')}
         dailyStats={dailyStats}
       />
 
@@ -704,485 +1136,41 @@ const StickyNotesPage = ({
                           <i className="bi bi-calendar-event opacity-50"></i> {dateLabel}
                         </div>
                         <div className="d-flex flex-column gap-3">
-                          {items.map((note) => {
-                            const noteDate = note.createdAt?.toDate ? note.createdAt.toDate() : new Date(note.createdAt);
-                            const isValidDate = noteDate instanceof Date && !isNaN(noteDate);
-
-                            return (
-                                <div
-                                  key={note.id}
-                                  id={`note-${note.id}`}
-                                  className={`sticky-note-list-item d-flex align-items-start gap-3 p-3 overflow-hidden transition-all ${justUpdatedNoteId === note.id ? 'just-updated' : ''} ${!note.wordId && note.isCompleted ? 'completed' : ''}`}
-                                >
-                                  <div className={`sticky-note-list-pin flex-shrink-0 ${!note.wordId && note.isCompleted ? 'text-success' : ''}`}>
-                                    <i className={`bi ${!note.wordId && note.isCompleted ? 'bi-check-circle-fill' : 'bi-pin-angle-fill'}`}></i>
-                                </div>
-                                <div className="flex-grow-1 min-w-0">
-                                  {note.wordTerm && (
-                                    <div className="sticky-note-list-word-tag mb-2">
-                                      <i className="bi bi-link-45deg me-1 opacity-50" style={{ fontSize: '0.8rem' }}></i>
-                                      {(note.wordTerm === 'Manuel Not' || note.wordTerm === 'MANUEL NOT' || !note.wordTerm) 
-                                        ? 'Not' 
-                                        : (
-                                          <span 
-                                            className="cursor-pointer hover-opacity-100 opacity-75 transition-all d-inline-flex align-items-center"
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              handleWordClickInternal(note.wordTerm);
-                                            }}
-                                            title="Kelime detaylarını gör"
-                                          >
-                                            İlişkili Kelime: <strong className="ms-1">{renderHighlightedText(note.wordTerm, searchQuery)}</strong>
-                                          </span>
-                                        )}
-                                    </div>
-                                  )}
-
-                                  {editingNoteId === note.id ? (
-                                    <div className="mb-2">
-                                      {/* Title Edit Input */}
-                                      <Dropdown 
-                                        show={showTitleDropdown === note.id} 
-                                        onToggle={(isOpen, meta) => {
-                                          if (meta && meta.source === 'rootClose') {
-                                            setShowTitleDropdown(null);
-                                          }
-                                        }}
-                                        className="w-100 mb-2"
-                                      >
-                                        <div className="d-flex bg-body rounded-3 border border-opacity-25 align-items-center pe-1" style={{ borderColor: '#f59e0b' }}>
-                                          <Form.Control
-                                            type="text"
-                                            value={inlineEditingTitle}
-                                            onChange={(e) => setInlineEditingTitle(e.target.value)}
-                                            onClick={() => setShowTitleDropdown(note.id)}
-                                            placeholder="Not Başlığı (İsteğe bağlı)..."
-                                            className="border-0 shadow-none bg-transparent px-3 py-2 fw-bold text-body flex-grow-1"
-                                          />
-                                          {inlineEditingTitle && (
-                                            <Button 
-                                              variant="link" 
-                                              className="border-0 shadow-none text-muted p-1 text-decoration-none d-flex align-items-center justify-content-center"
-                                              onClick={() => { setInlineEditingTitle(''); setShowTitleDropdown(note.id); }}
-                                            >
-                                              <i className="bi bi-x-circle-fill opacity-50 hover-opacity-100"></i>
-                                            </Button>
-                                          )}
-                                          <Dropdown.Toggle 
-                                            variant="link" 
-                                            className="border-0 shadow-none text-muted p-2 text-decoration-none"
-                                            onClick={() => setShowTitleDropdown(showTitleDropdown === note.id ? null : note.id)}
-                                          >
-                                          </Dropdown.Toggle>
-                                        </div>
-                                        <Dropdown.Menu className="w-100 p-2 shadow-lg border-0 mt-1 rounded-3" style={{ maxHeight: '250px', overflowY: 'auto' }}>
-                                          <div className="px-1 pb-2 mb-2 border-bottom border-opacity-10">
-                                            <Form.Control
-                                              type="text"
-                                              size="sm"
-                                              placeholder="Kayıtlı başlıklarda ara..."
-                                              value={titleSearchTerm}
-                                              onChange={(e) => setTitleSearchTerm(e.target.value)}
-                                              onClick={(e) => e.stopPropagation()}
-                                              autoFocus
-                                            />
-                                          </div>
-                                          {filteredTitles.length === 0 ? (
-                                            <div className="text-muted small text-center p-2 fst-italic">Kayıtlı başlık bulunamadı.</div>
-                                          ) : (
-                                            filteredTitles.map((t, i) => (
-                                              <Dropdown.Item 
-                                                key={i} 
-                                                className="small rounded-2 py-2 text-truncate"
-                                                onClick={() => {
-                                                  setInlineEditingTitle(t);
-                                                  setShowTitleDropdown(null);
-                                                }}
-                                              >
-                                                {t}
-                                              </Dropdown.Item>
-                                            ))
-                                          )}
-                                        </Dropdown.Menu>
-                                      </Dropdown>
-                                      <RichTextEditor
-                                        value={inlineEditingText}
-                                        onChange={setInlineEditingText}
-                                        className="mb-2"
-                                        highlightTags={inlineEditingSelectedWords}
-                                        onAddWord={(word) => {
-                                          if (!inlineEditingSelectedWords.includes(word)) {
-                                            const newWords = [...inlineEditingSelectedWords, word];
-                                            setInlineEditingSelectedWords(newWords);
-                                            // Apply highlight to editor immediately
-                                            const exists = words.some(w => w.term.toLowerCase() === word.toLowerCase());
-                                            const color = exists ? '#716619' : '#711919';
-                                            const escapedWord = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                                            const regex = new RegExp(`(?<!<[^>]*)\\b(${escapedWord})\\b(?![^<]*>)`, 'gi');
-                                            setInlineEditingText(prev => prev.replace(regex, `<mark style="background-color: ${color}; color: white; padding: 0 2px; border-radius: 2px;">${word}</mark>`));
-                                          }
-                                        }}
-                                        onBlur={(e) => {
-                                          // Do nothing on blur to prevent auto-closing
-                                        }}
-                                      />
-                                      
-                                      {/* Word Selection Field */}
-                                      <div className="mb-2 p-3 bg-body-tertiary rounded-3 border border-opacity-10">
-                                        <div className="small fw-bold text-primary mb-2 d-flex align-items-center justify-content-between">
-                                          <div className="d-flex align-items-center gap-1">
-                                            <i className="bi bi-search"></i> Sözlükten Kelime Ara ve Ekle
-                                          </div>
-                                          <div className="d-flex align-items-center gap-2">
-                                            <Button 
-                                              variant="link" 
-                                              size="sm" 
-                                              className="text-primary p-0 text-decoration-none"
-                                              title="Üstü çizili kelimeleri tara ve ekle"
-                                              onClick={() => {
-                                                const tempDiv = document.createElement('div');
-                                                tempDiv.innerHTML = inlineEditingText;
-                                                const strikeElements = tempDiv.querySelectorAll('s, strike, del, [style*="line-through"]');
-                                                const strikeWords = Array.from(strikeElements)
-                                                  .map(el => el.innerText.trim())
-                                                  .filter(w => w.length > 0);
-                                                
-                                                if (strikeWords.length > 0) {
-                                                  const newWords = [...new Set([...inlineEditingSelectedWords, ...strikeWords])];
-                                                  setInlineEditingSelectedWords(newWords);
-                                                  
-                                                  // Apply highlights to editor content
-                                                  let newHtml = inlineEditingText;
-                                                  strikeWords.forEach(word => {
-                                                    const exists = words.some(w => w.term.toLowerCase() === word.toLowerCase());
-                                                    const color = exists ? '#716619' : '#711919';
-                                                    const escapedWord = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                                                    const regex = new RegExp(`(?<!<[^>]*)\\b(${escapedWord})\\b(?![^<]*>)`, 'gi');
-                                                    newHtml = newHtml.replace(regex, `<mark style="background-color: ${color}; color: white; padding: 0 2px; border-radius: 2px;">${word}</mark>`);
-                                                  });
-                                                  setInlineEditingText(newHtml);
-                                                }
-                                              }}
-                                            >
-                                              <i className="bi bi-type-strikethrough fs-5"></i>
-                                            </Button>
-                                            {inlineEditingSelectedWords.length > 0 && (
-                                              <div className="d-flex align-items-center gap-3">
-                                                <Button 
-                                                  variant="link" 
-                                                  size="sm" 
-                                                  className="text-danger p-0 text-decoration-none small"
-                                                  onClick={() => {
-                                                    setInlineEditingSelectedWords([]);
-                                                    // More robust way to remove all highlights using DOM parsing
-                                                    setInlineEditingText(prev => {
-                                                      const tempDiv = document.createElement('div');
-                                                      tempDiv.innerHTML = prev;
-                                                      const marks = tempDiv.querySelectorAll('mark');
-                                                      marks.forEach(mark => {
-                                                        const text = document.createTextNode(mark.textContent);
-                                                        mark.parentNode.replaceChild(text, mark);
-                                                      });
-                                                      return tempDiv.innerHTML;
-                                                    });
-                                                  }}
-                                                >
-                                                  <i className="bi bi-trash-fill me-1"></i>Tümünü Temizle
-                                                </Button>
-
-                                                {inlineEditingSelectedWords.some(w => !words.some(word => word.term.toLowerCase() === w.toLowerCase())) && (
-                                                  <Button
-                                                    variant="link"
-                                                    size="sm"
-                                                    className="text-primary p-0 text-decoration-none small d-flex align-items-center gap-1 fw-semibold"
-                                                    onClick={() => {
-                                                      const redWords = inlineEditingSelectedWords.filter(w => !words.some(word => word.term.toLowerCase() === w.toLowerCase()));
-                                                      handleAddWordsToDictionary(redWords);
-                                                    }}
-                                                  >
-                                                    <i className="bi bi-plus-circle-fill"></i>Kırmızıları Sözlüğe Ekle
-                                                  </Button>
-                                                )}
-                                              </div>
-                                            )}
-                                          </div>
-                                        </div>
-                                        
-                                        {/* Search Input */}
-                                        <div className="position-relative mb-3">
-                                          <i className="bi bi-search position-absolute top-50 start-0 translate-middle-y ms-3 text-muted small"></i>
-                                          <Form.Control
-                                            type="text"
-                                            size="sm"
-                                            placeholder="Kelime ara..."
-                                            value={wordSearchTerm}
-                                            onChange={(e) => setWordSearchTerm(e.target.value)}
-                                            className="bg-body border-0 shadow-none ps-5 pe-4 py-2 rounded-pill small border border-opacity-10"
-                                            onKeyDown={(e) => {
-                                              if (e.key === 'Enter') e.preventDefault();
-                                            }}
-                                          />
-                                        </div>
-
-                                        {/* Search Results */}
-                                        {wordSearchTerm.trim().length >= 1 && (
-                                          <div className="d-flex flex-wrap gap-2 mb-3 p-2 bg-body rounded-3 border border-dashed" style={{ maxHeight: '150px', overflowY: 'auto' }}>
-                                            {(() => {
-                                              const results = words.filter(w => 
-                                                w.term.toLowerCase().includes(wordSearchTerm.toLowerCase()) && 
-                                                !inlineEditingSelectedWords.includes(w.term)
-                                              ).slice(0, 10);
-                                              
-                                              if (results.length === 0) return <small className="text-muted w-100 text-center py-2">Sonuç bulunamadı.</small>;
-                                              
-                                              return results.map((w, i) => (
-                                                <Badge
-                                                  key={i}
-                                                  bg="light"
-                                                  text="dark"
-                                                  className="cursor-pointer border border-opacity-10 rounded-pill px-3 py-2 hover-bg-primary transition-all"
-                                                  onClick={() => {
-                                                    setInlineEditingSelectedWords(prev => [...prev, w.term]);
-                                                    setWordSearchTerm('');
-                                                  }}
-                                                >
-                                                  <i className="bi bi-plus-lg me-1 text-primary"></i>{w.term}
-                                                </Badge>
-                                              ));
-                                            })()}
-                                          </div>
-                                        )}
-
-                                        {/* Selected Words */}
-                                        <div className="d-flex flex-wrap gap-2">
-                                          {inlineEditingSelectedWords.length === 0 ? (
-                                            <small className="text-muted fst-italic">Henüz kelime seçilmedi.</small>
-                                          ) : (
-                                            inlineEditingSelectedWords.map((w, i) => {
-                                              const status = getWordStatus(w);
-                                              return (
-                                                <Badge
-                                                  key={i}
-                                                  bg={status === 'exact' ? 'primary' : status === 'root' ? 'pink' : 'danger'}
-                                                   style={{ 
-                                                     backgroundColor: status === 'root' ? '#e83e8c' : undefined,
-                                                     cursor: status !== 'none' ? 'pointer' : 'default'
-                                                   }}
-                                                   className="d-flex align-items-center gap-2 rounded-pill px-3 py-2 shadow-sm border-0 transition-all hover-scale-sm"
-                                                   onClick={(e) => {
-                                                     if (status !== 'none') {
-                                                       handleWordClickInternal(w);
-                                                     }
-                                                   }}
-                                                 >
-                                                   <span>{w}</span>
-                                                   <i 
-                                                     className="bi bi-x-lg cursor-pointer hover-opacity-100 opacity-75 ms-1"
-                                                     onClick={(e) => {
-                                                       e.stopPropagation();
-                                                       setInlineEditingSelectedWords(prev => prev.filter(sw => sw !== w));
-                                                       setInlineEditingText(prev => {
-                                                         const escapedWord = w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                                                         const regex = new RegExp(`<mark[^>]*>(${escapedWord})</mark>`, 'gi');
-                                                         return prev.replace(regex, '$1');
-                                                       });
-                                                     }}
-                                                   ></i>
-                                                 </Badge>
-                                              );
-                                            })
-                                          )}
-                                        </div>
-                                      </div>
-
-                                      <div className="d-flex justify-content-end mt-1">
-                                        <small className={`transition-all ${saveStatus === 'saved' ? 'text-success' : 'text-muted'} opacity-75`} style={{ fontSize: '0.75rem', fontWeight: '500' }}>
-                                          {saveStatus === 'saving' ? (
-                                            <><i className="bi bi-cloud-arrow-up-fill me-1"></i> Otomatik kaydediliyor...</>
-                                          ) : saveStatus === 'saved' ? (
-                                            <><i className="bi bi-cloud-check-fill me-1"></i> Düzenleme Kaydedildi</>
-                                          ) : null}
-                                        </small>
-                                      </div>
-                                    </div>
-                                  ) : (
-                                      <div
-                                        className="cursor-pointer"
-                                        onClick={() => {
-                                          setEditingNoteId(note.id);
-                                          // Robust line break conversion for the HTML editor
-                                          let textToEdit = note.text || '';
-                                          if (!textToEdit.includes('<br') && !textToEdit.includes('<div') && !textToEdit.includes('<p')) {
-                                            textToEdit = textToEdit.replace(/\n/g, '<br>');
-                                          }
-                                          setInlineEditingText(textToEdit);
-                                          setInlineEditingTitle(note.title || '');
-                                          setInlineEditingSelectedWords(note.selectedWords || []);
-                                          // Auto-expand manual notes when editing so they don't collapse when clicking away
-                                          if (!expandedManualNotes.includes(note.id)) {
-                                            setExpandedManualNotes(prev => [...prev, note.id]);
-                                          }
-                                        }}
-                                      >
-                                        {note.title && (
-                                          <div className={`sticky-note-list-title h6 fw-bold mb-2 ${note.isCompleted ? 'opacity-50' : 'text-body'}`}>
-                                            {renderHighlightedText(note.title, searchQuery)}
-                                          </div>
-                                        )}
-
-                                        <div
-                                          className={`sticky-note-list-text mb-2 bg-body p-3 rounded-3 border border-opacity-10 shadow-sm ${(!note.wordId || note.wordTerm === 'Manuel Not' || note.wordTerm === 'MANUEL NOT') && !expandedManualNotes.includes(note.id) ? 'line-clamp-5' : ''}`}
-                                          style={{
-                                            backgroundColor: theme === 'light' ? '#fef9c3 !important' : 'rgba(234, 179, 8, 0.1) !important',
-                                            whiteSpace: 'pre-wrap',
-                                            wordBreak: 'break-word'
-                                          }}
-                                          dangerouslySetInnerHTML={{ __html: highlightWordsInHtml(note.text, note.selectedWords) }}
-                                        />
-
-                                        {/* Show More Button for Manual Notes */}
-                                        {(!note.wordId || note.wordTerm === 'Manuel Not' || note.wordTerm === 'MANUEL NOT') && (
-                                          <div className="d-flex flex-column align-items-center mt-n2 mb-2">
-                                            <Button 
-                                              variant="link" 
-                                              size="sm" 
-                                              className="text-primary text-decoration-none py-0 fw-semibold d-flex align-items-center gap-1"
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                setExpandedManualNotes(prev => 
-                                                  prev.includes(note.id) ? prev.filter(id => id !== note.id) : [...prev, note.id]
-                                                );
-                                              }}
-                                            >
-                                              {expandedManualNotes.includes(note.id) ? (
-                                                <><i className="bi bi-chevron-up"></i> Daha Az Gör</>
-                                              ) : (
-                                                <><i className="bi bi-chevron-down"></i> Devamını Gör</>
-                                              )}
-                                            </Button>
-
-                                            {/* Selected Words Tags - Now below the button */}
-                                            {note.selectedWords && note.selectedWords.length > 0 && (
-                                              <div className="d-flex flex-wrap justify-content-center gap-1 mt-2">
-                                                {note.selectedWords.map((w, i) => {
-                                                  const status = getWordStatus(w);
-                                                  return (
-                                                    <span 
-                                                      key={i} 
-                                                      className={`badge ${status === 'exact' ? 'bg-primary' : status === 'root' ? 'pink' : 'bg-danger'} bg-opacity-10 ${status === 'exact' ? 'text-primary' : status === 'root' ? 'pink' : 'text-danger'} border ${status === 'exact' ? 'border-primary' : status === 'root' ? 'pink' : 'border-danger'} border-opacity-25 rounded-pill ${status !== 'none' ? 'cursor-pointer hover-bg-opacity-20' : ''}`} 
-                                                      style={{ fontSize: '0.7rem', fontWeight: '500' }}
-                                                      onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        if (status !== 'none') handleWordClickInternal(w);
-                                                      }}
-                                                    >
-                                                      <i className="bi bi-tag-fill me-1"></i>{w}
-                                                    </span>
-                                                  );
-                                                })}
-                                              </div>
-                                            )}
-                                          </div>
-                                        )}
-                                      </div>
-                                  )}
-
-                                  <div className="d-flex justify-content-between align-items-center mt-2 px-1">
-                                    <span className="sticky-note-list-date d-flex align-items-center gap-1">
-                                      <i className="bi bi-clock"></i>
-                                      {isValidDate ? noteDate.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : '—'}
-                                      <span className="ms-2 ps-2 border-start border-opacity-25" style={{ fontSize: '0.75rem' }}>
-                                        {note.text ? note.text.split('\n').filter(l => l.trim()).length : 0} Kelime
-                                      </span>
-                                    </span>
-                                    <div className="d-flex gap-3 align-items-center">
-                                      {editingNoteId === note.id && (
-                                        <a
-                                          href="#!"
-                                          className="sticky-note-list-complete fw-semibold d-flex align-items-center gap-1 text-primary"
-                                          onClick={(e) => { 
-                                            e.preventDefault(); 
-                                            // 1. Prepare dictionary sets for ultra-fast lookup
-                                            const dictTerms = new Set(words.map(w => w.term.toLowerCase()));
-                                            const dictVariants = new Set();
-                                            words.forEach(w => {
-                                              if (w.variants) w.variants.forEach(v => dictVariants.add(v.toLowerCase()));
-                                            });
-
-                                            // 2. Scan text words
-                                            const plainText = inlineEditingText.replace(/<[^>]*>/g, ' ');
-                                            const doc = nlp(plainText);
-                                            const textWords = doc.terms().json().map(t => t.text.toLowerCase().replace(/[.,!?;:]/g, ''));
-                                            const uniqueTextWords = [...new Set(textWords)];
-                                            
-                                            const foundWords = [];
-                                            uniqueTextWords.forEach(tw => {
-                                              if (!tw || tw.length < 2) return;
-                                              
-                                              // Check direct match
-                                              if (dictTerms.has(tw) || dictVariants.has(tw)) {
-                                                foundWords.push(tw);
-                                                return;
-                                              }
-                                              
-                                              // Check root match (NLP check only if direct fails)
-                                              const twDoc = nlp(tw);
-                                              const singular = twDoc.nouns().toSingular().text().toLowerCase();
-                                              const infinitive = twDoc.verbs().toInfinitive().text().toLowerCase();
-                                              
-                                              if (dictTerms.has(singular) || dictTerms.has(infinitive)) {
-                                                foundWords.push(tw);
-                                              }
-                                            });
-                                            
-                                            if (foundWords.length > 0) {
-                                              const newWords = [...new Set([...inlineEditingSelectedWords, ...foundWords])];
-                                              setInlineEditingSelectedWords(newWords);
-                                              
-                                              // Apply highlights to editor content
-                                              let newHtml = inlineEditingText;
-                                              newWords.forEach(word => {
-                                                const exists = words.some(w => w.term.toLowerCase() === word.toLowerCase());
-                                                const color = exists ? '#716619' : '#711919';
-                                                const escapedWord = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                                                const regex = new RegExp(`(?<!<[^>]*)\\b(${escapedWord})\\b(?![^<]*>)`, 'gi');
-                                                newHtml = newHtml.replace(regex, `<mark style="background-color: ${color}; color: white; padding: 0 2px; border-radius: 2px;">${word}</mark>`);
-                                              });
-                                              setInlineEditingText(newHtml);
-                                            }
-                                          }}
-                                        >
-                                          <i className="bi bi-search"></i> Metni Tara
-                                        </a>
-                                      )}
-                                      {!note.wordId && (
-                                        <a
-                                          href="#!"
-                                          className={`sticky-note-list-complete fw-semibold d-flex align-items-center gap-1 ${note.isCompleted ? 'text-secondary' : 'text-success'}`}
-                                          onClick={(e) => { 
-                                            e.preventDefault(); 
-                                            saveCurrentNote();
-                                            handleToggleNoteCompletion(note.id, note.isCompleted); 
-                                            setEditingNoteId(null);
-                                          }}
-                                        >
-                                          <i className={`bi ${note.isCompleted ? 'bi-arrow-counterclockwise' : 'bi-check2-circle'}`}></i>
-                                          {note.isCompleted ? 'Geri Al' : 'Tamamlandı'}
-                                        </a>
-                                      )}
-                                      <a
-                                        href="#!"
-                                        className="sticky-note-list-delete fw-semibold d-flex align-items-center gap-1 text-danger"
-                                        onClick={(e) => { e.preventDefault(); handleDeleteNote(note.id); }}
-                                      >
-                                        <i className="bi bi-trash"></i> Sil
-                                      </a>
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                            );
-                          })}
+                          {items.map((note) => (
+                              <NoteItem
+                                key={note.id}
+                                note={note}
+                                editingNoteId={editingNoteId}
+                                setEditingNoteId={setEditingNoteId}
+                                setInlineEditingText={setInlineEditingText}
+                                setInlineEditingTitle={setInlineEditingTitle}
+                                setInlineEditingSelectedWords={setInlineEditingSelectedWords}
+                                expandedManualNotes={expandedManualNotes}
+                                setExpandedManualNotes={setExpandedManualNotes}
+                                searchQuery={searchQuery}
+                                renderHighlightedText={renderHighlightedText}
+                                highlightWordsInHtml={highlightWordsInHtml}
+                                getWordStatus={getWordStatus}
+                                handleWordClickInternal={handleWordClickInternal}
+                                handleToggleNoteCompletion={handleToggleNoteCompletion}
+                                handleDeleteNote={handleDeleteNote}
+                                saveCurrentNote={saveCurrentNote}
+                                justUpdatedNoteId={justUpdatedNoteId}
+                                theme={theme}
+                                words={words}
+                                wordSearchTerm={wordSearchTerm}
+                                setWordSearchTerm={setWordSearchTerm}
+                                inlineEditingText={inlineEditingText}
+                                inlineEditingTitle={inlineEditingTitle}
+                                inlineEditingSelectedWords={inlineEditingSelectedWords}
+                                showTitleDropdown={showTitleDropdown}
+                                setShowTitleDropdown={setShowTitleDropdown}
+                                titleSearchTerm={titleSearchTerm}
+                                setTitleSearchTerm={setTitleSearchTerm}
+                                filteredTitles={filteredTitles}
+                                handleAddWordsToDictionary={handleAddWordsToDictionary}
+                              />
+                          ))}
                         </div>
                       </div>
                     ))}

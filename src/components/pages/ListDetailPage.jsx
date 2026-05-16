@@ -7,7 +7,7 @@ const ListDetailPage = ({
   customLists,
   words,
   handleRemoveWordFromList,
-  setCurrentView,
+  navigateTo,
   onWordClick,
   handleSpeak,
   dailyStats,
@@ -22,7 +22,7 @@ const ListDetailPage = ({
           <i className="bi bi-exclamation-circle text-danger fs-1 mb-3 d-block"></i>
           <h4 className="fw-bold">Liste bulunamadı</h4>
           <p className="text-muted">Görünüşe göre bu liste silinmiş veya taşınmış olabilir.</p>
-          <Button variant="primary" className="rounded-pill px-4" onClick={() => setCurrentView('custom-lists')}>
+          <Button variant="primary" className="rounded-pill px-4" onClick={() => navigateTo('custom-lists')}>
             Listelerime Dön
           </Button>
         </div>
@@ -37,7 +37,7 @@ const ListDetailPage = ({
       <PageHeader 
         title={list.name} 
         icon="bi-collection-play-fill" 
-        onBack={() => setCurrentView('custom-lists')} 
+        onBack={() => navigateTo('custom-lists')} 
         dailyStats={dailyStats}
         rightContent={
           <div className="d-flex align-items-center gap-2">
@@ -64,7 +64,7 @@ const ListDetailPage = ({
               </div>
               <h5 className="fw-bold">Bu liste henüz boş</h5>
               <p className="text-muted mb-4">Ana sayfadan kelimeleri seçip "Listeye Ekle" diyerek<br />bu grubu doldurmaya başlayabilirsiniz.</p>
-              <Button variant="primary" className="rounded-pill px-4 py-2 fw-bold shadow-sm" onClick={() => setCurrentView('home')}>
+              <Button variant="primary" className="rounded-pill px-4 py-2 fw-bold shadow-sm" onClick={() => navigateTo('home')}>
                 <i className="bi bi-search me-2"></i> Kelime Bul & Ekle
               </Button>
             </div>

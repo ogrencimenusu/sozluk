@@ -8,7 +8,7 @@ const CustomListsPage = ({
   handleUpdateList,
   handleDeleteList,
   handleMoveList,
-  setCurrentView,
+  navigateTo,
   setCurrentListId,
   dailyStats
 }) => {
@@ -33,7 +33,7 @@ const CustomListsPage = ({
       <PageHeader 
         title="Özel Listelerim" 
         icon="bi-collection-play-fill" 
-        onBack={() => setCurrentView('home')} 
+        onBack={() => navigateTo('home')} 
         dailyStats={dailyStats} 
       />
 
@@ -95,7 +95,7 @@ const CustomListsPage = ({
                     onClick={() => {
                       if (editingListId !== list.id) {
                         setCurrentListId(list.id);
-                        setCurrentView('list-detail');
+                        navigateTo('list-detail');
                       }
                     }}
                     style={{ cursor: 'pointer', overflow: 'hidden' }}

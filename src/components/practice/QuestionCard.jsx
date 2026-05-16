@@ -449,35 +449,11 @@ const QuestionCard = memo(({
                                         const helps = propTestHelps || initialTestState?.config?.testHelps || { showLetterCounter: true, colorOnLengthMatch: true, colorOnExactMatch: true };
                                         if (!helps.showLetterCounter) return null;
 
-                                        const typed = (writtenInput || '').toLowerCase();
-                                        const target = (currentQuestion.answer || '').toLowerCase();
-                                        const isLengthMatch = typed.length === target.length;
-                                        const isExactMatch = typed === target;
-
-                                        // NLP Root Check
-                                        const typedRoot = nlp(typed).verbs().toInfinitive().text() || nlp(typed).nouns().toSingular().text() || typed;
-                                        const targetRoot = nlp(target).verbs().toInfinitive().text() || nlp(target).nouns().toSingular().text() || target;
-                                        const isRootMatch = typed.length > 0 && typedRoot.toLowerCase() === targetRoot.toLowerCase() && !isExactMatch;
-
-                                        let colorClass = 'text-danger';
-                                        let customStyle = { fontSize: '0.75rem', fontWeight: (isLengthMatch || isRootMatch) ? 'bold' : 'normal' };
-
-                                        if (isLengthMatch) {
-                                            if (isExactMatch && helps.colorOnExactMatch) {
-                                                colorClass = 'text-primary';
-                                            } else if (helps.colorOnLengthMatch) {
-                                                colorClass = 'text-success';
-                                            }
-                                        } else if (isRootMatch) {
-                                            colorClass = '';
-                                            customStyle.color = 'rgb(62, 214, 232)'; // Turquoise color for root match
-                                        }
-
-                                        return (
-                                            <small className={`ms-1 ${colorClass}`} style={customStyle}>
-                                                {typed.length} / {target.length} harf
-                                            </small>
-                                        );
+                                        return <LetterCounter 
+                                            typed={(writtenInput || '').toLowerCase()} 
+                                            target={(currentQuestion.answer || '').toLowerCase()} 
+                                            helps={helps} 
+                                        />;
                                     })()}
                                 </div>
                             ) : (
@@ -741,6 +717,44 @@ const QuestionCard = memo(({
                 })()}
             </Card>
         </div>
+    );
+});
+
+// Sub-component for performance optimization to avoid re-running NLP logic on every QuestionCard render
+const LetterCounter = React.memo(({ typed, target, helps }) => {
+    const isLengthMatch = typed.length === target.length;
+    const isExactMatch = typed === target;
+
+    // Only run expensive NLP if it's not an exact match but length might match or be close
+    const isRootMatch = React.useMemo(() => {
+        if (!typed || isExactMatch) return false;
+        try {
+            const typedRoot = nlp(typed).verbs().toInfinitive().text() || nlp(typed).nouns().toSingular().text() || typed;
+            const targetRoot = nlp(target).verbs().toInfinitive().text() || nlp(target).nouns().toSingular().text() || target;
+            return typedRoot.toLowerCase() === targetRoot.toLowerCase();
+        } catch (e) {
+            return false;
+        }
+    }, [typed, target, isExactMatch]);
+
+    let colorClass = 'text-danger';
+    let customStyle = { fontSize: '0.75rem', fontWeight: (isLengthMatch || isRootMatch) ? 'bold' : 'normal' };
+
+    if (isLengthMatch) {
+        if (isExactMatch && helps.colorOnExactMatch) {
+            colorClass = 'text-primary';
+        } else if (helps.colorOnLengthMatch) {
+            colorClass = 'text-success';
+        }
+    } else if (isRootMatch) {
+        colorClass = '';
+        customStyle.color = 'rgb(62, 214, 232)';
+    }
+
+    return (
+        <small className={`ms-1 ${colorClass}`} style={customStyle}>
+            {typed.length} / {target.length} harf
+        </small>
     );
 });
 

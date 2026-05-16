@@ -9,18 +9,30 @@ import Swal from 'sweetalert2';
 import nlp from 'compromise';
 
 function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpdateStage, onUpdateStagesBatch, onToggleStar, onDelete, onEdit, onRetakeSame, onRetakeNew, onRetakeMissed, onLogTestResults, dailyStats, testId, initialTestState, onSaveTest, customLists, onAddWordsToList, onRemoveWordFromList, stickyNotes, onUpdateNote, onUpdateStatus }) {
-    const [answers, setAnswers] = useState(() => initialTestState?.answers || {}); // { [questionIdx]: { selected: OptionObj } }
-    const [writtenInputs, setWrittenInputs] = useState(() => initialTestState?.writtenInputs || {}); // { [questionIdx]: string } for 'written' type
-    const [completed, setCompleted] = useState(() => initialTestState?.completed || false);
-    const [flippedCards, setFlippedCards] = useState({}); // { [questionIdx]: true/false }
-    const [hintsUsed, setHintsUsed] = useState(() => initialTestState?.hintsUsed || {}); // { [questionIdx]: count }
-    const [revealedHintIndices, setRevealedHintIndices] = useState(() => initialTestState?.revealedHintIndices || {}); // { [questionIdx]: number[] }
-    const [hiddenOptions, setHiddenOptions] = useState(() => initialTestState?.hiddenOptions || {}); // { [questionIdx]: [optionIndex, ...] }
-    const [activeQuestionIdx, setActiveQuestionIdx] = useState(() => initialTestState?.activeQuestionIdx || 0);
+    // Helper to get initial state from either initialTestState (Firestore) or LocalStorage
+    const getInitialData = (key, fallback) => {
+        try {
+            const localData = localStorage.getItem(`active_test_${testId}`);
+            if (localData) {
+                const parsed = JSON.parse(localData);
+                if (parsed && parsed[key] !== undefined) return parsed[key];
+            }
+        } catch (e) { console.warn("LocalStorage load error", e); }
+        return initialTestState?.[key] ?? fallback;
+    };
+
+    const [answers, setAnswers] = useState(() => getInitialData('answers', {})); 
+    const [writtenInputs, setWrittenInputs] = useState(() => getInitialData('writtenInputs', {})); 
+    const [completed, setCompleted] = useState(() => getInitialData('completed', false));
+    const [flippedCards, setFlippedCards] = useState({});
+    const [hintsUsed, setHintsUsed] = useState(() => getInitialData('hintsUsed', {}));
+    const [revealedHintIndices, setRevealedHintIndices] = useState(() => getInitialData('revealedHintIndices', {}));
+    const [hiddenOptions, setHiddenOptions] = useState(() => getInitialData('hiddenOptions', {}));
+    const [activeQuestionIdx, setActiveQuestionIdx] = useState(() => getInitialData('activeQuestionIdx', 0));
     const [selectedWordForModal, setSelectedWordForModal] = useState(null);
     const [showMobileMenu, setShowMobileMenu] = useState(false);
     const [showAnswersSummary, setShowAnswersSummary] = useState(false);
-    const [visibleCount, setVisibleCount] = useState(() => initialTestState?.completed ? questions?.length : 20);
+    const [visibleCount, setVisibleCount] = useState(() => getInitialData('completed', false) ? questions?.length : 20);
     const loadMoreRef = useRef(null);
 
     // New States for Gamified Options
@@ -45,6 +57,9 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
     const [bulkActionStatus, setBulkActionStatus] = useState(null); // 'removing-stars' | 'starring-errors'
     const [bulkProgress, setBulkProgress] = useState(0);
     const [resultQuestionTypes, setResultQuestionTypes] = useState(() => initialTestState?.config?.questionTypes || { mcq: true, written: false, tf: false, flashcard: false });
+
+    // Track last saved answer count to Firestore to limit writes
+    const lastFirestoreSaveCount = useRef(Object.keys(answers).length);
 
     // New State for Live Helps
     const [testHelps, setTestHelps] = useState(() => initialTestState?.config?.testHelps || {
@@ -78,7 +93,7 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
         return result;
     };
 
-    const displayMeaning = (text, qIdx) => {
+    const displayMeaning = React.useCallback((text, qIdx) => {
         const parts = getParsedMeaningsWithNumbers(text);
         if (parts.length <= 1) return text;
 
@@ -97,18 +112,18 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                 ))}
             </span>
         );
-    };
+    }, [activeMeanings, initialTestState?.config?.advancedOptions?.singleMeaning]);
 
-    const hasMultipleMeanings = (qIdx) => {
+    const hasMultipleMeanings = React.useCallback((qIdx) => {
         if (!initialTestState?.config?.advancedOptions?.singleMeaning) return false;
         const q = questions[qIdx];
         if (!q) return false;
         let textToCheck = q.format === 'definition' ? q.prompt : q.answer;
         if (q.type === 'tf' && q.format === 'term') textToCheck = q.displayedAnswerText;
         return getParsedMeaningsWithNumbers(textToCheck).length > 1;
-    };
+    }, [questions, initialTestState?.config?.advancedOptions?.singleMeaning]);
 
-    const canRevealMoreMeanings = (qIdx) => {
+    const canRevealMoreMeanings = React.useCallback((qIdx) => {
         if (!initialTestState?.config?.advancedOptions?.singleMeaning) return false;
         const q = questions[qIdx];
         if (!q) return false;
@@ -120,9 +135,9 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
         const revealedSeeds = activeMeanings[qIdx] || [0];
         const revealedIndices = new Set(revealedSeeds.map(s => s % parts.length));
         return revealedIndices.size < parts.length;
-    };
+    }, [activeMeanings, questions, initialTestState?.config?.advancedOptions?.singleMeaning]);
 
-    const handleNextMeaning = (qIdx) => {
+    const handleNextMeaning = React.useCallback((qIdx) => {
         if (completed) return;
         setActiveMeanings(prev => {
             const currentSeeds = prev[qIdx] || [0];
@@ -132,24 +147,35 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                 [qIdx]: [...currentSeeds, nextSeed]
             };
         });
-    };
+    }, [completed]);
 
-    // Auto-save progress
+    // Auto-save progress: Optimized to reduce Firestore writes significantly
     useEffect(() => {
-        if (!testId || !onSaveTest) return;
-        const timeoutId = setTimeout(() => {
-            onSaveTest(testId, {
-                answers,
-                writtenInputs,
-                completed,
-                hintsUsed,
-                hiddenOptions,
-                activeQuestionIdx,
-                status: completed ? 'completed' : 'ongoing'
-            });
-        }, 1000); // Debounce saves by 1 second to avoid excessive writes
-        return () => clearTimeout(timeoutId);
-    }, [answers, writtenInputs, completed, hintsUsed, hiddenOptions, activeQuestionIdx, testId, onSaveTest]);
+        if (!testId || !onSaveTest || completed) return;
+        
+        const currentAnswerCount = Object.keys(answers).length;
+        const testData = {
+            answers,
+            writtenInputs,
+            completed,
+            hintsUsed,
+            hiddenOptions,
+            activeQuestionIdx,
+            status: completed ? 'completed' : 'ongoing'
+        };
+
+        // 1. Instant LocalStorage backup (FREE - Zero cost Safari protection)
+        localStorage.setItem(`active_test_${testId}`, JSON.stringify(testData));
+
+        // 2. Throttled Firestore save: Only every 5 questions OR on completion
+        // (Completion is handled in finish logic, but we keep it here as safety)
+        const diff = Math.abs(currentAnswerCount - lastFirestoreSaveCount.current);
+        
+        if (diff >= 5) {
+            onSaveTest(testId, testData);
+            lastFirestoreSaveCount.current = currentAnswerCount;
+        }
+    }, [answers, completed, hintsUsed, hiddenOptions, activeQuestionIdx, testId, onSaveTest]);
 
     // Combo Timer countdown
     useEffect(() => {
@@ -275,9 +301,9 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [completed, activeQuestionIdx, questions, answers, hiddenOptions]);
 
-    const flipCard = (idx) => setFlippedCards(prev => ({ ...prev, [idx]: !prev[idx] }));
+    const flipCard = React.useCallback((idx) => setFlippedCards(prev => ({ ...prev, [idx]: !prev[idx] })), []);
 
-    const handleSelectAnswer = (qIdx, optionObj) => {
+    const handleSelectAnswer = React.useCallback((qIdx, optionObj) => {
         if (completed) return; // Prevent changing answers after completion
 
         // Gamification effects (only trigger on first try)
@@ -347,9 +373,9 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
 
             return newAnswers;
         });
-    };
+    }, [completed, answers, questions, writtenInputs, initialTestState?.config?.advancedOptions?.comboStreak, comboTimer]);
 
-    const handleWrittenSubmit = (qIdx, correctAnswer) => {
+    const handleWrittenSubmit = React.useCallback((qIdx, correctAnswer) => {
         if (completed || !!answers[qIdx]) return;
         const typed = (writtenInputs[qIdx] || '').trim().toLowerCase();
         const correct = correctAnswer.trim().toLowerCase();
@@ -428,9 +454,9 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
 
             return newAnswers;
         });
-    };
+    }, [completed, answers, writtenInputs, words, questions, initialTestState?.config?.advancedOptions?.comboStreak, comboTimer]);
 
-    const handleHintClick = (idx, q) => {
+    const handleHintClick = React.useCallback((idx, q) => {
         if (completed || !!answers[idx]) return;
 
         const currentHints = hintsUsed[idx] || 0;
@@ -491,9 +517,9 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                 setHintsUsed(prev => ({ ...prev, [idx]: currentHints + 1 }));
             }
         }
-    };
+    }, [completed, answers, hintsUsed, hiddenOptions]);
 
-    const handleSpeak = (text) => {
+    const handleSpeak = React.useCallback((text) => {
         if (!('speechSynthesis' in window)) return;
 
         const speak = (voices) => {
@@ -521,9 +547,9 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                 speak(window.speechSynthesis.getVoices());
             }, { once: true });
         }
-    };
+    }, []);
 
-    const scrollToQuestion = (idx) => {
+    const scrollToQuestion = React.useCallback((idx) => {
         if (idx >= visibleCount) {
             setVisibleCount(idx + 1);
         }
@@ -533,9 +559,9 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                 questionRefs.current[idx].scrollIntoView({ behavior: 'smooth', block: 'start' });
             }
         }, idx >= visibleCount ? 100 : 0);
-    };
+    }, [visibleCount]);
 
-    const focusNextWrittenQuestion = (idx, direction) => {
+    const focusNextWrittenQuestion = React.useCallback((idx, direction) => {
         if (completed) return;
         let nextIdx = -1;
         if (direction === 'down') {
@@ -569,7 +595,7 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                 }, 350);
             }, nextIdx >= visibleCount ? 100 : 0);
         }
-    };
+    }, [completed, questions, answers, visibleCount, scrollToQuestion]);
 
     const handleClose = async () => {
         const exitFn = onHome || onClose;
