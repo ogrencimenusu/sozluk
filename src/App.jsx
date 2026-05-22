@@ -3690,7 +3690,7 @@ function App() {
 
             {/* Action Type Selector */}
             <p className="fw-medium text-muted small text-uppercase letter-spacing-1 mb-2">İşlem Türü</p>
-            <div className="d-flex gap-2 mb-4">
+            <div className="d-flex gap-2 mb-4 overflow-x-auto pb-2" style={{ WebkitOverflowScrolling: 'touch' }}>
               {[
                 { key: 'status', icon: 'bi-mortarboard', label: 'Öğrenme' },
                 { key: 'practice', icon: 'bi-controller', label: 'Test Çöz' },
@@ -3708,7 +3708,7 @@ function App() {
                     ? (danger ? 'btn-danger border-danger' : 'btn-primary border-primary')
                     : (danger ? 'btn-outline-danger' : 'border-secondary border-opacity-25 bg-body text-body')
                     }`}
-                  style={{ minWidth: '70px' }}
+                  style={{ minWidth: '85px', flexShrink: 0 }}
                   onClick={() => setBulkActionType(key)}
                 >
                   <i className={`bi ${icon} fs-5`}></i>

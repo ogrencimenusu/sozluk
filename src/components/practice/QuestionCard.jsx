@@ -37,7 +37,8 @@ const QuestionCard = memo(({
     setWrittenInputs,
     questions,
     testHelps: propTestHelps,
-    stickyNotes
+    stickyNotes,
+    onWrittenBlur
 }) => {
     const isMcq = currentQuestion.type !== 'tf' && currentQuestion.type !== 'written' && currentQuestion.type !== 'flashcard' && currentQuestion.options;
     const isWritten = currentQuestion.type === 'written';
@@ -418,6 +419,11 @@ const QuestionCard = memo(({
                                             value={writtenInput || ''}
                                             autoCapitalize="none"
                                             onChange={e => setWrittenInputs(prev => ({ ...prev, [idx]: e.target.value.toLowerCase() }))}
+                                            onBlur={e => {
+                                                if (onWrittenBlur) {
+                                                    onWrittenBlur(idx, e.target.value);
+                                                }
+                                            }}
                                             onKeyDown={e => {
                                                 if (e.key === 'Enter') {
                                                     e.preventDefault();

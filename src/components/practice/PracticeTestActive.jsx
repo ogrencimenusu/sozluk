@@ -149,11 +149,32 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
         });
     }, [completed]);
 
-    // Auto-save progress: Optimized to reduce Firestore writes significantly
+    // Keep track of the latest test data to save on unmount/exit
+    const latestTestDataRef = useRef(null);
+
+    // Save logic
+    const saveToFirestore = React.useCallback((data) => {
+        if (!testId || !onSaveTest) return;
+        onSaveTest(testId, data);
+    }, [testId, onSaveTest]);
+
+    // Keep ref updated
+    useEffect(() => {
+        latestTestDataRef.current = {
+            answers,
+            writtenInputs,
+            completed,
+            hintsUsed,
+            hiddenOptions,
+            activeQuestionIdx,
+            status: completed ? 'completed' : 'ongoing'
+        };
+    }, [answers, writtenInputs, completed, hintsUsed, hiddenOptions, activeQuestionIdx]);
+
+    // Auto-save progress: Debounced to reduce Firestore writes significantly while auto-saving properly
     useEffect(() => {
         if (!testId || !onSaveTest || completed) return;
         
-        const currentAnswerCount = Object.keys(answers).length;
         const testData = {
             answers,
             writtenInputs,
@@ -167,15 +188,22 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
         // 1. Instant LocalStorage backup (FREE - Zero cost Safari protection)
         localStorage.setItem(`active_test_${testId}`, JSON.stringify(testData));
 
-        // 2. Throttled Firestore save: Only every 5 questions OR on completion
-        // (Completion is handled in finish logic, but we keep it here as safety)
-        const diff = Math.abs(currentAnswerCount - lastFirestoreSaveCount.current);
-        
-        if (diff >= 5) {
-            onSaveTest(testId, testData);
-            lastFirestoreSaveCount.current = currentAnswerCount;
-        }
-    }, [answers, completed, hintsUsed, hiddenOptions, activeQuestionIdx, testId, onSaveTest]);
+        // 2. Debounced Firestore save: Waits for a 1.5s pause to reduce writes
+        const timer = setTimeout(() => {
+            saveToFirestore(testData);
+        }, 1500);
+
+        return () => clearTimeout(timer);
+    }, [answers, writtenInputs, completed, hintsUsed, hiddenOptions, activeQuestionIdx, testId, saveToFirestore]);
+
+    // Save-on-unmount safeguard to ensure any pending changes are saved immediately when leaving
+    useEffect(() => {
+        return () => {
+            if (latestTestDataRef.current && !completed) {
+                onSaveTest(testId, latestTestDataRef.current);
+            }
+        };
+    }, [testId, onSaveTest, completed]);
 
     // Combo Timer countdown
     useEffect(() => {
@@ -374,6 +402,29 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
             return newAnswers;
         });
     }, [completed, answers, questions, writtenInputs, initialTestState?.config?.advancedOptions?.comboStreak, comboTimer]);
+
+    const handleWrittenBlur = React.useCallback((qIdx, value) => {
+        if (!testId || !onSaveTest || completed) return;
+        
+        const testData = {
+            answers,
+            writtenInputs: {
+                ...writtenInputs,
+                [qIdx]: (value || '').trim().toLowerCase()
+            },
+            completed,
+            hintsUsed,
+            hiddenOptions,
+            activeQuestionIdx,
+            status: completed ? 'completed' : 'ongoing'
+        };
+
+        // 1. Instant LocalStorage backup
+        localStorage.setItem(`active_test_${testId}`, JSON.stringify(testData));
+
+        // 2. Immediate Firestore save
+        onSaveTest(testId, testData);
+    }, [answers, writtenInputs, completed, hintsUsed, hiddenOptions, activeQuestionIdx, testId, onSaveTest]);
 
     const handleWrittenSubmit = React.useCallback((qIdx, correctAnswer) => {
         if (completed || !!answers[qIdx]) return;
@@ -597,12 +648,25 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
         }
     }, [completed, questions, answers, visibleCount, scrollToQuestion]);
 
+    const getAnsweredCount = () => {
+        let count = 0;
+        questions.forEach((q, idx) => {
+            if (answers[idx]) {
+                count++;
+            } else if (q.type === 'written' && (writtenInputs[idx] || '').trim().length > 0) {
+                count++;
+            }
+        });
+        return count;
+    };
+
     const handleClose = async () => {
         const exitFn = onHome || onClose;
-        if (!completed && Object.keys(answers).length > 0) {
+        const answeredCount = getAnsweredCount();
+        if (!completed && answeredCount > 0) {
             const result = await Swal.fire({
                 title: 'Testi bırakmak istiyor musunuz?',
-                text: `${Object.keys(answers).length} soruyu cevapladınız. İlerlemeniz kaydedilmeyecek.`,
+                text: `${answeredCount} soruyu cevapladınız. İlerlemeniz kaydedilmiştir, daha sonra devam edebilirsiniz.`,
                 icon: 'warning',
                 showCancelButton: true,
                 confirmButtonColor: '#d33',
@@ -616,10 +680,11 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
     };
 
     const handleOptions = async () => {
-        if (!completed && Object.keys(answers).length > 0) {
+        const answeredCount = getAnsweredCount();
+        if (!completed && answeredCount > 0) {
             const result = await Swal.fire({
                 title: 'Seçeneklere dönmek istiyor musunuz?',
-                text: `${Object.keys(answers).length} soruyu cevapladınız. İlerlemeniz kaydedilmeyecek.`,
+                text: `${answeredCount} soruyu cevapladınız. İlerlemeniz kaydedilmiştir, daha sonra devam edebilirsiniz.`,
                 icon: 'warning',
                 showCancelButton: true,
                 confirmButtonColor: '#d33',
@@ -630,18 +695,6 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
             if (!result.isConfirmed) return;
         }
         onClose();
-    };
-
-    const getAnsweredCount = () => {
-        let count = 0;
-        questions.forEach((q, idx) => {
-            if (answers[idx]) {
-                count++;
-            } else if (q.type === 'written' && (writtenInputs[idx] || '').trim().length > 0) {
-                count++;
-            }
-        });
-        return count;
     };
 
     const handleSubmit = async () => {
@@ -804,6 +857,9 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
         return !ans?.isCorrect || ans?.hasTypo || ans?.text === 'Boş bırakıldı';
     }) : [];
     const errorWordsUniqueCount = new Set(errorQuestions.map(q => q.wordId)).size;
+    
+    const correctQuestions = completed ? questions.filter((q, idx) => answers[idx]?.selected?.isCorrect) : [];
+    const correctWordsUniqueCount = new Set(correctQuestions.map(q => q.wordId)).size;
     
     const testWordIds = React.useMemo(() => new Set(questions.map(q => q.wordId)), [questions]);
     const starredWordsInTestCount = words.filter(w => testWordIds.has(w.id) && w.isStarred).length;
@@ -1165,42 +1221,50 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                     {/* Word Management Section Row */}
                                     <Col lg={12}>
                                         <div className="p-3 rounded-4 bg-body border border-secondary border-opacity-10 shadow-sm">
-                                            <div className="d-flex align-items-center gap-2 mb-3">
-                                                <i className="bi bi-star-fill text-warning fs-5"></i>
-                                                <span className="fw-bold small text-muted text-uppercase letter-spacing-1">Kelimeleri Yönet</span>
+                                            <div className="d-flex justify-content-between align-items-center mb-3">
+                                                <div className="d-flex align-items-center gap-2">
+                                                    <i className="bi bi-star-fill text-warning fs-5"></i>
+                                                    <span className="fw-bold small text-muted text-uppercase letter-spacing-1">Kelimeleri Yönet</span>
+                                                </div>
+                                                <button 
+                                                    type="button"
+                                                    className="btn btn-link btn-sm text-danger text-decoration-none p-0 fw-medium d-flex align-items-center gap-1 transition-all hover-opacity-75"
+                                                    style={{ fontSize: '0.85rem' }}
+                                                    onClick={async () => {
+                                                        const starredWordsInTest = words.filter(w => testWordIds.has(w.id) && w.isStarred);
+                                                        if (starredWordsInTest.length === 0) return;
+                                                        const result = await Swal.fire({
+                                                            title: 'Emin misiniz?',
+                                                            text: `Bu testteki (${starredWordsInTest.length}) yıldızlı kelimenin yıldızını kaldırmak istediğinize emin misiniz?`,
+                                                            icon: 'warning',
+                                                            showCancelButton: true,
+                                                            confirmButtonText: 'Evet, kaldır',
+                                                            cancelButtonText: 'İptal'
+                                                        });
+                                                        if (result.isConfirmed) {
+                                                            setBulkActionStatus('removing-stars'); setBulkProgress(0);
+                                                            for (let i = 0; i < starredWordsInTest.length; i++) {
+                                                                await onToggleStar(null, starredWordsInTest[i]);
+                                                                setBulkProgress(Math.round(((i + 1) / starredWordsInTest.length) * 100));
+                                                            }
+                                                            setTimeout(() => { setBulkActionStatus(null); setBulkProgress(0); }, 1000);
+                                                        }
+                                                    }}
+                                                    disabled={bulkActionStatus !== null || starredWordsInTestCount === 0}
+                                                >
+                                                    {bulkActionStatus === 'removing-stars' ? (
+                                                        <span>%{bulkProgress} Kaldırılıyor</span>
+                                                    ) : (
+                                                        <>
+                                                            <i className="bi bi-star"></i>
+                                                            <span>Yıldızları Kaldır ({starredWordsInTestCount})</span>
+                                                        </>
+                                                    )}
+                                                </button>
                                             </div>
                                             
-                                            <Row className="g-2">
-                                                <Col sm={6} md={3}>
-                                                    <Button 
-                                                        variant="outline-danger" 
-                                                        className="w-100 d-flex align-items-center justify-content-center gap-2 rounded-3 py-2 border-2 transition-all hover-opacity-75 position-relative overflow-hidden" 
-                                                        onClick={async () => {
-                                                            const starredWordsInTest = words.filter(w => testWordIds.has(w.id) && w.isStarred);
-                                                            if (starredWordsInTest.length === 0) return;
-                                                            const result = await Swal.fire({
-                                                                title: 'Emin misiniz?',
-                                                                text: `Bu testteki (${starredWordsInTest.length}) yıldızlı kelimenin yıldızını kaldırmak istediğinize emin misiniz?`,
-                                                                icon: 'warning',
-                                                                showCancelButton: true,
-                                                                confirmButtonText: 'Evet, kaldır',
-                                                                cancelButtonText: 'İptal'
-                                                            });
-                                                            if (result.isConfirmed) {
-                                                                setBulkActionStatus('removing-stars'); setBulkProgress(0);
-                                                                for (let i = 0; i < starredWordsInTest.length; i++) {
-                                                                    await onToggleStar(null, starredWordsInTest[i]);
-                                                                    setBulkProgress(Math.round(((i + 1) / starredWordsInTest.length) * 100));
-                                                                }
-                                                                setTimeout(() => { setBulkActionStatus(null); setBulkProgress(0); }, 1000);
-                                                            }
-                                                        }}
-                                                        disabled={bulkActionStatus !== null || starredWordsInTestCount === 0}
-                                                    >
-                                                        {bulkActionStatus === 'removing-stars' ? <span>%{bulkProgress} Kaldırılıyor</span> : <><i className="bi bi-star"></i> <span className="small fw-bold">Yıldızları Kaldır ({starredWordsInTestCount})</span></>}
-                                                    </Button>
-                                                </Col>
-                                                <Col sm={6} md={3}>
+                                            <Row className="g-2 row-cols-2 row-cols-md-4 justify-content-center">
+                                                <Col>
                                                     <Button 
                                                         variant="outline-warning" 
                                                         className="w-100 d-flex align-items-center justify-content-center gap-2 rounded-3 py-2 border-2 transition-all hover-opacity-75 position-relative overflow-hidden" 
@@ -1217,13 +1281,33 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                                         }}
                                                         disabled={bulkActionStatus !== null || errorWordsUniqueCount === 0}
                                                     >
-                                                        {bulkActionStatus === 'starring-errors' ? <span>%{bulkProgress} Yıldızlanıyor</span> : <><i className="bi bi-star-fill"></i> <span className="small fw-bold">Hataları Yıldızla ({errorWordsUniqueCount})</span></>}
+                                                        {bulkActionStatus === 'starring-errors' ? <span>%{bulkProgress} Yıldızlanıyor</span> : <><i className="bi bi-star-fill text-warning"></i> <span className="small fw-bold">Hataları Yıldızla ({errorWordsUniqueCount})</span></>}
                                                     </Button>
                                                 </Col>
-                                                <Col sm={6} md={3}>
+                                                <Col>
+                                                    <Button 
+                                                        variant="outline-success" 
+                                                        className="w-100 d-flex align-items-center justify-content-center gap-2 rounded-3 py-2 border-2 transition-all hover-opacity-75 position-relative overflow-hidden" 
+                                                        onClick={async () => {
+                                                            const ids = Array.from(new Set(correctQuestions.map(q => q.wordId)));
+                                                            const targets = ids.map(id => words.find(w => w.id === id)).filter(w => w && !w.isStarred);
+                                                            if (targets.length === 0) return;
+                                                            setBulkActionStatus('starring-corrects'); setBulkProgress(0);
+                                                            for (let i = 0; i < targets.length; i++) {
+                                                                await onToggleStar(null, targets[i]);
+                                                                setBulkProgress(Math.round(((i + 1) / targets.length) * 100));
+                                                            }
+                                                            setTimeout(() => { setBulkActionStatus(null); setBulkProgress(0); }, 1000);
+                                                        }}
+                                                        disabled={bulkActionStatus !== null || correctWordsUniqueCount === 0}
+                                                    >
+                                                        {bulkActionStatus === 'starring-corrects' ? <span>%{bulkProgress} Yıldızlanıyor</span> : <><i className="bi bi-star-fill text-success"></i> <span className="small fw-bold">Doğruları Yıldızla ({correctWordsUniqueCount})</span></>}
+                                                    </Button>
+                                                </Col>
+                                                <Col>
                                                     <Button 
                                                         variant="outline-secondary" 
-                                                        className="w-100 rounded-3 py-2 border-2 transition-all hover-opacity-75 position-relative overflow-hidden" 
+                                                        className="w-100 d-flex align-items-center justify-content-center gap-2 rounded-3 py-2 border-2 transition-all hover-opacity-75 position-relative overflow-hidden" 
                                                         onClick={async () => {
                                                             const ids = Array.from(new Set(blankQuestions.map(q => q.wordId)));
                                                             const targets = ids.map(id => words.find(w => w.id === id)).filter(w => w && !w.isStarred);
@@ -1237,13 +1321,13 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                                         }}
                                                         disabled={bulkActionStatus !== null || blankCount === 0}
                                                     >
-                                                        {bulkActionStatus === 'starring-blanks' ? <span>%{bulkProgress}</span> : <span className="small fw-bold">Boşlar ({blankCount})</span>}
+                                                        {bulkActionStatus === 'starring-blanks' ? <span>%{bulkProgress} Yıldızlanıyor</span> : <><i className="bi bi-star text-secondary"></i> <span className="small fw-bold">Boşlar ({blankCount})</span></>}
                                                     </Button>
                                                 </Col>
-                                                <Col sm={6} md={3}>
+                                                <Col>
                                                     <Button 
                                                         variant="outline-danger" 
-                                                        className="w-100 rounded-3 py-2 border-2 transition-all hover-opacity-75 position-relative overflow-hidden" 
+                                                        className="w-100 d-flex align-items-center justify-content-center gap-2 rounded-3 py-2 border-2 transition-all hover-opacity-75 position-relative overflow-hidden" 
                                                         onClick={async () => {
                                                             const ids = Array.from(new Set(wrongQuestions.map(q => q.wordId)));
                                                             const targets = ids.map(id => words.find(w => w.id === id)).filter(w => w && !w.isStarred);
@@ -1257,7 +1341,7 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                                         }}
                                                         disabled={bulkActionStatus !== null || wrongCount === 0}
                                                     >
-                                                        {bulkActionStatus === 'starring-wrongs' ? <span>%{bulkProgress}</span> : <span className="small fw-bold">Yanlışlar ({wrongCount})</span>}
+                                                        {bulkActionStatus === 'starring-wrongs' ? <span>%{bulkProgress} Yıldızlanıyor</span> : <><i className="bi bi-star-fill text-danger"></i> <span className="small fw-bold">Yanlışlar ({wrongCount})</span></>}
                                                     </Button>
                                                 </Col>
                                             </Row>
@@ -1398,6 +1482,7 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                         setWrittenInputs={setWrittenInputs}
                                         questions={questions}
                                         stickyNotes={stickyNotes}
+                                        onWrittenBlur={handleWrittenBlur}
                                     />
                                 </div>
                             ))}
