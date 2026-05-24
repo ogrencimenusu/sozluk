@@ -78,14 +78,13 @@ const SettingsPage = ({ theme, setTheme, viewMode, setViewMode, wordsPerPage, se
         }
         await Swal.fire({
           title: 'Başarılı!',
-          text: 'Önbellek temizlendi. Uygulama v2.1.4 olarak yenilenecek.',
+          text: 'Önbellek temizlendi. Uygulama v2.1.5 olarak yenilenecek.',
           icon: 'success',
           timer: 1500,
           showConfirmButton: false,
-          background: theme === 'dark' ? '#1e293b' : '#fff',
-          color: theme === 'dark' ? '#f8fafc' : '#1e293b'
         });
-        window.location.reload(true);
+        // Force completely uncached reload by appending a unique timestamp query parameter
+        window.location.href = window.location.origin + window.location.pathname + '?v=' + Date.now();
       } catch (error) {
         console.error('Cache clearing failed:', error);
         Swal.fire({
@@ -196,7 +195,7 @@ const SettingsPage = ({ theme, setTheme, viewMode, setViewMode, wordsPerPage, se
                   <h5 className="fw-bold mb-1">Sözlük Projesi</h5>
                   <p className="text-muted small mb-2 flex-grow-1">Bireysel Kelime Öğrenme Asistanı</p>
                   <div className="d-flex flex-column gap-2 align-items-center">
-                    <div className="badge bg-primary bg-opacity-10 text-primary px-3 py-2 rounded-pill">Sürüm v2.1.4</div>
+                    <div className="badge bg-primary bg-opacity-10 text-primary px-3 py-2 rounded-pill">Sürüm v2.1.5</div>
                     <div className="text-success small fw-medium">
                       <i className="bi bi-cloud-check-fill me-1"></i> Multi-Device Sync Aktif
                     </div>

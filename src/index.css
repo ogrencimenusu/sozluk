@@ -874,3 +874,107 @@ html, body {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+
+/* ─── Sync Status Bar & Spinner ─── */
+.spin-anim {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  100% { transform: rotate(360deg); }
+}
+
+.sync-status-bar {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 1025;
+  width: 380px;
+  max-width: calc(100% - 40px);
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(15px);
+  -webkit-backdrop-filter: blur(15px);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 16px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.06);
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+[data-bs-theme="dark"] .sync-status-bar {
+  background: rgba(15, 23, 42, 0.85);
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+}
+
+@media (max-width: 767.98px) {
+  .sync-status-bar {
+    bottom: 65px;
+    left: 0;
+    right: 0;
+    width: 100%;
+    max-width: 100%;
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+    border-bottom: none;
+    box-shadow: 0 -4px 15px rgba(0, 0, 0, 0.04);
+    padding: 8px 16px;
+  }
+}
+
+/* ─── Multi-Device Sync Pulsing Notification Dot ─── */
+.sync-pulse-dot {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 9px;
+  height: 9px;
+  background-color: #6f42c1; /* Purple */
+  border-radius: 50%;
+  border: 1.5px solid #ffffff;
+  animation: syncPulse 1.8s infinite ease-in-out;
+  box-shadow: 0 0 4px rgba(111, 66, 193, 0.4);
+}
+
+@keyframes syncPulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(111, 66, 193, 0.7);
+    transform: scale(0.9);
+  }
+  70% {
+    box-shadow: 0 0 0 5px rgba(111, 66, 193, 0);
+    transform: scale(1.15);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(111, 66, 193, 0);
+    transform: scale(0.9);
+  }
+}
+
+/* Delete / Dismiss Warning Icon Button style */
+.device-dismiss-btn {
+  color: #dc2626; /* Red color */
+  opacity: 0.5;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.device-dismiss-btn:hover {
+  opacity: 1 !important;
+  background: rgba(220, 38, 38, 0.1);
+  color: #dc2626;
+}
+

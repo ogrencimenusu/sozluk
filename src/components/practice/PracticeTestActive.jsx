@@ -8,7 +8,12 @@ import DailyGoalTracker from '../DailyGoalTracker';
 import Swal from 'sweetalert2';
 import nlp from 'compromise';
 
-function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpdateStage, onUpdateStagesBatch, onToggleStar, onDelete, onEdit, onRetakeSame, onRetakeNew, onRetakeMissed, onLogTestResults, dailyStats, testId, initialTestState, onSaveTest, customLists, onAddWordsToList, onRemoveWordFromList, stickyNotes, onUpdateNote, onUpdateStatus }) {
+function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpdateStage, onUpdateStagesBatch, onUpdateStatusBatch, onToggleStar, onToggleStarBatch, onDelete, onEdit, onRetakeSame, onRetakeNew, onRetakeMissed, onLogTestResults, dailyStats, testId, initialTestState, onSaveTest, customLists, onAddWordsToList, onRemoveWordFromList, stickyNotes, onUpdateNote, onUpdateStatus }) {
+    const onSaveTestRef = useRef(onSaveTest);
+    useEffect(() => {
+        onSaveTestRef.current = onSaveTest;
+    }, [onSaveTest]);
+
     // Helper to get initial state from either initialTestState (Firestore) or LocalStorage
     const getInitialData = (key, fallback) => {
         try {
@@ -24,6 +29,13 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
     const [answers, setAnswers] = useState(() => getInitialData('answers', {})); 
     const [writtenInputs, setWrittenInputs] = useState(() => getInitialData('writtenInputs', {})); 
     const [completed, setCompleted] = useState(() => getInitialData('completed', false));
+
+    const completedRef = useRef(completed);
+    useEffect(() => {
+        completedRef.current = completed;
+    }, [completed]);
+
+    const [openCategory, setOpenCategory] = useState(null); // null | 'errors' | 'corrects' | 'blanks' | 'wrongs'
     const [flippedCards, setFlippedCards] = useState({});
     const [hintsUsed, setHintsUsed] = useState(() => getInitialData('hintsUsed', {}));
     const [revealedHintIndices, setRevealedHintIndices] = useState(() => getInitialData('revealedHintIndices', {}));
@@ -152,11 +164,17 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
     // Keep track of the latest test data to save on unmount/exit
     const latestTestDataRef = useRef(null);
 
+    // Keep activeQuestionIdx in a ref to avoid triggering debounced Firestore saves on every scroll event
+    const activeQuestionIdxRef = useRef(activeQuestionIdx);
+    useEffect(() => {
+        activeQuestionIdxRef.current = activeQuestionIdx;
+    }, [activeQuestionIdx]);
+
     // Save logic
     const saveToFirestore = React.useCallback((data) => {
-        if (!testId || !onSaveTest) return;
-        onSaveTest(testId, data);
-    }, [testId, onSaveTest]);
+        if (!testId || !onSaveTestRef.current || completed) return;
+        onSaveTestRef.current(testId, data);
+    }, [testId, completed]);
 
     // Keep ref updated
     useEffect(() => {
@@ -172,8 +190,9 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
     }, [answers, writtenInputs, completed, hintsUsed, hiddenOptions, activeQuestionIdx]);
 
     // Auto-save progress: Debounced to reduce Firestore writes significantly while auto-saving properly
+    // NOTE: We omit activeQuestionIdx from the dependencies to prevent write triggers on scroll.
     useEffect(() => {
-        if (!testId || !onSaveTest || completed) return;
+        if (!testId || !onSaveTestRef.current || completed) return;
         
         const testData = {
             answers,
@@ -181,7 +200,7 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
             completed,
             hintsUsed,
             hiddenOptions,
-            activeQuestionIdx,
+            activeQuestionIdx: activeQuestionIdxRef.current,
             status: completed ? 'completed' : 'ongoing'
         };
 
@@ -194,16 +213,31 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
         }, 1500);
 
         return () => clearTimeout(timer);
-    }, [answers, writtenInputs, completed, hintsUsed, hiddenOptions, activeQuestionIdx, testId, saveToFirestore]);
+    }, [answers, writtenInputs, completed, hintsUsed, hiddenOptions, testId, saveToFirestore]);
+
+    // Dedicated local-only scroll position persistence (FREE - local storage only)
+    useEffect(() => {
+        if (!testId || completed) return;
+        try {
+            const cached = localStorage.getItem(`active_test_${testId}`);
+            if (cached) {
+                const parsed = JSON.parse(cached);
+                parsed.activeQuestionIdx = activeQuestionIdx;
+                localStorage.setItem(`active_test_${testId}`, JSON.stringify(parsed));
+            }
+        } catch (e) {
+            console.error("Local storage active index sync failed:", e);
+        }
+    }, [activeQuestionIdx, testId, completed]);
 
     // Save-on-unmount safeguard to ensure any pending changes are saved immediately when leaving
     useEffect(() => {
         return () => {
-            if (latestTestDataRef.current && !completed) {
-                onSaveTest(testId, latestTestDataRef.current);
+            if (latestTestDataRef.current && !completedRef.current && onSaveTestRef.current) {
+                onSaveTestRef.current(testId, latestTestDataRef.current);
             }
         };
-    }, [testId, onSaveTest, completed]);
+    }, [testId]);
 
     // Combo Timer countdown
     useEffect(() => {
@@ -404,13 +438,17 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
     }, [completed, answers, questions, writtenInputs, initialTestState?.config?.advancedOptions?.comboStreak, comboTimer]);
 
     const handleWrittenBlur = React.useCallback((qIdx, value) => {
-        if (!testId || !onSaveTest || completed) return;
+        if (!testId || !onSaveTestRef.current || completed) return;
+        
+        const prevValue = (writtenInputs[qIdx] || '').trim().toLowerCase();
+        const newValue = (value || '').trim().toLowerCase();
+        if (prevValue === newValue) return; // Skip saving if value didn't change!
         
         const testData = {
             answers,
             writtenInputs: {
                 ...writtenInputs,
-                [qIdx]: (value || '').trim().toLowerCase()
+                [qIdx]: newValue
             },
             completed,
             hintsUsed,
@@ -423,8 +461,8 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
         localStorage.setItem(`active_test_${testId}`, JSON.stringify(testData));
 
         // 2. Immediate Firestore save
-        onSaveTest(testId, testData);
-    }, [answers, writtenInputs, completed, hintsUsed, hiddenOptions, activeQuestionIdx, testId, onSaveTest]);
+        onSaveTestRef.current(testId, testData);
+    }, [answers, writtenInputs, completed, hintsUsed, hiddenOptions, activeQuestionIdx, testId]);
 
     const handleWrittenSubmit = React.useCallback((qIdx, correctAnswer) => {
         if (completed || !!answers[qIdx]) return;
@@ -775,6 +813,20 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
         setAnswers(finalAnswers);
         setCompleted(true);
         setVisibleCount(questions.length);
+
+        if (testId && onSaveTestRef.current) {
+            const finalTestData = {
+                answers: finalAnswers,
+                writtenInputs,
+                completed: true,
+                hintsUsed,
+                hiddenOptions,
+                activeQuestionIdx,
+                status: 'completed'
+            };
+            onSaveTestRef.current(testId, finalTestData);
+            localStorage.setItem(`active_test_${testId}`, JSON.stringify(finalTestData));
+        }
 
         // Update learning stages for each answered question
         let correctCountLocal = 0;
@@ -1242,11 +1294,15 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                                             cancelButtonText: 'İptal'
                                                         });
                                                         if (result.isConfirmed) {
-                                                            setBulkActionStatus('removing-stars'); setBulkProgress(0);
-                                                            for (let i = 0; i < starredWordsInTest.length; i++) {
-                                                                await onToggleStar(null, starredWordsInTest[i]);
-                                                                setBulkProgress(Math.round(((i + 1) / starredWordsInTest.length) * 100));
+                                                            setBulkActionStatus('removing-stars'); setBulkProgress(50);
+                                                            if (onToggleStarBatch) {
+                                                                await onToggleStarBatch(starredWordsInTest.map(w => w.id), false);
+                                                            } else {
+                                                                for (let i = 0; i < starredWordsInTest.length; i++) {
+                                                                    await onToggleStar(null, starredWordsInTest[i]);
+                                                                }
                                                             }
+                                                            setBulkProgress(100);
                                                             setTimeout(() => { setBulkActionStatus(null); setBulkProgress(0); }, 1000);
                                                         }
                                                     }}
@@ -1263,88 +1319,146 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                                 </button>
                                             </div>
                                             
-                                            <Row className="g-2 row-cols-2 row-cols-md-4 justify-content-center">
-                                                <Col>
-                                                    <Button 
-                                                        variant="outline-warning" 
-                                                        className="w-100 d-flex align-items-center justify-content-center gap-2 rounded-3 py-2 border-2 transition-all hover-opacity-75 position-relative overflow-hidden" 
-                                                        onClick={async () => {
-                                                            const errorWordIds = Array.from(new Set(errorQuestions.map(q => q.wordId)));
-                                                            const unstarredErrorWords = errorWordIds.map(id => words.find(w => w.id === id)).filter(w => w && !w.isStarred);
-                                                            if (unstarredErrorWords.length === 0) return;
-                                                            setBulkActionStatus('starring-errors'); setBulkProgress(0);
-                                                            for (let i = 0; i < unstarredErrorWords.length; i++) {
-                                                                await onToggleStar(null, unstarredErrorWords[i]);
-                                                                setBulkProgress(Math.round(((i + 1) / unstarredErrorWords.length) * 100));
-                                                            }
-                                                            setTimeout(() => { setBulkActionStatus(null); setBulkProgress(0); }, 1000);
-                                                        }}
-                                                        disabled={bulkActionStatus !== null || errorWordsUniqueCount === 0}
-                                                    >
-                                                        {bulkActionStatus === 'starring-errors' ? <span>%{bulkProgress} Yıldızlanıyor</span> : <><i className="bi bi-star-fill text-warning"></i> <span className="small fw-bold">Hataları Yıldızla ({errorWordsUniqueCount})</span></>}
-                                                    </Button>
-                                                </Col>
-                                                <Col>
-                                                    <Button 
-                                                        variant="outline-success" 
-                                                        className="w-100 d-flex align-items-center justify-content-center gap-2 rounded-3 py-2 border-2 transition-all hover-opacity-75 position-relative overflow-hidden" 
-                                                        onClick={async () => {
-                                                            const ids = Array.from(new Set(correctQuestions.map(q => q.wordId)));
-                                                            const targets = ids.map(id => words.find(w => w.id === id)).filter(w => w && !w.isStarred);
-                                                            if (targets.length === 0) return;
-                                                            setBulkActionStatus('starring-corrects'); setBulkProgress(0);
-                                                            for (let i = 0; i < targets.length; i++) {
-                                                                await onToggleStar(null, targets[i]);
-                                                                setBulkProgress(Math.round(((i + 1) / targets.length) * 100));
-                                                            }
-                                                            setTimeout(() => { setBulkActionStatus(null); setBulkProgress(0); }, 1000);
-                                                        }}
-                                                        disabled={bulkActionStatus !== null || correctWordsUniqueCount === 0}
-                                                    >
-                                                        {bulkActionStatus === 'starring-corrects' ? <span>%{bulkProgress} Yıldızlanıyor</span> : <><i className="bi bi-star-fill text-success"></i> <span className="small fw-bold">Doğruları Yıldızla ({correctWordsUniqueCount})</span></>}
-                                                    </Button>
-                                                </Col>
-                                                <Col>
-                                                    <Button 
-                                                        variant="outline-secondary" 
-                                                        className="w-100 d-flex align-items-center justify-content-center gap-2 rounded-3 py-2 border-2 transition-all hover-opacity-75 position-relative overflow-hidden" 
-                                                        onClick={async () => {
-                                                            const ids = Array.from(new Set(blankQuestions.map(q => q.wordId)));
-                                                            const targets = ids.map(id => words.find(w => w.id === id)).filter(w => w && !w.isStarred);
-                                                            if (targets.length === 0) return;
-                                                            setBulkActionStatus('starring-blanks'); setBulkProgress(0);
-                                                            for (let i = 0; i < targets.length; i++) {
-                                                                await onToggleStar(null, targets[i]);
-                                                                setBulkProgress(Math.round(((i + 1) / targets.length) * 100));
-                                                            }
-                                                            setTimeout(() => { setBulkActionStatus(null); setBulkProgress(0); }, 1000);
-                                                        }}
-                                                        disabled={bulkActionStatus !== null || blankCount === 0}
-                                                    >
-                                                        {bulkActionStatus === 'starring-blanks' ? <span>%{bulkProgress} Yıldızlanıyor</span> : <><i className="bi bi-star text-secondary"></i> <span className="small fw-bold">Boşlar ({blankCount})</span></>}
-                                                    </Button>
-                                                </Col>
-                                                <Col>
-                                                    <Button 
-                                                        variant="outline-danger" 
-                                                        className="w-100 d-flex align-items-center justify-content-center gap-2 rounded-3 py-2 border-2 transition-all hover-opacity-75 position-relative overflow-hidden" 
-                                                        onClick={async () => {
-                                                            const ids = Array.from(new Set(wrongQuestions.map(q => q.wordId)));
-                                                            const targets = ids.map(id => words.find(w => w.id === id)).filter(w => w && !w.isStarred);
-                                                            if (targets.length === 0) return;
-                                                            setBulkActionStatus('starring-wrongs'); setBulkProgress(0);
-                                                            for (let i = 0; i < targets.length; i++) {
-                                                                await onToggleStar(null, targets[i]);
-                                                                setBulkProgress(Math.round(((i + 1) / targets.length) * 100));
-                                                            }
-                                                            setTimeout(() => { setBulkActionStatus(null); setBulkProgress(0); }, 1000);
-                                                        }}
-                                                        disabled={bulkActionStatus !== null || wrongCount === 0}
-                                                    >
-                                                        {bulkActionStatus === 'starring-wrongs' ? <span>%{bulkProgress} Yıldızlanıyor</span> : <><i className="bi bi-star-fill text-danger"></i> <span className="small fw-bold">Yanlışlar ({wrongCount})</span></>}
-                                                    </Button>
-                                                </Col>
-                                            </Row>
+                                            <div className="d-flex flex-column gap-3 mt-3">
+                                                {[
+                                                    {
+                                                        key: 'errors',
+                                                        label: 'Hatalı Kelimeler',
+                                                        count: errorWordsUniqueCount,
+                                                        icon: 'bi-exclamation-triangle-fill',
+                                                        color: 'warning',
+                                                        bgOpacity: 'bg-warning bg-opacity-10',
+                                                        borderColor: 'border-warning border-opacity-25',
+                                                        ids: Array.from(new Set(errorQuestions.map(q => q.wordId)))
+                                                    },
+                                                    {
+                                                        key: 'corrects',
+                                                        label: 'Doğru Kelimeler',
+                                                        count: correctWordsUniqueCount,
+                                                        icon: 'bi-check-circle-fill',
+                                                        color: 'success',
+                                                        bgOpacity: 'bg-success bg-opacity-10',
+                                                        borderColor: 'border-success border-opacity-25',
+                                                        ids: Array.from(new Set(correctQuestions.map(q => q.wordId)))
+                                                    },
+                                                    {
+                                                        key: 'blanks',
+                                                        label: 'Boş Bırakılanlar',
+                                                        count: blankCount,
+                                                        icon: 'bi-slash-circle',
+                                                        color: 'secondary',
+                                                        bgOpacity: 'bg-secondary bg-opacity-10',
+                                                        borderColor: 'border-secondary border-opacity-25',
+                                                        ids: Array.from(new Set(blankQuestions.map(q => q.wordId)))
+                                                    },
+                                                    {
+                                                        key: 'wrongs',
+                                                        label: 'Yanlış Kelimeler',
+                                                        count: wrongCount,
+                                                        icon: 'bi-x-circle-fill',
+                                                        color: 'danger',
+                                                        bgOpacity: 'bg-danger bg-opacity-10',
+                                                        borderColor: 'border-danger border-opacity-25',
+                                                        ids: Array.from(new Set(wrongQuestions.map(q => q.wordId)))
+                                                    }
+                                                ].map(cat => {
+                                                    const isExpanded = openCategory === cat.key;
+                                                    
+                                                    // Calculate values for switches
+                                                    const categoryWords = cat.ids.map(id => words.find(w => w.id === id)).filter(Boolean);
+                                                    const allStarred = categoryWords.length > 0 && categoryWords.every(w => w.isStarred);
+                                                    const allYeni = categoryWords.length > 0 && categoryWords.every(w => w.learningStatus === 'Yeni');
+                                                    const allOgreniyor = categoryWords.length > 0 && categoryWords.every(w => w.learningStatus === 'Öğreniyor');
+                                                    const allOgrendi = categoryWords.length > 0 && categoryWords.every(w => w.learningStatus === 'Öğrendi');
+                                                    
+                                                    return (
+                                                        <div key={cat.key} className={`border rounded-4 overflow-hidden transition-all duration-300 ${cat.borderColor} ${isExpanded ? 'shadow-sm' : ''}`}>
+                                                            {/* Header / Trigger */}
+                                                            <div 
+                                                                className={`d-flex align-items-center justify-content-between p-3 cursor-pointer transition-all ${cat.bgOpacity} hover-opacity-90`}
+                                                                onClick={() => setOpenCategory(isExpanded ? null : cat.key)}
+                                                                style={{ cursor: 'pointer' }}
+                                                            >
+                                                                <div className="d-flex align-items-center gap-3">
+                                                                    <i className={`bi ${cat.icon} text-${cat.color} fs-5`}></i>
+                                                                    <span className="fw-bold text-body" style={{ fontSize: '0.95rem' }}>{cat.label}</span>
+                                                                    <Badge bg={cat.color} className="rounded-pill px-2 py-1" style={{ fontSize: '0.75rem' }}>{cat.count}</Badge>
+                                                                </div>
+                                                                <i className={`bi bi-chevron-${isExpanded ? 'up' : 'down'} text-muted`}></i>
+                                                            </div>
+                                                            
+                                                            {/* Collapsible content */}
+                                                            <Collapse in={isExpanded}>
+                                                                <div>
+                                                                    <div className="p-3 bg-body border-top border-secondary border-opacity-10">
+                                                                        {cat.count === 0 ? (
+                                                                            <div className="text-center text-muted small py-2">
+                                                                                Bu kategoride kelime bulunmuyor.
+                                                                            </div>
+                                                                        ) : (
+                                                                            <div className="d-flex flex-wrap align-items-center justify-content-start gap-4">
+                                                                                {/* Yıldız Switch */}
+                                                                                <FormCheck 
+                                                                                    type="switch" 
+                                                                                    id={`switch-star-${cat.key}`}
+                                                                                    label={<span className="fw-medium text-body small d-flex align-items-center gap-1"><i className="bi bi-star-fill text-warning"></i> Yıldızlı</span>}
+                                                                                    checked={allStarred}
+                                                                                    onChange={async () => {
+                                                                                        if (onToggleStarBatch) {
+                                                                                            await onToggleStarBatch(cat.ids, !allStarred);
+                                                                                        }
+                                                                                    }}
+                                                                                />
+                                                                                
+                                                                                <div className="vr d-none d-sm-block my-1" style={{ opacity: 0.15 }}></div>
+                                                                                
+                                                                                {/* Yeni Switch */}
+                                                                                <FormCheck 
+                                                                                    type="switch" 
+                                                                                    id={`switch-yeni-${cat.key}`}
+                                                                                    label={<span className="fw-medium text-body small d-flex align-items-center gap-1"><i className="bi bi-circle text-danger"></i> Yeni</span>}
+                                                                                    checked={allYeni}
+                                                                                    onChange={async () => {
+                                                                                        if (onUpdateStatusBatch) {
+                                                                                            await onUpdateStatusBatch(cat.ids, 'Yeni', 0);
+                                                                                        }
+                                                                                    }}
+                                                                                />
+                                                                                
+                                                                                {/* Öğreniyor Switch */}
+                                                                                <FormCheck 
+                                                                                    type="switch" 
+                                                                                    id={`switch-ogreniyor-${cat.key}`}
+                                                                                    label={<span className="fw-medium text-body small d-flex align-items-center gap-1"><i className="bi bi-circle text-purple"></i> Öğreniyor</span>}
+                                                                                    checked={allOgreniyor}
+                                                                                    onChange={async () => {
+                                                                                        if (onUpdateStatusBatch) {
+                                                                                            await onUpdateStatusBatch(cat.ids, 'Öğreniyor', 5);
+                                                                                        }
+                                                                                    }}
+                                                                                />
+                                                                                
+                                                                                {/* Öğrendi Switch */}
+                                                                                <FormCheck 
+                                                                                    type="switch" 
+                                                                                    id={`switch-ogrendi-${cat.key}`}
+                                                                                    label={<span className="fw-medium text-body small d-flex align-items-center gap-1"><i className="bi bi-circle-fill text-success"></i> Öğrendi</span>}
+                                                                                    checked={allOgrendi}
+                                                                                    onChange={async () => {
+                                                                                        if (onUpdateStatusBatch) {
+                                                                                            await onUpdateStatusBatch(cat.ids, 'Öğrendi', 10);
+                                                                                        }
+                                                                                    }}
+                                                                                />
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            </Collapse>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
                                         </div>
                                     </Col>
                                 </Row>

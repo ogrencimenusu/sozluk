@@ -13,7 +13,8 @@ import {
   getDocs,
   where,
   writeBatch,
-  arrayUnion
+  arrayUnion,
+  deleteField
 } from 'firebase/firestore';
 import { db, auth } from './firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
@@ -266,25 +267,229 @@ function highlightText(text, highlights, onClick) {
   });
 }
 
+const compactObj = (obj) => {
+  if (Array.isArray(obj)) {
+    return obj.map(compactObj);
+  }
+  if (obj !== null && typeof obj === 'object') {
+    const compacted = {};
+    for (const [key, val] of Object.entries(obj)) {
+      if (val === null || val === undefined || val === '') continue;
+      if (Array.isArray(val) && val.length === 0) continue;
+      if (typeof val === 'object' && Object.keys(val).length === 0) continue;
+      compacted[key] = compactObj(val);
+    }
+    return compacted;
+  }
+  return obj;
+};
+
+const defaultWord = {
+  term: '',
+  shortMeanings: '',
+  pronunciation: '',
+  generalDefinition: '',
+  meanings: [],
+  grammar: [],
+  collocations: [],
+  idioms: [],
+  wordFamily: [],
+  tips: [],
+  learningStatus: 'Yeni',
+  learningStage: 0,
+  isStarred: false
+};
+
+const expandWord = (w) => ({
+  ...defaultWord,
+  ...w,
+  meanings: w.meanings || [],
+  grammar: w.grammar || [],
+  collocations: w.collocations || [],
+  idioms: w.idioms || [],
+  wordFamily: w.wordFamily || [],
+  tips: w.tips || []
+});
+
+const defaultList = {
+  name: '',
+  wordIds: [],
+  createdAt: ''
+};
+
+const expandList = (l) => ({
+  ...defaultList,
+  ...l,
+  wordIds: l.wordIds || []
+});
+
+const defaultTest = {
+  isPinned: false,
+  questions: [],
+  results: {}
+};
+
+const expandTest = (t) => ({
+  ...defaultTest,
+  ...t,
+  questions: t.questions || []
+});
+
+const getUniqueAndDuplicateTests = (tests) => {
+  const uniqueTests = [];
+  const duplicateIds = [];
+  const seenKeys = new Set();
+  
+  tests.forEach(t => {
+    const dateStr = t.createdAt ? new Date(t.createdAt).getTime().toString() : '';
+    const questionCount = t.questions?.length || 0;
+    const firstQuestionId = t.questions?.[0]?.wordId || '';
+    
+    let isDuplicate = false;
+    if (dateStr) {
+      const timeNum = parseInt(dateStr, 10);
+      for (const seenKey of seenKeys) {
+        const [seenTimeStr, seenCount, seenFirstId] = seenKey.split('|');
+        const seenTime = parseInt(seenTimeStr, 10);
+        if (Math.abs(timeNum - seenTime) < 3000 && parseInt(seenCount, 10) === questionCount && seenFirstId === firstQuestionId) {
+          isDuplicate = true;
+          break;
+        }
+      }
+    }
+    
+    if (!isDuplicate) {
+      uniqueTests.push(t);
+      if (dateStr) {
+        seenKeys.add(`${dateStr}|${questionCount}|${firstQuestionId}`);
+      }
+    } else {
+      if (t.id && !t.id.startsWith('local_test_')) {
+        duplicateIds.push(t.id);
+      }
+    }
+  });
+
+  return { uniqueTests, duplicateIds };
+};
+
+// ─── Relative Time Formatter (Turkish) ───
+const formatRelativeTime = (ms) => {
+  if (!ms || ms === 0) return 'Hiç eşitlenmedi';
+  const diff = Date.now() - ms;
+  const seconds = Math.floor(diff / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours   = Math.floor(minutes / 60);
+  const days    = Math.floor(hours / 24);
+
+  if (seconds < 10)  return 'Az önce';
+  if (seconds < 60)  return `${seconds} saniye önce`;
+  if (minutes < 60)  return `${minutes} dakika önce`;
+  if (hours   < 24)  return `${hours} saat önce`;
+  if (days    <  7)  return `${days} gün önce`;
+  if (days    < 30)  return `${Math.floor(days / 7)} hafta önce`;
+  if (days    < 365) return `${Math.floor(days / 30)} ay önce`;
+  return `${Math.floor(days / 365)} yıl önce`;
+};
+
+const parseDate = (val) => {
+  if (!val) return null;
+  
+  // 1. If it's a true Date object
+  if (val instanceof Date) {
+    return isNaN(val.getTime()) ? null : val;
+  }
+  
+  // 2. If it's a Firestore Timestamp (has toDate method)
+  if (typeof val.toDate === 'function') {
+    try {
+      const d = val.toDate();
+      return isNaN(d.getTime()) ? null : d;
+    } catch (e) {}
+  }
+  
+  // 3. If it's a plain object serialized from Timestamp (seconds & nanoseconds)
+  if (val && typeof val === 'object' && typeof val.seconds === 'number') {
+    try {
+      const d = new Date(val.seconds * 1000 + Math.floor((val.nanoseconds || 0) / 1000000));
+      return isNaN(d.getTime()) ? null : d;
+    } catch (e) {}
+  }
+  
+  // 4. Fallback to normal Date parsing for strings / numbers / formats
+  try {
+    const d = new Date(val);
+    return isNaN(d.getTime()) ? null : d;
+  } catch (e) {
+    return null;
+  }
+};
+
+// ─── Static View / Page Routing Configurations ───
+const VIEW_CONFIGS = {
+  home: { title: 'Sözlük | Ana Sayfa', path: '/' },
+  'add-word': { title: 'Sözlük | Kelime Ekle/Düzenle', path: '/add' },
+  'custom-lists': { title: 'Sözlük | Özel Listelerim', path: '/lists' },
+  'list-detail': { title: 'Sözlük | Liste Detayı', path: '/list-detail' },
+  practice: { title: 'Sözlük | Pratik Yap', path: '/practice' },
+  'practice-test': { title: 'Sözlük | Test Çöz', path: '/test' },
+  stats: { title: 'Sözlük | İstatistikler', path: '/stats' },
+  'sticky-notes': { title: 'Sözlük | Sticky Notlar', path: '/notes' },
+  history: { title: 'Sözlük | Geçmiş', path: '/history' },
+  'search-history': { title: 'Sözlük | Arama Geçmişi', path: '/search-history' },
+  'settings': { title: 'Sözlük | Ayarlar', path: '/settings' }
+};
+
 function App() {
+  const duplicateIdsToDeleteRef = useRef([]);
   const [authUser, setAuthUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [currentView, setCurrentView] = useState('home');
 
-  // --- View and Title Management (Routing) ---
-  const viewConfigs = useMemo(() => ({
-    home: { title: 'Sözlük | Ana Sayfa', path: '/' },
-    'add-word': { title: 'Sözlük | Kelime Ekle/Düzenle', path: '/add' },
-    'custom-lists': { title: 'Sözlük | Özel Listelerim', path: '/lists' },
-    'list-detail': { title: 'Sözlük | Liste Detayı', path: '/list-detail' },
-    practice: { title: 'Sözlük | Pratik Yap', path: '/practice' },
-    'practice-test': { title: 'Sözlük | Test Çöz', path: '/test' },
-    stats: { title: 'Sözlük | İstatistikler', path: '/stats' },
-    'sticky-notes': { title: 'Sözlük | Sticky Notlar', path: '/notes' },
-    history: { title: 'Sözlük | Geçmiş', path: '/history' },
-    'search-history': { title: 'Sözlük | Arama Geçmişi', path: '/search-history' },
-    'settings': { title: 'Sözlük | Ayarlar', path: '/settings' }
-  }), []);
+  const safeSetItem = useCallback((key, value) => {
+    try {
+      localStorage.setItem(key, value);
+    } catch (e) {
+      console.warn(`Failed to save key "${key}" to localStorage:`, e);
+      if (e.name === 'QuotaExceededError' || e.code === 22 || e.code === 1014) {
+        // Quota exceeded! Clean up legacy localStorage keys to free quota
+        console.log("Cleaning up legacy localStorage keys to free quota...");
+        const activeKeys = [
+          'local_words',
+          'local_custom_lists',
+          'local_practice_tests',
+          'local_daily_stats',
+          'local_sticky_notes',
+          'last_synced_time',
+          'last_synced_ms',
+          'wordsPerPage',
+          'isSelectionMode',
+          'selectedWords',
+          'theme'
+        ];
+        try {
+          for (let i = localStorage.length - 1; i >= 0; i--) {
+            const k = localStorage.key(i);
+            if (k && !activeKeys.includes(k)) {
+              localStorage.removeItem(k);
+            }
+          }
+          // Retry once
+          localStorage.setItem(key, value);
+        } catch (retryErr) {
+          console.error("Retry failed, localStorage is fully saturated:", retryErr);
+        }
+      }
+    }
+  }, []);
+
+  // Initialize view based on current URL path
+  const [currentView, setCurrentView] = useState(() => {
+    const path = window.location.pathname;
+    const view = Object.keys(VIEW_CONFIGS).find(key => VIEW_CONFIGS[key].path === path);
+    return view || 'home';
+  });
+
+  const viewConfigs = VIEW_CONFIGS;
 
   // Main navigation function
   const navigateTo = useCallback((view) => {
@@ -314,17 +519,63 @@ function App() {
 
     window.addEventListener('popstate', handlePopState);
     
-    // Initial sync
+    // Initial sync of current URL with history state
     const initialConfig = viewConfigs[currentView] || viewConfigs.home;
     document.title = initialConfig.title;
     window.history.replaceState({ view: currentView }, initialConfig.title, window.location.pathname);
 
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [viewConfigs]);
+  }, [viewConfigs, currentView]);
 
-  const [words, setWords] = useState([]);
-  const [practiceTests, setPracticeTests] = useState([]);
-  const [stickyNotes, setStickyNotes] = useState([]);
+  const [words, setWords] = useState(() => {
+    try {
+      const local = localStorage.getItem('local_words');
+      return local ? JSON.parse(local).map(expandWord) : [];
+    } catch (e) {
+      console.error("Failed to load local_words on init:", e);
+      return [];
+    }
+  });
+  const [practiceTests, setPracticeTests] = useState(() => {
+    try {
+      const local = localStorage.getItem('local_practice_tests');
+      if (local) {
+        const parsed = JSON.parse(local).map(expandTest);
+        const { uniqueTests, duplicateIds } = getUniqueAndDuplicateTests(parsed);
+        if (duplicateIds.length > 0) {
+          if (duplicateIdsToDeleteRef.current) {
+            duplicateIdsToDeleteRef.current = [
+              ...new Set([...duplicateIdsToDeleteRef.current, ...duplicateIds])
+            ];
+          }
+          setTimeout(() => {
+            try {
+              localStorage.setItem('local_practice_tests', JSON.stringify(compactObj(uniqueTests)));
+            } catch (e) {}
+          }, 0);
+          return uniqueTests;
+        }
+        return parsed;
+      }
+      return [];
+    } catch (e) {
+      try {
+        const local = localStorage.getItem('local_practice_tests');
+        return local ? JSON.parse(local).map(expandTest) : [];
+      } catch {
+        return [];
+      }
+    }
+  });
+  const [stickyNotes, setStickyNotes] = useState(() => {
+    try {
+      const local = localStorage.getItem('local_sticky_notes');
+      return local ? JSON.parse(local) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+  const [selectedWord, setSelectedWord] = useState(null);
   const uncompletedNotesCount = useMemo(() => {
     return stickyNotes.filter(note => !note.isCompleted && !note.wordId).length;
   }, [stickyNotes]);
@@ -340,14 +591,46 @@ function App() {
       example: 'Kelime: [Kök Kelime]\nTürkçe Okunuşu: [Okunuş]\nKısa Anlamları: [1, 2, 3...]\nGenel Tanımı: [Akademik Tanım]\n\nAnlamları ve Örnek Cümleler:\n\n- Yalın Hal (V1): [İngilizce Cümle]\n([Türkçe Çeviri])\n- Geniş Zaman (3. Tekil): ...\n- Geçmiş Zaman (Geniş Zaman Kurgulu): ...\n- Past Participle (Geniş Zaman Kurgulu): ...\n- Şimdiki Zaman / Devam Eden: ...\n\nDetaylı İnceleme:\nZorluk Seviyesi (CEFR): [A1-C2]\n\nGramer Özellikleri (Fiil Çekimleri):\n\n- Yalın Hal (V1): [Kelime] ([Türkçe Anlamı])\n- Geniş Zaman 3. Tekil (V+s): [Kelime] ([Türkçe Anlamı])\n- Geçmiş Zaman (V2): [Kelime] ([Türkçe Anlamı])\n- Past Participle (V3): [Kelime] ([Türkçe Anlamı])\n- Şimdiki Zaman / Sıfat Fiil (-ing): [Kelime] ([Türkçe Anlamı])\n\nEş ve Zıt Anlamlılar:\n\n- Eş Anlamlılar: [Kelime (Türkçe)], [Kelime (Türkçe)]...\n- Zıt Anlamlılar: [Kelime (Türkçe)], [Kelime (Türkçe)]...\n\nBirlikte Kullanıldığı Edatlar ve Kelimeler (Collocations):\n\n- [Kelime + Edat]: [Kısa Örnek Cümle]\n([Türkçe Çeviri])\n\nYaygın Deyimler ve İfadeler (Idioms): [Deyim (Türkçe)]...\nKelime Ailesi (Word Family): [İsim, Sıfat, Zarf halleri ve Türkçeleri]\n\nSık Yapılan Hatalar ve İpuçları:\n\n- **Hata Nedeni:** [Açıklama]\n- Yanlış Kullanım: *[İngilizce Cümle]*\n([Türkçe Çeviri])\n- Doğru Kullanım: *[İngilizce Cümle]*\n([Türkçe Çeviri])'
     }
   ]);
-  const [dailyStats, setDailyStats] = useState({});
+  const [dailyStats, setDailyStats] = useState(() => {
+    try {
+      const local = localStorage.getItem('local_daily_stats');
+      return local ? JSON.parse(local) : {};
+    } catch (e) {
+      return {};
+    }
+  });
+  const [syncing, setSyncing] = useState(false);
+  const [showSyncDetails, setShowSyncDetails] = useState(false);
+  const [syncProgress, setSyncProgress] = useState(0);
+  const [syncSuccess, setSyncSuccess] = useState(false);
+  const [syncSteps, setSyncSteps] = useState([
+    "Hazır",
+    "Son eşitleme başarılı",
+    "Tüm veriler güncel"
+  ]);
+  const [currentSyncStep, setCurrentSyncStep] = useState('');
+  // Store last synced timestamp as ms (compatible with last_synced_ms key)
+  const [lastSyncedMs, setLastSyncedMs] = useState(() => parseInt(localStorage.getItem('last_synced_ms') || '0', 10));
+  // Ticker: forces a re-render every 30 seconds so the relative time stays fresh
+  const [, setRelativeTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setRelativeTick(t => t + 1), 30000);
+    return () => clearInterval(id);
+  }, []);
   const [searchQuery, setSearchQuery] = useState('');
   const [showDuplicates, setShowDuplicates] = useState(false);
   const [showSameRoots, setShowSameRoots] = useState(false);
   const [showFamilyMatches, setShowFamilyMatches] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [selectedWord, setSelectedWord] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => {
+    try {
+      const localWords = localStorage.getItem('local_words');
+      return !(localWords && localWords !== '[]');
+    } catch (e) {
+      return true;
+    }
+  });
+
   const [wordsPerPage, setWordsPerPage] = useState(() => {
     try {
       const saved = localStorage.getItem('wordsPerPage');
@@ -375,6 +658,24 @@ function App() {
   });
   
   const practiceTestRef = useRef();
+  // Permanently maps local test IDs → Firestore IDs to prevent duplicate creation on concurrent saves
+  const localTestIdMapRef = useRef({});
+
+  const syncAbortedRef = useRef(false);
+
+  const handleCancelSync = useCallback(() => {
+    syncAbortedRef.current = true;
+    setSyncing(false);
+    setSyncProgress(0);
+    setCurrentSyncStep('');
+    Swal.fire({
+      icon: 'info',
+      title: 'Eşitleme Durduruldu',
+      text: 'Senkronizasyon işlemi kullanıcı tarafından iptal edildi.',
+      confirmButtonText: 'Tamam',
+      timer: 2000
+    });
+  }, []);
 
   const [selectedWords, setSelectedWords] = useState(() => {
     try {
@@ -396,7 +697,13 @@ function App() {
   const [showFilterModal, setShowFilterModal] = useState(false);
   const [showSortModal, setShowSortModal] = useState(false);
   const [showBulkEditModal, setShowBulkEditModal] = useState(false);
-  const [showFiltersCollapse, setShowFiltersCollapse] = useState(false);
+  const [showFiltersCollapse, setShowFiltersCollapse] = useState(() => {
+    return localStorage.getItem('show_filters_collapse') === 'true';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('show_filters_collapse', showFiltersCollapse ? 'true' : 'false');
+  }, [showFiltersCollapse]);
   const [showTemplateExampleModal, setShowTemplateExampleModal] = useState(false);
   const [showStickyNotesModal, setShowStickyNotesModal] = useState(false);
   const [manualNoteText, setManualNoteText] = useState('');
@@ -405,75 +712,75 @@ function App() {
   const [inlineEditingText, setInlineEditingText] = useState('');
   const [inlineEditingTitle, setInlineEditingTitle] = useState('');
   const [inlineEditingSelectedWords, setInlineEditingSelectedWords] = useState([]);
+  
+  // Specific Category Sync States
+  const [itemSyncStates, setItemSyncStates] = useState({});
+  const [itemSyncProgress, setItemSyncProgress] = useState({});
+
+
 
   // Custom Lists State
-  const [customLists, setCustomLists] = useState([]);
+  const [customLists, setCustomLists] = useState(() => {
+    try {
+      const local = localStorage.getItem('local_custom_lists');
+      return local ? JSON.parse(local).map(expandList) : [];
+    } catch (e) {
+      return [];
+    }
+  });
   const [currentListId, setCurrentListId] = useState(null);
   const [bulkListId, setBulkListId] = useState('');
   const [newListName, setNewListName] = useState('');
-  const [isMigrating, setIsMigrating] = useState(false);
+
+  const activeCustomLists = useMemo(() => {
+    return customLists.filter(l => l._status !== 'deleted');
+  }, [customLists]);
+
+  const activeStickyNotes = useMemo(() => {
+    return stickyNotes.filter(n => n._status !== 'deleted');
+  }, [stickyNotes]);
+
+  const activePracticeTests = useMemo(() => {
+    return practiceTests.filter(t => t._status !== 'deleted');
+  }, [practiceTests]);
 
   // Authentication Observer
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setAuthUser(user);
       setAuthLoading(false);
-      if (user) {
-        checkAndMigrateData(user);
-      }
     });
     return () => unsubscribe();
   }, []);
 
-  const checkAndMigrateData = async (user) => {
-    const migrationKey = `migrated_${user.uid}`;
-    if (localStorage.getItem(migrationKey)) return;
-
-    setIsMigrating(true);
-    try {
-      const collectionsToMigrate = ['words', 'customLists', 'practice_tests', 'daily_stats', 'sticky_notes'];
-      for (const collName of collectionsToMigrate) {
-        // Optimization: Only query documents without a userId
-        // Note: This might require a composite index if combined with other filters, 
-        // but for a simple collection query it usually works or fails gracefully.
-        const q = query(collection(db, collName), where('userId', '==', null));
-        let snap;
-        try {
-          snap = await getDocs(q);
-        } catch (e) {
-          // If the query fails (e.g. index missing), fallback to non-filtered but limit it
-          console.warn(`Filtered migration failed for ${collName}, falling back to limited fetch.`);
-          const fallbackQ = query(collection(db, collName), limit(500));
-          snap = await getDocs(fallbackQ);
-        }
-        
-        const batch = writeBatch(db);
-        let count = 0;
-        
-        snap.docs.forEach(docSnap => {
-          if (!docSnap.data().userId) {
-            batch.update(doc(db, collName, docSnap.id), { userId: user.uid });
-            count++;
-          }
-        });
-        
-        if (count > 0) await batch.commit();
-      }
-      localStorage.setItem(migrationKey, 'true');
-    } catch (err) {
-      console.error("Migration error:", err);
-    } finally {
-      setIsMigrating(false);
-    }
-  };
-
   const handleLogout = async () => {
+    if (unsyncedChangesCount > 0) {
+      const confirmResult = await Swal.fire({
+        title: 'Eşitlenmemiş Verileriniz Var',
+        text: `Senkronize edilmemiş ${unsyncedChangesCount} değişikliğiniz bulunmaktadır. Çıkış yaparsanız bu değişiklikler silinecektir. Yine de çıkış yapmak istiyor musunuz?`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#d33',
+        cancelButtonColor: '#3085d6',
+        confirmButtonText: 'Evet, çıkış yap',
+        cancelButtonText: 'İptal'
+      });
+      if (!confirmResult.isConfirmed) return;
+    }
+
     try {
       await signOut(auth);
       setWords([]);
       setPracticeTests([]);
       setStickyNotes([]);
       setCustomLists([]);
+      // Clear local storage data on logout
+      localStorage.removeItem('local_words');
+      localStorage.removeItem('local_custom_lists');
+      localStorage.removeItem('local_practice_tests');
+      localStorage.removeItem('local_daily_stats');
+      localStorage.removeItem('local_sticky_notes');
+      localStorage.removeItem('last_synced_time');
     } catch (err) {
       console.error("Logout error:", err);
     }
@@ -740,43 +1047,71 @@ function App() {
   // Flag to prevent saving before settings are loaded from Firestore
   const settingsLoaded = React.useRef(false);
 
-  // Load settings from Firestore when authUser changes
+  // Load settings from Firestore in real-time when authUser changes
   useEffect(() => {
     if (isConfigMissing || !authUser) { 
       if (isConfigMissing) settingsLoaded.current = true;
       return; 
     }
-    const loadSettings = async () => {
-      try {
-        const snap = await getDoc(doc(db, 'users', authUser.uid, 'settings', 'app'));
-        if (snap.exists()) {
-          const data = snap.data();
-          if (data.sortRules) setSortRules(data.sortRules);
-          if (data.filters) setFilters(data.filters);
-          if (data.theme) {
-            setTheme(data.theme);
-            localStorage.setItem('theme', data.theme);
-          }
-          if (data.wordsPerPage) {
-            setWordsPerPage(data.wordsPerPage);
-            localStorage.setItem('wordsPerPage', data.wordsPerPage.toString());
-          }
-          if (data.practiceOptions) {
-            setPracticeOptions(data.practiceOptions);
-          } else {
-            setPracticeOptions({});
-          }
-        } else {
-          setPracticeOptions({});
+    
+    const settingsDocRef = doc(db, 'users', authUser.uid, 'settings', 'app');
+    const unsubscribe = onSnapshot(settingsDocRef, (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        
+        // Deep comparison checks to prevent state-update loops
+        if (data.sortRules) {
+          setSortRules(prev => {
+            if (JSON.stringify(prev) !== JSON.stringify(data.sortRules)) {
+              return data.sortRules;
+            }
+            return prev;
+          });
         }
-      } catch (e) {
-        console.warn('Ayarlar yüklenemedi:', e);
-      } finally {
+        if (data.filters) {
+          setFilters(prev => {
+            if (JSON.stringify(prev) !== JSON.stringify(data.filters)) {
+              return data.filters;
+            }
+            return prev;
+          });
+        }
+        if (data.theme) {
+          setTheme(prev => {
+            if (prev !== data.theme) {
+              localStorage.setItem('theme', data.theme);
+              return data.theme;
+            }
+            return prev;
+          });
+        }
+        if (data.wordsPerPage) {
+          setWordsPerPage(prev => {
+            if (prev !== data.wordsPerPage) {
+              localStorage.setItem('wordsPerPage', data.wordsPerPage.toString());
+              return data.wordsPerPage;
+            }
+            return prev;
+          });
+        }
+        if (data.practiceOptions) {
+          setPracticeOptions(prev => {
+            if (JSON.stringify(prev) !== JSON.stringify(data.practiceOptions)) {
+              return data.practiceOptions;
+            }
+            return prev;
+          });
+        } else {
+          setPracticeOptions(prev => prev || {});
+        }
+      } else {
         setPracticeOptions(prev => prev || {});
-        settingsLoaded.current = true;
       }
-    };
-    loadSettings();
+      settingsLoaded.current = true;
+    }, (e) => {
+      console.warn('Ayarlar yüklenemedi:', e);
+      settingsLoaded.current = true;
+    });
 
     // Load/Seed templates
     const loadTemplates = async () => {
@@ -800,6 +1135,8 @@ function App() {
       }
     };
     loadTemplates();
+
+    return () => unsubscribe();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authUser]);
 
@@ -892,47 +1229,68 @@ function App() {
     }
   };
 
-  useEffect(() => {
-    if (!authUser) return;
+  const deleteBatchFromFirestoreInBackground = useCallback(async (ids) => {
+    if (!ids || ids.length === 0 || !authUser) return;
+    try {
+      console.log(`Starting background cloud purge of ${ids.length} duplicate tests...`);
+      const chunkSize = 100;
+      for (let i = 0; i < ids.length; i += chunkSize) {
+        const chunk = ids.slice(i, i + chunkSize);
+        const batch = writeBatch(db);
+        let hasRemoteDeletes = false;
+        
+        chunk.forEach(id => {
+          if (id && !id.startsWith('local_test_')) {
+            batch.delete(doc(db, 'practice_tests', id));
+            hasRemoteDeletes = true;
+          }
+        });
+        
+        if (hasRemoteDeletes) {
+          await batch.commit();
+          console.log(`Purged chunk of ${chunk.length} duplicate tests from Firestore.`);
+        }
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      console.log("Background cloud purge completed successfully.");
+    } catch (e) {
+      console.error("Cloud purge failed:", e);
+    }
+  }, [authUser]);
 
-    const q = query(
-      collection(db, 'words'),
-      where('userId', '==', authUser.uid)
-    );
-    const unsubscribeWords = onSnapshot(q, (snapshot) => {
-      const wordsData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })).sort((a, b) => {
+  const fetchAllFromFirestoreOnce = async (user) => {
+    setLoading(true);
+    try {
+      // 1. Words
+      const qWords = query(collection(db, 'words'), where('userId', '==', user.uid));
+      const snapWords = await getDocs(qWords);
+      const wordsData = snapWords.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a, b) => {
         const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
         const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
         return dateB - dateA;
       });
       setWords(wordsData);
-      setLoading(false);
-    }, (error) => {
-      console.error("Firestore error:", error);
-      setLoading(false);
-    });
+      safeSetItem('local_words', JSON.stringify(compactObj(wordsData)));
 
-    const qLists = query(collection(db, 'customLists'), where('userId', '==', authUser.uid));
-    const unsubscribeLists = onSnapshot(qLists, (snapshot) => {
-      const listsData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
+      // 2. Custom Lists
+      const qLists = query(collection(db, 'customLists'), where('userId', '==', user.uid));
+      const snapLists = await getDocs(qLists);
+      const listsData = snapLists.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setCustomLists(listsData);
-    });
+      safeSetItem('local_custom_lists', JSON.stringify(compactObj(listsData)));
 
-    const qTests = query(
-      collection(db, 'practice_tests'),
-      where('userId', '==', authUser.uid)
-    );
-    const unsubscribeTests = onSnapshot(qTests, (snapshot) => {
-      const testsData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })).sort((a, b) => {
+      // 3. Practice Tests
+      const qTests = query(collection(db, 'practice_tests'), where('userId', '==', user.uid));
+      const snapTests = await getDocs(qTests);
+      const fetchedTests = snapTests.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const { uniqueTests, duplicateIds } = getUniqueAndDuplicateTests(fetchedTests);
+      
+      if (duplicateIds.length > 0) {
+        console.log(`Initial fetch deduplication: Identified ${duplicateIds.length} duplicate tests in cloud.`);
+        deleteBatchFromFirestoreInBackground(duplicateIds);
+      }
+
+      const testsData = uniqueTests.sort((a, b) => {
         if (a.isPinned && !b.isPinned) return -1;
         if (!a.isPinned && b.isPinned) return 1;
         const dateA = a.updatedAt?.toDate ? a.updatedAt.toDate() : new Date(a.updatedAt || 0);
@@ -940,50 +1298,1001 @@ function App() {
         return dateB - dateA;
       });
       setPracticeTests(testsData);
-    }, (error) => {
-      console.error("Firestore tests error:", error);
-    });
+      safeSetItem('local_practice_tests', JSON.stringify(compactObj(testsData)));
 
-    const qStats = query(collection(db, 'daily_stats'), where('userId', '==', authUser.uid));
-    const unsubscribeStats = onSnapshot(qStats, (snapshot) => {
+      // 4. Daily Stats
+      const qStats = query(collection(db, 'daily_stats'), where('userId', '==', user.uid));
+      const snapStats = await getDocs(qStats);
       const stats = {};
-      snapshot.forEach(doc => {
-        const data = doc.data();
-        // Use the date field as the key if available, otherwise fallback to doc.id
-        const key = data.date || doc.id;
+      snapStats.forEach(docSnap => {
+        const data = docSnap.data();
+        const key = data.date || docSnap.id;
         stats[key] = data;
       });
       setDailyStats(stats);
-    }, (error) => {
-      console.error("Firestore stats error:", error);
-    });
+      safeSetItem('local_daily_stats', JSON.stringify(compactObj(stats)));
 
-    const qNotes = query(
-      collection(db, 'sticky_notes'),
-      where('userId', '==', authUser.uid)
-    );
-    const unsubscribeNotes = onSnapshot(qNotes, (snapshot) => {
-      const notesData = snapshot.docs.map(d => ({ 
-        id: d.id, 
-        ...d.data() 
-      })).sort((a, b) => {
+      // 5. Sticky Notes
+      const qNotes = query(collection(db, 'sticky_notes'), where('userId', '==', user.uid));
+      const snapNotes = await getDocs(qNotes);
+      const notesData = snapNotes.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a, b) => {
         const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
         const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
         return dateB - dateA;
       });
       setStickyNotes(notesData);
-    }, (error) => {
-      console.error("Firestore sticky_notes error:", error);
-    });
+      safeSetItem('local_sticky_notes', JSON.stringify(compactObj(notesData)));
 
-    return () => {
-      unsubscribeWords();
-      unsubscribeLists();
-      unsubscribeStats();
-      unsubscribeTests();
-      unsubscribeNotes();
+      // Update sync time
+      const nowMs = Date.now();
+      safeSetItem('last_synced_ms', nowMs.toString());
+      setLastSyncedMs(nowMs);
+    } catch (e) {
+      console.error("Failed to seed initial local data", e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const unsyncedChangesCount = useMemo(() => {
+    let count = 0;
+    count += words.filter(w => w._status).length;
+    count += customLists.filter(l => l._status).length;
+    count += practiceTests.filter(t => t._status).length;
+    count += stickyNotes.filter(n => n._status).length;
+    count += Object.values(dailyStats).filter(s => s._status).length;
+    return count;
+  }, [words, customLists, practiceTests, stickyNotes, dailyStats]);
+
+  const unsyncedItemsList = useMemo(() => {
+    const list = [];
+    
+    // Words
+    const wNew = words.filter(w => w._status === 'created').length;
+    const wStar = words.filter(w => w._status === 'updated' && w._updateType === 'star').length;
+    const wStat = words.filter(w => w._status === 'updated' && w._updateType === 'learningStatus').length;
+    const wEdit = words.filter(w => w._status === 'updated' && w._updateType !== 'star' && w._updateType !== 'learningStatus').length;
+    const wDel = words.filter(w => w._status === 'deleted').length;
+
+    if (wNew > 0) list.push({ key: 'words-new', category: 'words', text: `${wNew} yeni kelime eşitlenecek` });
+    if (wStar > 0) list.push({ key: 'words-star', category: 'words', text: `${wStar} kelime yıldızlaması eşitlenecek` });
+    if (wStat > 0) list.push({ key: 'words-status', category: 'words', text: `${wStat} kelime durum güncellemesi eşitlenecek` });
+    if (wEdit > 0) list.push({ key: 'words-edit', category: 'words', text: `${wEdit} kelime düzenlemesi eşitlenecek` });
+    if (wDel > 0) list.push({ key: 'words-deleted', category: 'words', text: `${wDel} silinen kelime eşitlenecek` });
+
+    // Lists
+    const lNew = customLists.filter(l => l._status === 'created').length;
+    const lUpd = customLists.filter(l => l._status === 'updated').length;
+    const lDel = customLists.filter(l => l._status === 'deleted').length;
+    if (lNew > 0) list.push({ key: 'lists-new', category: 'customLists', text: `${lNew} yeni özel liste eşitlenecek` });
+    if (lUpd > 0) list.push({ key: 'lists-updated', category: 'customLists', text: `${lUpd} özel liste düzenlemesi eşitlenecek` });
+    if (lDel > 0) list.push({ key: 'lists-deleted', category: 'customLists', text: `${lDel} silinen özel liste eşitlenecek` });
+
+    // Tests
+    const tNew = practiceTests.filter(t => t._status === 'created').length;
+    const tUpd = practiceTests.filter(t => t._status === 'updated').length;
+    const tDel = practiceTests.filter(t => t._status === 'deleted').length;
+    if (tNew > 0) list.push({ key: 'tests-new', category: 'practiceTests', text: `${tNew} yeni pratik test eşitlenecek` });
+    if (tUpd > 0) list.push({ key: 'tests-updated', category: 'practiceTests', text: `${tUpd} pratik test güncellemesi eşitlenecek` });
+    if (tDel > 0) list.push({ key: 'tests-deleted', category: 'practiceTests', text: `${tDel} silinen pratik test eşitlenecek` });
+
+    // Stats
+    const sNew = Object.values(dailyStats).filter(s => s._status === 'created').length;
+    const sUpd = Object.values(dailyStats).filter(s => s._status === 'updated').length;
+    if (sNew > 0) list.push({ key: 'stats-new', category: 'dailyStats', text: `${sNew} yeni günlük çalışma istatistiği eşitlenecek` });
+    if (sUpd > 0) list.push({ key: 'stats-updated', category: 'dailyStats', text: `${sUpd} günlük çalışma istatistiği güncellemesi eşitlenecek` });
+
+    // Notes
+    const nNew = stickyNotes.filter(n => n._status === 'created').length;
+    const nUpd = stickyNotes.filter(n => n._status === 'updated').length;
+    const nDel = stickyNotes.filter(n => n._status === 'deleted').length;
+    if (nNew > 0) list.push({ key: 'notes-new', category: 'stickyNotes', text: `${nNew} yeni yapışkan not eşitlenecek` });
+    if (nUpd > 0) list.push({ key: 'notes-updated', category: 'stickyNotes', text: `${nUpd} yapışkan not güncellemesi eşitlenecek` });
+    if (nDel > 0) list.push({ key: 'notes-deleted', category: 'stickyNotes', text: `${nDel} silinen yapışkan not eşitlenecek` });
+
+    return list;
+  }, [words, customLists, practiceTests, dailyStats, stickyNotes]);
+
+  const handleSync = async (silent = false) => {
+    if (!authUser) return;
+    syncAbortedRef.current = false;
+    if (!silent) setSyncing(true);
+    setSyncProgress(5);
+    setSyncSteps([]); // Start empty, hiding systemic logs
+    setCurrentSyncStep('Yerel değişiklikler inceleniyor...');
+    
+    const checkAborted = () => {
+      if (syncAbortedRef.current) {
+        throw new Error("aborted");
+      }
     };
-  }, [authUser]);
+
+    try {
+      const batch = writeBatch(db);
+      let hasChanges = false;
+
+      // Track local changes per collection
+      const localWordsChanged = words.some(w => w._status === 'created' || w._status === 'updated' || w._status === 'deleted');
+      const localListsChanged = customLists.some(l => l._status === 'created' || l._status === 'updated' || l._status === 'deleted');
+      const localTestsChanged = practiceTests.some(t => t._status === 'created' || t._status === 'updated' || t._status === 'deleted');
+      const localStatsChanged = Object.values(dailyStats).some(s => s._status === 'created' || s._status === 'updated');
+      const localNotesChanged = stickyNotes.some(n => n._status === 'created' || n._status === 'updated' || n._status === 'deleted');
+
+      // Calculate specific counts for descriptive sync logging
+      const newWordsCount = words.filter(w => w._status === 'created').length;
+      const starredWordsCount = words.filter(w => w._status === 'updated' && w._updateType === 'star').length;
+      const statusWordsCount = words.filter(w => w._status === 'updated' && w._updateType === 'learningStatus').length;
+      const editedWordsCount = words.filter(w => w._status === 'updated' && w._updateType !== 'star' && w._updateType !== 'learningStatus').length;
+      const deletedWordsCount = words.filter(w => w._status === 'deleted').length;
+
+      const newListsCount = customLists.filter(l => l._status === 'created').length;
+      const updatedListsCount = customLists.filter(l => l._status === 'updated').length;
+      const deletedListsCount = customLists.filter(l => l._status === 'deleted').length;
+
+      const newTestsCount = practiceTests.filter(t => t._status === 'created').length;
+      const updatedTestsCount = practiceTests.filter(t => t._status === 'updated').length;
+      const deletedTestsCount = practiceTests.filter(t => t._status === 'deleted').length;
+
+      const newStatsCount = Object.values(dailyStats).filter(s => s._status === 'created').length;
+      const updatedStatsCount = Object.values(dailyStats).filter(s => s._status === 'updated').length;
+
+      const newNotesCount = stickyNotes.filter(n => n._status === 'created').length;
+      const updatedNotesCount = stickyNotes.filter(n => n._status === 'updated').length;
+      const deletedNotesCount = stickyNotes.filter(n => n._status === 'deleted').length;
+
+      setSyncProgress(15);
+      setCurrentSyncStep('Yerel veriler paketleniyor...');
+
+      // 1. Sync Words
+      const updatedWords = [...words];
+      words.forEach(w => {
+        if (w._status === 'created') {
+          const cleanWord = { ...w };
+          delete cleanWord.id;
+          delete cleanWord._status;
+          delete cleanWord._updateType;
+          
+          const newDocRef = doc(collection(db, 'words'));
+          batch.set(newDocRef, cleanWord);
+          
+          const idx = updatedWords.findIndex(item => item.id === w.id);
+          if (idx !== -1) {
+            updatedWords[idx] = { ...cleanWord, id: newDocRef.id };
+          }
+          hasChanges = true;
+        } else if (w._status === 'updated') {
+          const cleanWord = { ...w };
+          delete cleanWord._status;
+          delete cleanWord._updateType;
+          batch.update(doc(db, 'words', w.id), cleanWord);
+          
+          const idx = updatedWords.findIndex(item => item.id === w.id);
+          if (idx !== -1) {
+            delete updatedWords[idx]._status;
+            delete updatedWords[idx]._updateType;
+          }
+          hasChanges = true;
+        } else if (w._status === 'deleted') {
+          batch.delete(doc(db, 'words', w.id));
+          hasChanges = true;
+        }
+      });
+
+      // 2. Sync Custom Lists
+      const updatedLists = [...customLists];
+      customLists.forEach(l => {
+        if (l._status === 'created') {
+          const cleanList = { ...l };
+          delete cleanList.id;
+          delete cleanList._status;
+          
+          const newDocRef = doc(collection(db, 'customLists'));
+          batch.set(newDocRef, cleanList);
+          
+          const idx = updatedLists.findIndex(item => item.id === l.id);
+          if (idx !== -1) {
+            updatedLists[idx] = { ...cleanList, id: newDocRef.id };
+          }
+          hasChanges = true;
+        } else if (l._status === 'updated') {
+          const cleanList = { ...l };
+          delete cleanList._status;
+          batch.update(doc(db, 'customLists', l.id), cleanList);
+          
+          const idx = updatedLists.findIndex(item => item.id === l.id);
+          if (idx !== -1) {
+            delete updatedLists[idx]._status;
+          }
+          hasChanges = true;
+        } else if (l._status === 'deleted') {
+          batch.delete(doc(db, 'customLists', l.id));
+          hasChanges = true;
+        }
+      });
+
+      // 3. Sync Practice Tests
+      const updatedTests = [...practiceTests];
+      practiceTests.forEach(t => {
+        if (t._status === 'created') {
+          const cleanTest = { ...t };
+          delete cleanTest.id;
+          delete cleanTest._status;
+          delete cleanTest.localId;
+          
+          const newDocRef = doc(collection(db, 'practice_tests'));
+          batch.set(newDocRef, cleanTest);
+          
+          const idx = updatedTests.findIndex(item => item.id === t.id);
+          if (idx !== -1) {
+            updatedTests[idx] = { ...cleanTest, id: newDocRef.id, localId: t.id };
+            // Permanently record local→Firestore ID mapping to prevent re-pushing on concurrent saves
+            localTestIdMapRef.current[t.id] = newDocRef.id;
+            // Migrate active-test localStorage backup to the new Firestore ID (fixes blank-resume bug)
+            try {
+              const savedActive = localStorage.getItem(`active_test_${t.id}`);
+              if (savedActive) {
+                localStorage.setItem(`active_test_${newDocRef.id}`, savedActive);
+                localStorage.removeItem(`active_test_${t.id}`);
+              }
+            } catch (e) {}
+          }
+          hasChanges = true;
+        } else if (t._status === 'updated') {
+          const cleanTest = { ...t };
+          delete cleanTest._status;
+          batch.update(doc(db, 'practice_tests', t.id), cleanTest);
+          
+          const idx = updatedTests.findIndex(item => item.id === t.id);
+          if (idx !== -1) {
+            delete updatedTests[idx]._status;
+          }
+          hasChanges = true;
+        } else if (t._status === 'deleted') {
+          batch.delete(doc(db, 'practice_tests', t.id));
+          hasChanges = true;
+        }
+      });
+
+      // 4. Sync Daily Stats
+      const updatedStats = { ...dailyStats };
+      Object.keys(dailyStats).forEach(key => {
+        const item = dailyStats[key];
+        const statsDocId = `${item.date}_${authUser.uid}`;
+        if (item._status === 'created') {
+          const cleanItem = { ...item };
+          delete cleanItem._status;
+          batch.set(doc(db, 'daily_stats', statsDocId), cleanItem);
+          delete updatedStats[key]._status;
+          hasChanges = true;
+        } else if (item._status === 'updated') {
+          const cleanItem = { ...item };
+          delete cleanItem._status;
+          batch.update(doc(db, 'daily_stats', statsDocId), cleanItem);
+          delete updatedStats[key]._status;
+          hasChanges = true;
+        }
+      });
+
+      // 5. Sync Sticky Notes
+      const updatedNotes = [...stickyNotes];
+      stickyNotes.forEach(n => {
+        if (n._status === 'created') {
+          const cleanNote = { ...n };
+          delete cleanNote.id;
+          delete cleanNote._status;
+          
+          const newDocRef = doc(collection(db, 'sticky_notes'));
+          batch.set(newDocRef, cleanNote);
+          
+          const idx = updatedNotes.findIndex(item => item.id === n.id);
+          if (idx !== -1) {
+            updatedNotes[idx] = { ...cleanNote, id: newDocRef.id };
+          }
+          hasChanges = true;
+        } else if (n._status === 'updated') {
+          const cleanNote = { ...n };
+          delete cleanNote.id;
+          delete cleanNote._status;
+          batch.update(doc(db, 'sticky_notes', n.id), cleanNote);
+          
+          const idx = updatedNotes.findIndex(item => item.id === n.id);
+          if (idx !== -1) {
+            delete updatedNotes[idx]._status;
+          }
+          hasChanges = true;
+        } else if (n._status === 'deleted') {
+          batch.delete(doc(db, 'sticky_notes', n.id));
+          hasChanges = true;
+        }
+      });
+
+      // 6. Sync Metadata Update
+      const nowMs = Date.now();
+      const metadataUpdates = {};
+      if (localWordsChanged) metadataUpdates.wordsUpdatedAt = nowMs;
+      if (localListsChanged) metadataUpdates.listsUpdatedAt = nowMs;
+      if (localTestsChanged) metadataUpdates.testsUpdatedAt = nowMs;
+      if (localStatsChanged) metadataUpdates.statsUpdatedAt = nowMs;
+      if (localNotesChanged) metadataUpdates.notesUpdatedAt = nowMs;
+
+      if (Object.keys(metadataUpdates).length > 0) {
+        const metaDocRef = doc(db, 'sync_metadata', authUser.uid);
+        batch.set(metaDocRef, metadataUpdates, { merge: true });
+        hasChanges = true;
+      }
+
+      // Commit the push batch
+      if (hasChanges) {
+        setSyncProgress(30);
+        setCurrentSyncStep('Yerel değişiklikler buluta gönderiliyor (batch.commit)...');
+        checkAborted();
+        await batch.commit();
+        // Immediately update local state with promoted Firestore IDs to prevent race-condition re-pushing
+        setPracticeTests(updatedTests.filter(t => t._status !== 'deleted'));
+      } else {
+        setSyncProgress(30);
+      }
+
+      setSyncProgress(40);
+      setCurrentSyncStep('Bulut değişiklik tarihleri sorgulanıyor (getDoc)...');
+      checkAborted();
+      // Fetch remote metadata first to check what collections actually changed on the server!
+      let remoteMetadata = null;
+      try {
+        const metaSnap = await getDoc(doc(db, 'sync_metadata', authUser.uid));
+        if (metaSnap.exists()) {
+          remoteMetadata = metaSnap.data();
+        }
+      } catch (metaErr) {
+        console.warn("Could not read sync metadata, fallback to full sync:", metaErr);
+      }
+
+      const localSyncedMs = parseInt(localStorage.getItem('last_synced_ms') || '0', 10);
+      const isFirstSync = localSyncedMs === 0;
+
+      const isLocalWordsEmpty = words.length === 0;
+      const isLocalListsEmpty = customLists.length === 0;
+      const isLocalTestsEmpty = practiceTests.length === 0;
+      const isLocalStatsEmpty = Object.keys(dailyStats).length === 0;
+      const isLocalNotesEmpty = stickyNotes.length === 0;
+
+      // Determine what collections need to be pulled
+      const needPullWords = isFirstSync || isLocalWordsEmpty || !remoteMetadata || (remoteMetadata.wordsUpdatedAt && remoteMetadata.wordsUpdatedAt > localSyncedMs) || localWordsChanged;
+      const needPullLists = isFirstSync || isLocalListsEmpty || !remoteMetadata || (remoteMetadata.listsUpdatedAt && remoteMetadata.listsUpdatedAt > localSyncedMs) || localListsChanged;
+      const needPullTests = isFirstSync || isLocalTestsEmpty || !remoteMetadata || (remoteMetadata.testsUpdatedAt && remoteMetadata.testsUpdatedAt > localSyncedMs) || localTestsChanged;
+      const needPullStats = isFirstSync || isLocalStatsEmpty || !remoteMetadata || (remoteMetadata.statsUpdatedAt && remoteMetadata.statsUpdatedAt > localSyncedMs) || localStatsChanged;
+      const needPullNotes = isFirstSync || isLocalNotesEmpty || !remoteMetadata || (remoteMetadata.notesUpdatedAt && remoteMetadata.notesUpdatedAt > localSyncedMs) || localNotesChanged;
+
+      // Pull Remote Changes from Firestore conditionally (two-way merge)
+      // 1. Words
+      setSyncProgress(50);
+      setCurrentSyncStep('Buluttaki kelimeler sorgulanıyor...');
+      if (newWordsCount > 0) setSyncSteps(prev => [...prev, `${newWordsCount} yeni kelime eşitleniyor...`]);
+      if (starredWordsCount > 0) setSyncSteps(prev => [...prev, `${starredWordsCount} kelime yıldızlaması eşitleniyor...`]);
+      if (statusWordsCount > 0) setSyncSteps(prev => [...prev, `${statusWordsCount} kelime durum güncellemesi eşitleniyor...`]);
+      if (editedWordsCount > 0) setSyncSteps(prev => [...prev, `${editedWordsCount} kelime düzenlemesi eşitleniyor...`]);
+      if (deletedWordsCount > 0) setSyncSteps(prev => [...prev, `${deletedWordsCount} silinen kelime eşitleniyor...`]);
+
+      let remoteWords = words;
+      if (needPullWords) {
+        setCurrentSyncStep('Buluttaki kelimeler indiriliyor (getDocs)...');
+        checkAborted();
+        const qWords = query(collection(db, 'words'), where('userId', '==', authUser.uid));
+        const snapWords = await getDocs(qWords);
+        remoteWords = snapWords.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a, b) => {
+          const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
+          const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
+          return dateB - dateA;
+        });
+      }
+      
+      // 2. Custom Lists
+      setSyncProgress(60);
+      setCurrentSyncStep('Buluttaki özel listeler sorgulanıyor...');
+      if (newListsCount > 0) setSyncSteps(prev => [...prev, `${newListsCount} yeni özel liste eşitleniyor...`]);
+      if (updatedListsCount > 0) setSyncSteps(prev => [...prev, `${updatedListsCount} özel liste düzenlemesi eşitleniyor...`]);
+      if (deletedListsCount > 0) setSyncSteps(prev => [...prev, `${deletedListsCount} silinen özel liste eşitleniyor...`]);
+
+      let remoteLists = customLists;
+      if (needPullLists) {
+        setCurrentSyncStep('Buluttaki özel listeler indiriliyor (getDocs)...');
+        checkAborted();
+        const qLists = query(collection(db, 'customLists'), where('userId', '==', authUser.uid));
+        const snapLists = await getDocs(qLists);
+        remoteLists = snapLists.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      }
+
+      // 3. Practice Tests
+      setSyncProgress(70);
+      setCurrentSyncStep('Buluttaki pratik testler sorgulanıyor...');
+      if (newTestsCount > 0) setSyncSteps(prev => [...prev, `${newTestsCount} yeni pratik test eşitleniyor...`]);
+      if (updatedTestsCount > 0) setSyncSteps(prev => [...prev, `${updatedTestsCount} pratik test güncellemesi eşitleniyor...`]);
+      if (deletedTestsCount > 0) setSyncSteps(prev => [...prev, `${deletedTestsCount} silinen pratik test eşitleniyor...`]);
+
+      let remoteTests = practiceTests;
+      if (needPullTests) {
+        setCurrentSyncStep('Buluttaki pratik testler indiriliyor (getDocs)...');
+        checkAborted();
+        const qTests = query(collection(db, 'practice_tests'), where('userId', '==', authUser.uid));
+        const snapTests = await getDocs(qTests);
+        const fetchedTests = snapTests.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const { uniqueTests, duplicateIds } = getUniqueAndDuplicateTests(fetchedTests);
+        
+        if (duplicateIds.length > 0) {
+          console.log(`Sync deduplication: Identified ${duplicateIds.length} duplicate tests in cloud.`);
+          deleteBatchFromFirestoreInBackground(duplicateIds);
+        }
+
+        remoteTests = uniqueTests.sort((a, b) => {
+          if (a.isPinned && !b.isPinned) return -1;
+          if (!a.isPinned && b.isPinned) return 1;
+          const dateA = a.updatedAt?.toDate ? a.updatedAt.toDate() : new Date(a.updatedAt || 0);
+          const dateB = b.updatedAt?.toDate ? b.updatedAt.toDate() : new Date(b.updatedAt || 0);
+          return dateB - dateA;
+        });
+      }
+
+      // 4. Daily Stats
+      setSyncProgress(80);
+      setCurrentSyncStep('Buluttaki günlük çalışma istatistikleri sorgulanıyor...');
+      if (newStatsCount > 0) setSyncSteps(prev => [...prev, `${newStatsCount} yeni günlük çalışma istatistiği eşitleniyor...`]);
+      if (updatedStatsCount > 0) setSyncSteps(prev => [...prev, `${updatedStatsCount} günlük çalışma istatistiği güncellemesi eşitleniyor...`]);
+
+      let remoteStats = dailyStats;
+      if (needPullStats) {
+        setCurrentSyncStep('Buluttaki günlük çalışma istatistikleri indiriliyor (getDocs)...');
+        checkAborted();
+        const qStats = query(collection(db, 'daily_stats'), where('userId', '==', authUser.uid));
+        const snapStats = await getDocs(qStats);
+        remoteStats = {};
+        snapStats.forEach(docSnap => {
+          const data = docSnap.data();
+          const key = data.date || docSnap.id;
+          remoteStats[key] = data;
+        });
+      }
+
+      // 5. Sticky Notes
+      setSyncProgress(90);
+      setCurrentSyncStep('Buluttaki yapışkan notlar sorgulanıyor...');
+      if (newNotesCount > 0) setSyncSteps(prev => [...prev, `${newNotesCount} yeni yapışkan not eşitleniyor...`]);
+      if (updatedNotesCount > 0) setSyncSteps(prev => [...prev, `${updatedNotesCount} yapışkan not güncellemesi eşitleniyor...`]);
+      if (deletedNotesCount > 0) setSyncSteps(prev => [...prev, `${deletedNotesCount} silinen yapışkan not eşitleniyor...`]);
+
+      let remoteNotes = stickyNotes;
+      if (needPullNotes) {
+        setCurrentSyncStep('Buluttaki yapışkan notlar indiriliyor (getDocs)...');
+        checkAborted();
+        const qNotes = query(collection(db, 'sticky_notes'), where('userId', '==', authUser.uid));
+        const snapNotes = await getDocs(qNotes);
+        remoteNotes = snapNotes.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a, b) => {
+          const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
+          const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
+          return dateB - dateA;
+        });
+      }
+
+      // Update local state with remote state (fully merged)
+      setCurrentSyncStep('Veriler birleştiriliyor ve yerel hafızaya kaydediliyor...');
+      setWords(remoteWords);
+      setCustomLists(remoteLists);
+      setPracticeTests(remoteTests);
+      setDailyStats(remoteStats);
+      setStickyNotes(remoteNotes);
+
+      // Save to localStorage
+      safeSetItem('local_words', JSON.stringify(compactObj(remoteWords)));
+      safeSetItem('local_custom_lists', JSON.stringify(compactObj(remoteLists)));
+      safeSetItem('local_practice_tests', JSON.stringify(compactObj(remoteTests)));
+      safeSetItem('local_daily_stats', JSON.stringify(compactObj(remoteStats)));
+      safeSetItem('local_sticky_notes', JSON.stringify(compactObj(remoteNotes)));
+
+      // Save sync timestamps
+      const nowMsSync = Date.now();
+      safeSetItem('last_synced_ms', nowMsSync.toString());
+      setLastSyncedMs(nowMsSync);
+
+      setSyncProgress(100);
+
+      const totalChangesCount = newWordsCount + starredWordsCount + statusWordsCount + editedWordsCount + deletedWordsCount +
+                                newListsCount + updatedListsCount + deletedListsCount +
+                                newTestsCount + updatedTestsCount + deletedTestsCount +
+                                newStatsCount + updatedStatsCount +
+                                newNotesCount + updatedNotesCount + deletedNotesCount;
+      if (totalChangesCount === 0) {
+        setSyncSteps(prev => [...prev, "Tüm verileriniz güncel (yeni değişiklik yok)."]);
+      }
+      setSyncSteps(prev => [...prev, "Eşitleme başarıyla tamamlandı."]);
+      setCurrentSyncStep('Eşitleme başarıyla tamamlandı.');
+
+      // Set sync success flag to swap cloud icon for 5s (No more alert popups!)
+      setSyncSuccess(true);
+
+      setTimeout(() => {
+        setSyncSuccess(false);
+      }, 5000);
+    } catch (e) {
+      if (e.message === 'aborted') {
+        console.log("Sync aborted by user.");
+        return;
+      }
+      console.error("Sync failed", e);
+      setSyncProgress(100);
+      setSyncSteps(prev => [...prev, "Eşitleme başarısız oldu."]);
+      setCurrentSyncStep('Hata: Eşitleme başarısız oldu.');
+      if (!silent) {
+        Swal.fire({
+          icon: 'error',
+          title: 'Eşitleme Başarısız',
+          text: 'Veriler eşitlenirken bir hata oluştu. Lütfen internet bağlantınızı kontrol edin.',
+          confirmButtonText: 'Tamam'
+        });
+      }
+    } finally {
+      if (!silent && !syncAbortedRef.current) setSyncing(false);
+      setTimeout(() => {
+        if (!syncAbortedRef.current) {
+          setCurrentSyncStep('');
+        }
+      }, 3000);
+    }
+  };
+
+  const handleSyncCategory = async (category, itemKey) => {
+    if (!authUser) return;
+    
+    // Mark item as syncing
+    setItemSyncStates(prev => ({ ...prev, [itemKey]: 'syncing' }));
+    setItemSyncProgress(prev => ({ ...prev, [itemKey]: 10 }));
+    
+    try {
+      const batch = writeBatch(db);
+      let hasChanges = false;
+      const nowMs = Date.now();
+      const metadataUpdates = {};
+
+      let remoteWords = words;
+      let remoteLists = customLists;
+      let remoteTests = practiceTests;
+      let remoteStats = dailyStats;
+      let remoteNotes = stickyNotes;
+
+      const localSyncedMs = parseInt(localStorage.getItem('last_synced_ms') || '0', 10);
+      const isFirstSync = localSyncedMs === 0;
+
+      if (category === 'words') {
+        setItemSyncProgress(prev => ({ ...prev, [itemKey]: 35 }));
+        const localWordsChanged = words.some(w => w._status === 'created' || w._status === 'updated' || w._status === 'deleted');
+        
+        const updatedWords = [...words];
+        words.forEach(w => {
+          if (w._status === 'created') {
+            const cleanWord = { ...w };
+            delete cleanWord.id;
+            delete cleanWord._status;
+            delete cleanWord._updateType;
+            const newDocRef = doc(collection(db, 'words'));
+            batch.set(newDocRef, cleanWord);
+            const idx = updatedWords.findIndex(item => item.id === w.id);
+            if (idx !== -1) updatedWords[idx] = { ...cleanWord, id: newDocRef.id };
+            hasChanges = true;
+          } else if (w._status === 'updated') {
+            const cleanWord = { ...w };
+            delete cleanWord._status;
+            delete cleanWord._updateType;
+            batch.update(doc(db, 'words', w.id), cleanWord);
+            const idx = updatedWords.findIndex(item => item.id === w.id);
+            if (idx !== -1) {
+              delete updatedWords[idx]._status;
+              delete updatedWords[idx]._updateType;
+            }
+            hasChanges = true;
+          } else if (w._status === 'deleted') {
+            batch.delete(doc(db, 'words', w.id));
+            hasChanges = true;
+          }
+        });
+
+        if (localWordsChanged) metadataUpdates.wordsUpdatedAt = nowMs;
+        if (Object.keys(metadataUpdates).length > 0) {
+          const metaDocRef = doc(db, 'sync_metadata', authUser.uid);
+          batch.set(metaDocRef, metadataUpdates, { merge: true });
+          hasChanges = true;
+        }
+
+        if (hasChanges) {
+          await batch.commit();
+        }
+
+        setItemSyncProgress(prev => ({ ...prev, [itemKey]: 65 }));
+        
+        const isLocalWordsEmpty = words.length === 0;
+        const needPullWords = isFirstSync || isLocalWordsEmpty || localWordsChanged;
+        
+        if (needPullWords) {
+          const qWords = query(collection(db, 'words'), where('userId', '==', authUser.uid));
+          const snapWords = await getDocs(qWords);
+          remoteWords = snapWords.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a, b) => {
+            const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
+            const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
+            return dateB - dateA;
+          });
+        }
+        
+        setWords(remoteWords);
+        safeSetItem('local_words', JSON.stringify(compactObj(remoteWords)));
+        
+      } else if (category === 'customLists') {
+        setItemSyncProgress(prev => ({ ...prev, [itemKey]: 35 }));
+        const localListsChanged = customLists.some(l => l._status === 'created' || l._status === 'updated' || l._status === 'deleted');
+        
+        const updatedLists = [...customLists];
+        customLists.forEach(l => {
+          if (l._status === 'created') {
+            const cleanList = { ...l };
+            delete cleanList.id;
+            delete cleanList._status;
+            const newDocRef = doc(collection(db, 'customLists'));
+            batch.set(newDocRef, cleanList);
+            const idx = updatedLists.findIndex(item => item.id === l.id);
+            if (idx !== -1) updatedLists[idx] = { ...cleanList, id: newDocRef.id };
+            hasChanges = true;
+          } else if (l._status === 'updated') {
+            const cleanList = { ...l };
+            delete cleanList._status;
+            batch.update(doc(db, 'customLists', l.id), cleanList);
+            const idx = updatedLists.findIndex(item => item.id === l.id);
+            if (idx !== -1) delete updatedLists[idx]._status;
+            hasChanges = true;
+          } else if (l._status === 'deleted') {
+            batch.delete(doc(db, 'customLists', l.id));
+            hasChanges = true;
+          }
+        });
+
+        if (localListsChanged) metadataUpdates.listsUpdatedAt = nowMs;
+        if (Object.keys(metadataUpdates).length > 0) {
+          const metaDocRef = doc(db, 'sync_metadata', authUser.uid);
+          batch.set(metaDocRef, metadataUpdates, { merge: true });
+          hasChanges = true;
+        }
+
+        if (hasChanges) {
+          await batch.commit();
+        }
+
+        setItemSyncProgress(prev => ({ ...prev, [itemKey]: 65 }));
+        
+        const isLocalListsEmpty = customLists.length === 0;
+        const needPullLists = isFirstSync || isLocalListsEmpty || localListsChanged;
+        
+        if (needPullLists) {
+          const qLists = query(collection(db, 'customLists'), where('userId', '==', authUser.uid));
+          const snapLists = await getDocs(qLists);
+          remoteLists = snapLists.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        }
+        
+        setCustomLists(remoteLists);
+        safeSetItem('local_custom_lists', JSON.stringify(compactObj(remoteLists)));
+        
+      } else if (category === 'practiceTests') {
+        setItemSyncProgress(prev => ({ ...prev, [itemKey]: 35 }));
+        const localTestsChanged = practiceTests.some(t => t._status === 'created' || t._status === 'updated' || t._status === 'deleted');
+        
+        const updatedTests = [...practiceTests];
+        practiceTests.forEach(t => {
+          if (t._status === 'created') {
+            const cleanTest = { ...t };
+            delete cleanTest.id;
+            delete cleanTest._status;
+            delete cleanTest.localId;
+            const newDocRef = doc(collection(db, 'practice_tests'));
+            batch.set(newDocRef, cleanTest);
+            const idx = updatedTests.findIndex(item => item.id === t.id);
+            if (idx !== -1) {
+              updatedTests[idx] = { ...cleanTest, id: newDocRef.id, localId: t.id };
+              localTestIdMapRef.current[t.id] = newDocRef.id;
+              try {
+                const savedActive = localStorage.getItem(`active_test_${t.id}`);
+                if (savedActive) {
+                  localStorage.setItem(`active_test_${newDocRef.id}`, savedActive);
+                  localStorage.removeItem(`active_test_${t.id}`);
+                }
+              } catch (e) {}
+            }
+            hasChanges = true;
+          } else if (t._status === 'updated') {
+            const cleanTest = { ...t };
+            delete cleanTest._status;
+            batch.update(doc(db, 'practice_tests', t.id), cleanTest);
+            const idx = updatedTests.findIndex(item => item.id === t.id);
+            if (idx !== -1) delete updatedTests[idx]._status;
+            hasChanges = true;
+          } else if (t._status === 'deleted') {
+            batch.delete(doc(db, 'practice_tests', t.id));
+            hasChanges = true;
+          }
+        });
+
+        if (localTestsChanged) metadataUpdates.testsUpdatedAt = nowMs;
+        if (Object.keys(metadataUpdates).length > 0) {
+          const metaDocRef = doc(db, 'sync_metadata', authUser.uid);
+          batch.set(metaDocRef, metadataUpdates, { merge: true });
+          hasChanges = true;
+        }
+
+        if (hasChanges) {
+          await batch.commit();
+          setPracticeTests(updatedTests.filter(t => t._status !== 'deleted'));
+        }
+
+        setItemSyncProgress(prev => ({ ...prev, [itemKey]: 65 }));
+        
+        const isLocalTestsEmpty = practiceTests.length === 0;
+        const needPullTests = isFirstSync || isLocalTestsEmpty || localTestsChanged;
+        
+        if (needPullTests) {
+          const qTests = query(collection(db, 'practice_tests'), where('userId', '==', authUser.uid));
+          const snapTests = await getDocs(qTests);
+          const fetchedTests = snapTests.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          const { uniqueTests, duplicateIds } = getUniqueAndDuplicateTests(fetchedTests);
+          if (duplicateIds.length > 0) {
+            deleteBatchFromFirestoreInBackground(duplicateIds);
+          }
+          remoteTests = uniqueTests.sort((a, b) => {
+            if (a.isPinned && !b.isPinned) return -1;
+            if (!a.isPinned && b.isPinned) return 1;
+            const dateA = a.updatedAt?.toDate ? a.updatedAt.toDate() : new Date(a.updatedAt || 0);
+            const dateB = b.updatedAt?.toDate ? b.updatedAt.toDate() : new Date(b.updatedAt || 0);
+            return dateB - dateA;
+          });
+        }
+        
+        setPracticeTests(remoteTests);
+        safeSetItem('local_practice_tests', JSON.stringify(compactObj(remoteTests)));
+        
+      } else if (category === 'dailyStats') {
+        setItemSyncProgress(prev => ({ ...prev, [itemKey]: 35 }));
+        const localStatsChanged = Object.values(dailyStats).some(s => s._status === 'created' || s._status === 'updated');
+        
+        const updatedStats = { ...dailyStats };
+        Object.keys(dailyStats).forEach(key => {
+          const item = dailyStats[key];
+          const statsDocId = `${item.date}_${authUser.uid}`;
+          if (item._status === 'created') {
+            const cleanItem = { ...item };
+            delete cleanItem._status;
+            batch.set(doc(db, 'daily_stats', statsDocId), cleanItem);
+            delete updatedStats[key]._status;
+            hasChanges = true;
+          } else if (item._status === 'updated') {
+            const cleanItem = { ...item };
+            delete cleanItem._status;
+            batch.update(doc(db, 'daily_stats', statsDocId), cleanItem);
+            delete updatedStats[key]._status;
+            hasChanges = true;
+          }
+        });
+
+        if (localStatsChanged) metadataUpdates.statsUpdatedAt = nowMs;
+        if (Object.keys(metadataUpdates).length > 0) {
+          const metaDocRef = doc(db, 'sync_metadata', authUser.uid);
+          batch.set(metaDocRef, metadataUpdates, { merge: true });
+          hasChanges = true;
+        }
+
+        if (hasChanges) {
+          await batch.commit();
+        }
+
+        setItemSyncProgress(prev => ({ ...prev, [itemKey]: 65 }));
+        
+        const isLocalStatsEmpty = Object.keys(dailyStats).length === 0;
+        const needPullStats = isFirstSync || isLocalStatsEmpty || localStatsChanged;
+        
+        if (needPullStats) {
+          const qStats = query(collection(db, 'daily_stats'), where('userId', '==', authUser.uid));
+          const snapStats = await getDocs(qStats);
+          remoteStats = {};
+          snapStats.forEach(docSnap => {
+            const data = docSnap.data();
+            const key = data.date || docSnap.id;
+            remoteStats[key] = data;
+          });
+        }
+        
+        setDailyStats(remoteStats);
+        safeSetItem('local_daily_stats', JSON.stringify(compactObj(remoteStats)));
+        
+      } else if (category === 'stickyNotes') {
+        setItemSyncProgress(prev => ({ ...prev, [itemKey]: 35 }));
+        const localNotesChanged = stickyNotes.some(n => n._status === 'created' || n._status === 'updated' || n._status === 'deleted');
+        
+        const updatedNotes = [...stickyNotes];
+        stickyNotes.forEach(n => {
+          if (n._status === 'created') {
+            const cleanNote = { ...n };
+            delete cleanNote.id;
+            delete cleanNote._status;
+            const newDocRef = doc(collection(db, 'sticky_notes'));
+            batch.set(newDocRef, cleanNote);
+            const idx = updatedNotes.findIndex(item => item.id === n.id);
+            if (idx !== -1) updatedNotes[idx] = { ...cleanNote, id: newDocRef.id };
+            hasChanges = true;
+          } else if (n._status === 'updated') {
+            const cleanNote = { ...n };
+            delete cleanNote.id;
+            delete cleanNote._status;
+            batch.update(doc(db, 'sticky_notes', n.id), cleanNote);
+            const idx = updatedNotes.findIndex(item => item.id === n.id);
+            if (idx !== -1) delete updatedNotes[idx]._status;
+            hasChanges = true;
+          } else if (n._status === 'deleted') {
+            batch.delete(doc(db, 'sticky_notes', n.id));
+            hasChanges = true;
+          }
+        });
+
+        if (localNotesChanged) metadataUpdates.notesUpdatedAt = nowMs;
+        if (Object.keys(metadataUpdates).length > 0) {
+          const metaDocRef = doc(db, 'sync_metadata', authUser.uid);
+          batch.set(metaDocRef, metadataUpdates, { merge: true });
+          hasChanges = true;
+        }
+
+        if (hasChanges) {
+          await batch.commit();
+        }
+
+        setItemSyncProgress(prev => ({ ...prev, [itemKey]: 65 }));
+        
+        const isLocalNotesEmpty = stickyNotes.length === 0;
+        const needPullNotes = isFirstSync || isLocalNotesEmpty || localNotesChanged;
+        
+        if (needPullNotes) {
+          const qNotes = query(collection(db, 'sticky_notes'), where('userId', '==', authUser.uid));
+          const snapNotes = await getDocs(qNotes);
+          remoteNotes = snapNotes.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a, b) => {
+            const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
+            const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
+            return dateB - dateA;
+          });
+        }
+        
+        setStickyNotes(remoteNotes);
+        safeSetItem('local_sticky_notes', JSON.stringify(compactObj(remoteNotes)));
+      }
+
+      setItemSyncProgress(prev => ({ ...prev, [itemKey]: 100 }));
+      setItemSyncStates(prev => ({ ...prev, [itemKey]: 'completed' }));
+      
+      const nowMsSync = Date.now();
+      safeSetItem('last_synced_ms', nowMsSync.toString());
+      setLastSyncedMs(nowMsSync);
+
+      setTimeout(() => {
+        setItemSyncStates(prev => {
+          const next = { ...prev };
+          delete next[itemKey];
+          return next;
+        });
+        setItemSyncProgress(prev => {
+          const next = { ...prev };
+          delete next[itemKey];
+          return next;
+        });
+      }, 5000);
+
+    } catch (err) {
+      console.error(`Syncing category ${category} failed:`, err);
+      setItemSyncStates(prev => ({ ...prev, [itemKey]: 'error' }));
+      setItemSyncProgress(prev => ({ ...prev, [itemKey]: 100 }));
+      
+      setTimeout(() => {
+        setItemSyncStates(prev => {
+          const next = { ...prev };
+          delete next[itemKey];
+          return next;
+        });
+        setItemSyncProgress(prev => {
+          const next = { ...prev };
+          delete next[itemKey];
+          return next;
+        });
+      }, 5000);
+    }
+  };
+
+  const handleSyncRef = useRef(handleSync);
+  useEffect(() => {
+    handleSyncRef.current = handleSync;
+  }, [handleSync]);
+
+  // 1. Instant Cold Load from LocalStorage on mount
+  useEffect(() => {
+    // Proactively clean up legacy non-prefixed localStorage keys to free quota!
+    const activeKeys = [
+      'local_words',
+      'local_custom_lists',
+      'local_practice_tests',
+      'local_daily_stats',
+      'local_sticky_notes',
+      'last_synced_time',
+      'last_synced_ms',
+      'wordsPerPage',
+      'isSelectionMode',
+      'selectedWords',
+      'theme'
+    ];
+    try {
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const key = localStorage.key(i);
+        if (key && !activeKeys.includes(key)) {
+          console.log("Proactively removing legacy localStorage key:", key);
+          localStorage.removeItem(key);
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to clean up legacy keys proactively:", e);
+    }
+  }, []);
+
+  // 2. Cloud Sync / Seed when Authentication becomes ready
+  useEffect(() => {
+    if (!authUser) return;
+
+    if (duplicateIdsToDeleteRef.current && duplicateIdsToDeleteRef.current.length > 0) {
+      deleteBatchFromFirestoreInBackground(duplicateIdsToDeleteRef.current);
+      duplicateIdsToDeleteRef.current = [];
+    }
+
+    const localWords = localStorage.getItem('local_words');
+    if (!localWords || localWords === '[]') {
+      if (navigator.onLine) {
+        // First load or cache cleared: Fetch everything once from Firestore to seed localStorage
+        fetchAllFromFirestoreOnce(authUser);
+      } else {
+        // Offline: cannot seed from Firestore, set loading to false to display empty state gracefully
+        setLoading(false);
+        console.log("Offline on initial load. Displaying empty local state.");
+      }
+    } else {
+      setLoading(false);
+      // Startup background auto-sync is disabled to respect 100% manual sync preference.
+      console.log("Startup background sync is disabled. User will sync manually.");
+    }
+  }, [authUser, deleteBatchFromFirestoreInBackground]);
+
+  // Local storage auto-sync state persist hooks
+  useEffect(() => {
+    if (words && words.length > 0) {
+      safeSetItem('local_words', JSON.stringify(compactObj(words)));
+    }
+  }, [words]);
+
+  useEffect(() => {
+    if (customLists && customLists.length > 0) {
+      safeSetItem('local_custom_lists', JSON.stringify(compactObj(customLists)));
+    }
+  }, [customLists]);
+
+  useEffect(() => {
+    if (practiceTests && practiceTests.length > 0) {
+      safeSetItem('local_practice_tests', JSON.stringify(compactObj(practiceTests)));
+    }
+  }, [practiceTests]);
+
+  useEffect(() => {
+    if (stickyNotes && stickyNotes.length > 0) {
+      safeSetItem('local_sticky_notes', JSON.stringify(compactObj(stickyNotes)));
+    }
+  }, [stickyNotes]);
+
+  useEffect(() => {
+    if (dailyStats && Object.keys(dailyStats).length > 0) {
+      safeSetItem('local_daily_stats', JSON.stringify(compactObj(dailyStats)));
+    }
+  }, [dailyStats]);
 
   const handleLogTestResults = async (correctDelta, wordStats) => {
     if (correctDelta === 0 && (!wordStats || Object.keys(wordStats).length === 0)) return;
@@ -1007,107 +2316,104 @@ function App() {
       }
     }
 
-    if (isConfigMissing || !authUser) {
-      const newStats = { ...dailyStats, [localToday]: { correctCount: newCount, words: newWords } };
-      setDailyStats(newStats);
-      localStorage.setItem('dailyStats', JSON.stringify(newStats));
-    } else {
-      // Find the document ID for this day/user. Using a composite ID or searching.
-      // For simplicity, let's keep the localToday as doc ID but add userId field.
-      // NOTE: This assumes one doc per day globally, which is wrong for multi-user.
-      // Better: doc ID should be localToday + "_" + authUser.uid
-      const statsDocId = `${localToday}_${authUser.uid}`;
-      const docRef = doc(db, 'daily_stats', statsDocId);
-      try {
-        await setDoc(docRef, { correctCount: newCount, words: newWords, userId: authUser.uid, date: localToday }, { merge: true });
-      } catch (e) {
-        console.error('Failed to update daily stats', e);
-      }
-    }
+    const isNew = !currentDoc.date;
+    const status = isNew ? 'created' : 'updated';
+    const newStats = { 
+      ...dailyStats, 
+      [localToday]: { 
+        correctCount: newCount, 
+        words: newWords,
+        userId: authUser ? authUser.uid : 'anonymous',
+        date: localToday,
+        _status: status
+      } 
+    };
+    setDailyStats(newStats);
+    // Auto-sync is disabled during test actions (logging results) to respect manual sync preference.
+    /*
+    setTimeout(() => handleSync(true), 500);
+    */
   };
 
-  const handleSaveTest = async (testId, testData) => {
-    if (isConfigMissing || !authUser) return testId;
-    try {
-      if (testId) {
-        await updateDoc(doc(db, 'practice_tests', testId), { ...testData, updatedAt: new Date() });
-        return testId;
-      } else {
-        const docRef = await addDoc(collection(db, 'practice_tests'), { 
-          ...testData, 
-          userId: authUser.uid,
-          createdAt: new Date(), 
-          updatedAt: new Date() 
-        });
-        return docRef.id;
-      }
-    } catch (error) {
-      console.error('Failed to save test', error);
-      return null;
+  const handleSaveTest = useCallback(async (testId, testData) => {
+    const now = new Date();
+    if (testId) {
+      // Resolve via permanent local→Firestore ID map to prevent duplicate creation after sync
+      const resolvedId = localTestIdMapRef.current[testId] ?? testId;
+      let actualId = resolvedId;
+      setPracticeTests(prev => {
+        const existing = prev.find(t => t.id === resolvedId || t.id === testId || t.localId === testId);
+        if (!existing) return prev; // Test already synced away or not found — skip silently
+        actualId = existing.id;
+        const status = existing._status === 'created' ? 'created' : 'updated';
+        const updatedTestData = {
+          ...testData,
+          updatedAt: now,
+          _status: status
+        };
+        return prev.map(t => (t.id === resolvedId || t.id === testId || t.localId === testId) ? { ...t, ...updatedTestData } : t);
+      });
+      // Auto-sync is disabled during test saves to prevent duplication. The user will sync manually.
+      /*
+      setTimeout(() => {
+        if (handleSyncRef.current) handleSyncRef.current(true);
+      }, 500);
+      */
+      return actualId;
+    } else {
+      const generatedId = `local_test_${Date.now()}`;
+      const newTest = {
+        ...testData,
+        id: generatedId,
+        userId: authUser ? authUser.uid : 'anonymous',
+        createdAt: now,
+        updatedAt: now,
+        _status: 'created'
+      };
+      setPracticeTests(prev => [newTest, ...prev]);
+      // Auto-sync is disabled during test creation to prevent duplication. The user will sync manually.
+      /*
+      setTimeout(() => {
+        if (handleSyncRef.current) handleSyncRef.current(true);
+      }, 500);
+      */
+      return generatedId;
     }
-  };
+  }, [authUser]);
 
   const handleAddNote = async (wordId, wordTerm, text, title = '') => {
     if (!text || !text.trim()) return;
-    try {
-      if (!isConfigMissing && authUser) {
-        await addDoc(collection(db, 'sticky_notes'), {
-          wordId: wordId || null,
-          wordTerm: wordTerm || 'Manuel Not',
-          text,
-          title: title || '',
-          isCompleted: false,
-          userId: authUser.uid,
-          createdAt: new Date()
-        });
-      } else {
-        const newNote = { 
-          id: Date.now().toString(), 
-          wordId: wordId || null, 
-          wordTerm: wordTerm || 'Manuel Not', 
-          text, 
-          title: title || '',
-          isCompleted: false,
-          createdAt: new Date() 
-        };
-        setStickyNotes(prev => [newNote, ...prev]);
-      }
-      setManualNoteTitle(''); // Clear title after add
-    } catch (err) {
-      console.error('Sticky not eklenemedi:', err);
-    }
+    const newNote = { 
+      id: `local_note_${Date.now()}`, 
+      wordId: wordId || null, 
+      wordTerm: wordTerm || 'Manuel Not', 
+      text, 
+      title: title || '',
+      isCompleted: false,
+      userId: authUser ? authUser.uid : 'anonymous',
+      createdAt: new Date(),
+      _status: 'created'
+    };
+    setStickyNotes(prev => [newNote, ...prev]);
+    setManualNoteTitle(''); // Clear title after add
   };
 
   const handleToggleNoteCompletion = async (noteId, currentStatus) => {
-    try {
-      if (!isConfigMissing) {
-        await updateDoc(doc(db, 'sticky_notes', noteId), {
-          isCompleted: !currentStatus
-        });
-      } else {
-        setStickyNotes(prev => prev.map(n => n.id === noteId ? { ...n, isCompleted: !currentStatus } : n));
-      }
-    } catch (err) {
-      console.error('Sticky not durumu güncellenemedi:', err);
-    }
+    const existing = stickyNotes.find(n => n.id === noteId);
+    const status = existing?._status === 'created' ? 'created' : 'updated';
+    setStickyNotes(prev => prev.map(n => n.id === noteId ? { ...n, isCompleted: !currentStatus, _status: status } : n));
   };
 
   const handleUpdateNote = useCallback(async (noteId, text, title = '', selectedWords = []) => {
     if (!text || !text.trim()) return;
-    try {
-      if (!isConfigMissing) {
-        await updateDoc(doc(db, 'sticky_notes', noteId), {
-          text,
-          title: title || '',
-          selectedWords: selectedWords || []
-        });
-      } else {
-        setStickyNotes(prev => prev.map(n => n.id === noteId ? { ...n, text, title: title || '', selectedWords: selectedWords || [] } : n));
+    setStickyNotes(prev => prev.map(n => {
+      if (n.id === noteId) {
+        const status = n._status === 'created' ? 'created' : 'updated';
+        return { ...n, text, title: title || '', selectedWords: selectedWords || [], _status: status };
       }
-    } catch (err) {
-      console.error('Sticky not güncellenemedi:', err);
-    }
-  }, [isConfigMissing]);
+      return n;
+    }));
+  }, []);
 
   const handleDeleteNote = async (noteId) => {
     const result = await Swal.fire({
@@ -1122,66 +2428,53 @@ function App() {
     });
 
     if (result.isConfirmed) {
-      try {
-        if (!isConfigMissing) {
-          await deleteDoc(doc(db, 'sticky_notes', noteId));
-        } else {
+      const existing = stickyNotes.find(n => n.id === noteId);
+      if (existing) {
+        if (existing._status === 'created') {
           setStickyNotes(prev => prev.filter(n => n.id !== noteId));
+        } else {
+          setStickyNotes(prev => prev.map(n => n.id === noteId ? { ...n, _status: 'deleted' } : n));
         }
-        Swal.fire({
-          title: 'Silindi!',
-          text: 'Not başarıyla silindi.',
-          icon: 'success',
-          timer: 1500,
-          showConfirmButton: false
-        });
-      } catch (err) {
-        console.error('Sticky not silinemedi:', err);
       }
+      Swal.fire({
+        title: 'Silindi!',
+        text: 'Not başarıyla silindi.',
+        icon: 'success',
+        timer: 1500,
+        showConfirmButton: false
+      });
     }
   };
 
   // --- Custom List Handlers ---
   const handleCreateList = async (name) => {
     if (!name.trim()) return;
-    try {
-      if (!isConfigMissing) {
-        const docRef = await addDoc(collection(db, 'customLists'), {
-          name: name.trim(),
-          wordIds: [],
-          createdAt: new Date().toISOString(),
-          userId: authUser.uid,
-          order: (customLists && customLists.length) ? customLists.length : 0
-        });
-        return docRef.id;
-      } else {
-        const newId = Date.now().toString();
-        setCustomLists(prev => [...prev, { id: newId, name: name.trim(), wordIds: [], createdAt: new Date().toISOString(), order: prev.length }]);
-        return newId;
-      }
-    } catch (e) {
-      console.error("Liste oluşturulamadı:", e);
-      Swal.fire({ icon: 'error', title: 'Hata', text: 'Liste oluşturulurken bir sorun oluştu.' });
-    }
+    const newId = `local_list_${Date.now()}`;
+    const newList = {
+      id: newId,
+      name: name.trim(),
+      wordIds: [],
+      createdAt: new Date().toISOString(),
+      userId: authUser.uid,
+      order: (customLists && customLists.length) ? customLists.length : 0,
+      _status: 'created'
+    };
+    setCustomLists(prev => [...prev, newList]);
+    return newId;
   };
 
   const handleUpdateList = async (listId, name) => {
     if (!name.trim()) return;
-    try {
-      if (!isConfigMissing) {
-        await updateDoc(doc(db, 'customLists', listId), {
-          name: name.trim()
-        });
-      } else {
-        setCustomLists(prev => prev.map(l => l.id === listId ? { ...l, name: name.trim() } : l));
+    setCustomLists(prev => prev.map(l => {
+      if (l.id === listId) {
+        const status = l._status === 'created' ? 'created' : 'updated';
+        return { ...l, name: name.trim(), _status: status };
       }
-    } catch (e) {
-      console.error("Liste güncellenemedi:", e);
-    }
+      return l;
+    }));
   };
 
   const handleMoveList = async (listId, direction) => {
-    // Get current sorted state
     const sorted = [...customLists].sort((a, b) => {
       const orderA = a.order ?? Number.MAX_SAFE_INTEGER;
       const orderB = b.order ?? Number.MAX_SAFE_INTEGER;
@@ -1199,17 +2492,10 @@ function App() {
     const [movedItem] = newSorted.splice(currentIndex, 1);
     newSorted.splice(targetIndex, 0, movedItem);
 
-    try {
-      if (!isConfigMissing) {
-        await Promise.all(newSorted.map((list, index) =>
-          updateDoc(doc(db, 'customLists', list.id), { order: index })
-        ));
-      } else {
-        setCustomLists(newSorted.map((list, index) => ({ ...list, order: index })));
-      }
-    } catch (e) {
-      console.error("Liste sıralanamadı:", e);
-    }
+    setCustomLists(newSorted.map((list, index) => {
+      const status = list._status === 'created' ? 'created' : 'updated';
+      return { ...list, order: index, _status: status };
+    }));
   };
 
   const handleDeleteList = async (listId) => {
@@ -1226,70 +2512,40 @@ function App() {
     });
 
     if (result.isConfirmed) {
-      try {
-        if (!isConfigMissing) {
-          await deleteDoc(doc(db, 'customLists', listId));
-        } else {
+      if (listToDelete) {
+        if (listToDelete._status === 'created') {
           setCustomLists(prev => prev.filter(l => l.id !== listId));
+        } else {
+          setCustomLists(prev => prev.map(l => l.id === listId ? { ...l, _status: 'deleted' } : l));
         }
-        if (currentListId === listId) {
-          setCurrentListId(null);
-          setCurrentView('home');
-        }
-      } catch (e) {
-        console.error("Liste silinemedi:", e);
+      }
+      if (currentListId === listId) {
+        setCurrentListId(null);
+        setCurrentView('home');
       }
     }
   };
 
   const handleAddWordsToList = async (listId, wordIds) => {
-    try {
-      if (!isConfigMissing) {
-        const listDoc = await getDoc(doc(db, 'customLists', listId));
-        if (listDoc.exists()) {
-          const currentWordIds = listDoc.data().wordIds || [];
-          const updatedWordIds = [...new Set([...currentWordIds, ...wordIds])];
-          await updateDoc(doc(db, 'customLists', listId), {
-            wordIds: updatedWordIds
-          });
-          const listName = listDoc.data().name;
-        }
-      } else {
-        setCustomLists(prev => prev.map(l => {
-          if (l.id === listId) {
-            const updatedWordIds = [...new Set([...l.wordIds, ...wordIds])];
-            return { ...l, wordIds: updatedWordIds };
-          }
-          return l;
-        }));
+    setCustomLists(prev => prev.map(l => {
+      if (l.id === listId) {
+        const updatedWordIds = [...new Set([...(l.wordIds || []), ...wordIds])];
+        const status = l._status === 'created' ? 'created' : 'updated';
+        return { ...l, wordIds: updatedWordIds, _status: status };
       }
-    } catch (e) {
-      console.error("Kelimeler listeye eklenemedi:", e);
-    }
+      return l;
+    }));
   };
 
   const handleRemoveWordFromList = async (listId, wordId) => {
-    try {
-      if (!isConfigMissing) {
-        const listDoc = await getDoc(doc(db, 'customLists', listId));
-        if (listDoc.exists()) {
-          const currentWordIds = listDoc.data().wordIds || [];
-          const updatedWordIds = currentWordIds.filter(id => id !== wordId);
-          await updateDoc(doc(db, 'customLists', listId), {
-            wordIds: updatedWordIds
-          });
-        }
-      } else {
-        setCustomLists(prev => prev.map(l => {
-          if (l.id === listId) {
-            return { ...l, wordIds: l.wordIds.filter(id => id !== wordId) };
-          }
-          return l;
-        }));
+    setCustomLists(prev => prev.map(l => {
+      if (l.id === listId) {
+        const updatedWordIds = (l.wordIds || []).filter(id => id !== wordId);
+        const status = l._status === 'created' ? 'created' : 'updated';
+        return { ...l, wordIds: updatedWordIds, _status: status };
       }
-    } catch (e) {
-      console.error("Kelime listeden çıkarılamadı:", e);
-    }
+      return l;
+    }));
   };
 
   const handleDeleteAllNotes = async () => {
@@ -1307,62 +2563,62 @@ function App() {
     });
 
     if (result.isConfirmed) {
-      try {
-        if (!isConfigMissing) {
-          const deletePromises = stickyNotes.map(note => deleteDoc(doc(db, 'sticky_notes', note.id)));
-          await Promise.all(deletePromises);
-        } else {
-          setStickyNotes([]);
-        }
-        Swal.fire({
-          title: 'Silindi!',
-          text: 'Tüm sticky notlarınız başarıyla silindi.',
-          icon: 'success',
-          timer: 1500,
-          showConfirmButton: false
-        });
-      } catch (err) {
-        console.error('Tüm notlar silinirken hata:', err);
-        Swal.fire('Hata', 'Notlar silinirken bir hata oluştu.', 'error');
-      }
+      setStickyNotes(prev => prev.map(n => {
+        if (n._status === 'created') return null;
+        return { ...n, _status: 'deleted' };
+      }).filter(Boolean));
+      Swal.fire({
+        title: 'Silindi!',
+        text: 'Tüm sticky notlarınız başarıyla silindi.',
+        icon: 'success',
+        timer: 1500,
+        showConfirmButton: false
+      });
     }
   };
 
   const handleDeleteTest = async (testId) => {
-    if (isConfigMissing) return;
-    try {
-      await deleteDoc(doc(db, 'practice_tests', testId));
-    } catch (error) {
-      console.error('Failed to delete test', error);
+    const existing = practiceTests.find(t => t.id === testId);
+    if (existing) {
+      if (existing._status === 'created') {
+        setPracticeTests(prev => prev.filter(t => t.id !== testId));
+      } else {
+        setPracticeTests(prev => prev.map(t => t.id === testId ? { ...t, _status: 'deleted' } : t));
+      }
     }
   };
 
   const handleTogglePinTest = async (testId, isPinned) => {
-    if (isConfigMissing) {
-      setPracticeTests(prev => prev.map(t => t.id === testId ? { ...t, isPinned } : t));
-      return;
-    }
-    try {
-      await updateDoc(doc(db, 'practice_tests', testId), { isPinned });
-    } catch (error) {
-      console.error('Failed to toggle pin', error);
-    }
+    setPracticeTests(prev => prev.map(t => {
+      if (t.id === testId) {
+        const status = t._status === 'created' ? 'created' : 'updated';
+        return { ...t, isPinned, _status: status };
+      }
+      return t;
+    }));
   };
 
   const handleDeleteAllTests = async () => {
-    if (isConfigMissing) {
-      setPracticeTests(prev => prev.filter(test => test.isPinned));
-      return;
-    }
-    try {
-      const q = query(collection(db, 'practice_tests'), where('userId', '==', authUser.uid));
-      const snapshot = await getDocs(q);
-      const deletePromises = snapshot.docs
-        .filter(docSnap => !docSnap.data().isPinned)
-        .map(docSnapshot => deleteDoc(doc(db, 'practice_tests', docSnapshot.id)));
-      await Promise.all(deletePromises);
-    } catch (error) {
-      console.error('Failed to delete all tests', error);
+    const unpinnedTests = practiceTests.filter(t => !t.isPinned);
+    if (unpinnedTests.length === 0) return;
+
+    const result = await Swal.fire({
+      title: 'Emin misiniz?',
+      text: "Pinlenmemiş tüm test geçmişinizi silmek istediğinize emin misiniz?",
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#d33',
+      cancelButtonColor: '#3085d6',
+      confirmButtonText: 'Evet, Sil!',
+      cancelButtonText: 'İptal'
+    });
+
+    if (result.isConfirmed) {
+      setPracticeTests(prev => prev.map(t => {
+        if (t.isPinned) return t;
+        if (t._status === 'created') return null;
+        return { ...t, _status: 'deleted' };
+      }).filter(Boolean));
     }
   };
 
@@ -1382,10 +2638,11 @@ function App() {
       .map(l => l.id);
     setSelectedListIds(initialListIds);
 
-    if (word.createdAt) {
-      const dateObj = word.createdAt.toDate ? word.createdAt.toDate() : new Date(word.createdAt);
-      const tzOffset = dateObj.getTimezoneOffset() * 60000;
-      const localISOTime = new Date(dateObj - tzOffset).toISOString().split('T')[0];
+    const parsedDate = parseDate(word.createdAt);
+
+    if (parsedDate) {
+      const tzOffset = parsedDate.getTimezoneOffset() * 60000;
+      const localISOTime = new Date(parsedDate.getTime() - tzOffset).toISOString().split('T')[0];
       setSelectedDate(localISOTime);
     } else {
       setSelectedDate(new Date().toISOString().split('T')[0]);
@@ -1397,8 +2654,9 @@ function App() {
   const handleAddWordsToDictionary = async (terms) => {
     if (!terms || terms.length === 0) return;
     
-    const date = new Date();
-    const newWords = terms.map(term => ({
+    const date = new Date().toISOString();
+    const newWords = terms.map((term, i) => ({
+      id: `local_word_${Date.now()}_${i}`,
       term: term.charAt(0).toUpperCase() + term.slice(1).toLowerCase(),
       shortMeanings: '',
       pronunciation: '',
@@ -1413,31 +2671,18 @@ function App() {
       learningStatus: 'Yeni',
       learningStage: 0,
       isStarred: false,
-      userId: authUser.uid
+      userId: authUser.uid,
+      _status: 'created'
     }));
 
-    try {
-      if (!isConfigMissing) {
-        await Promise.all(newWords.map(w => addDoc(collection(db, 'words'), w)));
-      } else {
-        const newWordsWithIds = newWords.map((w, i) => ({ id: (Date.now() + i).toString(), ...w }));
-        setWords(prev => [...newWordsWithIds, ...prev]);
-      }
-      Swal.fire({
-        icon: 'success',
-        title: 'Kelimeler Eklendi',
-        text: `${terms.length} kelime başarıyla sözlüğe eklendi.`,
-        timer: 1500,
-        showConfirmButton: false
-      });
-    } catch (error) {
-      console.error("Kelime ekleme hatası: ", error);
-      Swal.fire({
-        icon: 'error',
-        title: 'Hata',
-        text: 'Kelimeler eklenirken bir hata oluştu.'
-      });
-    }
+    setWords(prev => [...newWords, ...prev]);
+    Swal.fire({
+      icon: 'success',
+      title: 'Kelimeler Eklendi',
+      text: `${terms.length} kelime başarıyla sözlüğe eklendi.`,
+      timer: 1500,
+      showConfirmButton: false
+    });
   };
 
   const calculateRootWord = useCallback((term) => {
@@ -1494,80 +2739,62 @@ function App() {
 
       if (editingWordId) {
         const parsed = parsedItems[0];
+        const existing = words.find(w => w.id === editingWordId);
+        const status = existing?._status === 'created' ? 'created' : 'updated';
         const newWordData = {
           ...parsed,
           rootWord: parsed.rootWord || calculateRootWord(parsed.term),
           createdAt: customDate,
           learningStatus: learningStatus,
-          userId: authUser.uid
+          userId: authUser.uid,
+          _status: status,
+          ...(status === 'updated' ? { _updateType: 'edit' } : {})
         };
-        if (isConfigMissing) {
-          setWords(words.map(w => w.id === editingWordId ? { ...w, ...newWordData } : w));
-          savedWordIds = [editingWordId];
-        } else {
-          await updateDoc(doc(db, 'words', editingWordId), newWordData);
-          savedWordIds = [editingWordId];
-        }
+        setWords(words.map(w => w.id === editingWordId ? { ...w, ...newWordData } : w));
+        savedWordIds = [editingWordId];
       } else {
-        const newWords = parsedItems.map((parsedData) => ({
-          ...parsedData,
-          rootWord: parsedData.rootWord || calculateRootWord(parsedData.term),
-          createdAt: customDate,
-          learningStatus: learningStatus,
-          learningStage: 0,
-          isStarred: false,
-          userId: authUser.uid
-        }));
+        const newWords = parsedItems.map((parsedData, i) => {
+          const generatedId = `local_word_${Date.now()}_${i}`;
+          return {
+            ...parsedData,
+            id: generatedId,
+            rootWord: parsedData.rootWord || calculateRootWord(parsedData.term),
+            createdAt: customDate,
+            learningStatus: learningStatus,
+            learningStage: 0,
+            isStarred: false,
+            userId: authUser.uid,
+            _status: 'created'
+          };
+        });
 
-        if (isConfigMissing) {
-          const newWordsWithIds = newWords.map((w, i) => ({ id: (Date.now() + i).toString(), ...w }));
-          setWords(prev => [...newWordsWithIds, ...prev]);
-          savedWordIds = newWordsWithIds.map(w => w.id);
-        } else {
-          const docs = await Promise.all(newWords.map(w => addDoc(collection(db, 'words'), w)));
-          savedWordIds = docs.map(d => d.id);
-        }
+        setWords(prev => [...newWords, ...prev]);
+        savedWordIds = newWords.map(w => w.id);
       }
 
-      // Sync custom lists
+      // Sync custom lists locally
       if (selectedListIds !== undefined) {
-        if (!isConfigMissing) {
-          for (const list of customLists) {
-            const isSelected = selectedListIds.includes(list.id);
-            const hasAnySavedWord = list.wordIds?.some(id => savedWordIds.includes(id));
+        setCustomLists(prev => prev.map(l => {
+          const isSelected = selectedListIds.includes(l.id);
+          const hasAnySavedWord = l.wordIds?.some(id => savedWordIds.includes(id));
 
-            if (isSelected) {
-              const idsToAdd = savedWordIds.filter(id => !list.wordIds?.includes(id));
-              if (idsToAdd.length > 0) {
-                await updateDoc(doc(db, 'customLists', list.id), {
-                  wordIds: [...(list.wordIds || []), ...idsToAdd]
-                });
-              }
-            } else if (editingWordId && hasAnySavedWord) {
-              await updateDoc(doc(db, 'customLists', list.id), {
-                wordIds: list.wordIds.filter(id => !savedWordIds.includes(id))
-              });
+          if (isSelected) {
+            const idsToAdd = savedWordIds.filter(id => !l.wordIds?.includes(id));
+            if (idsToAdd.length > 0) {
+              const status = l._status === 'created' ? 'created' : 'updated';
+              return { ...l, wordIds: [...(l.wordIds || []), ...idsToAdd], _status: status };
             }
+          } else if (editingWordId && hasAnySavedWord) {
+            const status = l._status === 'created' ? 'created' : 'updated';
+            return { ...l, wordIds: l.wordIds.filter(id => !savedWordIds.includes(id)), _status: status };
           }
-        } else {
-          setCustomLists(prev => prev.map(l => {
-            const isSelected = selectedListIds.includes(l.id);
-            const hasAnySavedWord = l.wordIds?.some(id => savedWordIds.includes(id));
-
-            if (isSelected) {
-              const idsToAdd = savedWordIds.filter(id => !l.wordIds?.includes(id));
-              return { ...l, wordIds: [...(l.wordIds || []), ...idsToAdd] };
-            } else if (editingWordId && hasAnySavedWord) {
-              return { ...l, wordIds: l.wordIds.filter(id => !savedWordIds.includes(id)) };
-            }
-            return l;
-          }));
-        }
+          return l;
+        }));
       }
 
       closeModal();
     } catch (error) {
-      console.error("Firestore hatası: ", error);
+      console.error("Kelime kaydetme hatası: ", error);
       Swal.fire({
         icon: 'error',
         title: 'Hata',
@@ -1587,57 +2814,40 @@ function App() {
       ? Math.min(10, currentStage + 1)
       : Math.max(0, currentStage - 1);
     if (newStage === currentStage) return;
-    try {
-      if (!isConfigMissing) {
-        await updateDoc(doc(db, 'words', wordId), { learningStage: newStage });
-      } else {
-        setWords(prev => prev.map(w => w.id === wordId ? { ...w, learningStage: newStage } : w));
-      }
-    } catch (err) {
-      console.error('Öğrenme aşaması güncellenemedi:', err);
-    }
+    const status = word._status === 'created' ? 'created' : 'updated';
+    setWords(prev => prev.map(w => w.id === wordId ? { ...w, learningStage: newStage, _status: status } : w));
   };
 
   const handleUpdateStagesBatch = async (updates) => {
     if (!updates || updates.length === 0) return;
-    try {
-      if (!isConfigMissing) {
-        const batch = writeBatch(db);
-        let hasChanges = false;
-        
-        updates.forEach(({ wordId, isCorrect }) => {
-          const word = words.find(w => w.id === wordId);
-          if (word) {
-            const currentStage = word.learningStage ?? 0;
-            const newStage = isCorrect ? Math.min(10, currentStage + 1) : Math.max(0, currentStage - 1);
-            if (newStage !== currentStage) {
-              batch.update(doc(db, 'words', wordId), { learningStage: newStage });
-              hasChanges = true;
-            }
+    setWords(prev => {
+      const newWords = [...prev];
+      updates.forEach(({ wordId, isCorrect }) => {
+        const idx = newWords.findIndex(w => w.id === wordId);
+        if (idx !== -1) {
+          const currentStage = newWords[idx].learningStage ?? 0;
+          const newStage = isCorrect ? Math.min(10, currentStage + 1) : Math.max(0, currentStage - 1);
+          if (newStage !== currentStage) {
+            const status = newWords[idx]._status === 'created' ? 'created' : 'updated';
+            newWords[idx] = { ...newWords[idx], learningStage: newStage, _status: status };
           }
-        });
-        
-        if (hasChanges) {
-          await batch.commit();
         }
-      } else {
-        setWords(prev => {
-          const newWords = [...prev];
-          updates.forEach(({ wordId, isCorrect }) => {
-            const idx = newWords.findIndex(w => w.id === wordId);
-            if (idx !== -1) {
-              const currentStage = newWords[idx].learningStage ?? 0;
-              const newStage = isCorrect ? Math.min(10, currentStage + 1) : Math.max(0, currentStage - 1);
-              newWords[idx] = { ...newWords[idx], learningStage: newStage };
-            }
-          });
-          return newWords;
-        });
-      }
-    } catch (err) {
-      console.error('Toplu güncelleme başarısız:', err);
-    }
+      });
+      return newWords;
+    });
   };
+
+  // Batch update learningStatus (string) AND learningStage (number) for a set of words
+  const handleUpdateStatusBatch = useCallback(async (wordIds, newLearningStatus, newLearningStage) => {
+    if (!wordIds || wordIds.length === 0) return;
+    setWords(prev => prev.map(w => {
+      if (wordIds.includes(w.id)) {
+        const _status = w._status === 'created' ? 'created' : 'updated';
+        return { ...w, learningStatus: newLearningStatus, learningStage: newLearningStage, _status, ...(_status === 'updated' ? { _updateType: 'learningStatus' } : {}) };
+      }
+      return w;
+    }));
+  }, []);
 
   const closeModal = () => {
     navigateTo('home');
@@ -1703,6 +2913,21 @@ function App() {
     }
   };
 
+  const handleToggleStarBatch = async (wordIds, shouldStar) => {
+    if (!wordIds || wordIds.length === 0) return;
+    setWords(prev => prev.map(w => {
+      if (wordIds.includes(w.id)) {
+        const status = w._status === 'created' ? 'created' : 'updated';
+        return { ...w, isStarred: shouldStar, _status: status, ...(status === 'updated' ? { _updateType: 'star' } : {}) };
+      }
+      return w;
+    }));
+    
+    // Sync selectedWord if it was in the batch
+    if (selectedWord && wordIds.includes(selectedWord.id)) {
+      setSelectedWord(prev => ({ ...prev, isStarred: shouldStar }));
+    }
+  };
 
   const handleToggleStar = async (e, word) => {
     if (e && e.stopPropagation) e.stopPropagation();
@@ -1710,44 +2935,31 @@ function App() {
       handleSelectWord(e, word.id);
       return;
     }
-    try {
-      if (!isConfigMissing) {
-        await updateDoc(doc(db, 'words', word.id), {
-          isStarred: !word.isStarred
-        });
-      } else {
-        setWords(words.map(w => w.id === word.id ? { ...w, isStarred: !word.isStarred } : w));
-      }
-      
-      // Modal state sync
-      if (selectedWord && selectedWord.id === word.id) {
-        setSelectedWord({ ...selectedWord, isStarred: !word.isStarred });
-      }
-    } catch (error) {
-      console.error("Yıldız güncellenirken hata:", error);
+    
+    const status = word._status === 'created' ? 'created' : 'updated';
+    setWords(prev => prev.map(w => w.id === word.id ? { ...w, isStarred: !word.isStarred, _status: status, ...(status === 'updated' ? { _updateType: 'star' } : {}) } : w));
+    
+    // Modal state sync
+    if (selectedWord && selectedWord.id === word.id) {
+      setSelectedWord({ ...selectedWord, isStarred: !word.isStarred });
     }
   };
 
   const handleUpdateStatus = async (wordId, newStatus) => {
-    try {
-      if (!isConfigMissing) {
-        await updateDoc(doc(db, 'words', wordId), {
-          learningStatus: newStatus
-        });
-      }
-      
-      // Local state sync for the modal
-      if (selectedWord && selectedWord.id === wordId) {
-        setSelectedWord(prev => ({ ...prev, learningStatus: newStatus }));
-      }
-    } catch (error) {
-      console.error("Durum güncellenirken hata:", error);
-      Swal.fire('Hata', 'Durum güncellenirken bir hata oluştu.', 'error');
+    const existing = words.find(w => w.id === wordId);
+    if (!existing) return;
+    const status = existing._status === 'created' ? 'created' : 'updated';
+    
+    setWords(prev => prev.map(w => w.id === wordId ? { ...w, learningStatus: newStatus, _status: status, ...(status === 'updated' ? { _updateType: 'learningStatus' } : {}) } : w));
+    
+    // Local state sync for the modal
+    if (selectedWord && selectedWord.id === wordId) {
+      setSelectedWord(prev => ({ ...prev, learningStatus: newStatus }));
     }
   };
 
   const handleDelete = async (e, id, term) => {
-    e.stopPropagation();
+    if (e) e.stopPropagation();
     if (isSelectionMode) {
       handleSelectWord(e, id);
       return;
@@ -1765,16 +2977,21 @@ function App() {
     });
 
     if (result.isConfirmed) {
-      try {
-        if (!isConfigMissing) {
-          await deleteDoc(doc(db, 'words', id));
+      const existing = words.find(w => w.id === id);
+      if (existing) {
+        if (existing._status === 'created') {
+          setWords(prev => prev.filter(w => w.id !== id));
         } else {
-          setWords(words.filter(w => w.id !== id));
+          setWords(prev => prev.map(w => w.id === id ? { ...w, _status: 'deleted' } : w));
         }
-      } catch (error) {
-        console.error("Silme hatası:", error);
-        Swal.fire({ icon: 'error', title: 'Hata', text: 'Kayıt silinirken bir hata oluştu.', confirmButtonText: 'Tamam' });
       }
+      Swal.fire({
+        title: 'Silindi!',
+        text: 'Kelime başarıyla silindi.',
+        icon: 'success',
+        timer: 1500,
+        showConfirmButton: false
+      });
     }
   };
 
@@ -2019,15 +3236,22 @@ function App() {
         updates.createdAt = new Date(dateParts[0], dateParts[1] - 1, dateParts[2]);
       }
 
-      if (!isConfigMissing) {
-        for (let i = 0; i < selectedWords.length; i++) {
-          await updateDoc(doc(db, 'words', selectedWords[i]), updates);
-          setBulkProgress(((i + 1) / selectedWords.length) * 100);
+      setWords(prev => prev.map(w => {
+        if (selectedWords.includes(w.id)) {
+          const status = w._status === 'created' ? 'created' : 'updated';
+          const updateType = bulkActionType === 'star' ? 'star' : (bulkActionType === 'date' ? 'edit' : 'learningStatus');
+          return { ...w, ...updates, _status: status, ...(status === 'updated' ? { _updateType: updateType } : {}) };
         }
-      } else {
-        setWords(words.map(w => selectedWords.includes(w.id) ? { ...w, ...updates } : w));
-        setBulkProgress(100);
-      }
+        return w;
+      }));
+      setBulkProgress(100);
+
+      // Auto-sync is disabled during bulk actions to respect manual sync preference.
+      /*
+      setTimeout(() => {
+        if (handleSyncRef.current) handleSyncRef.current(true);
+      }, 500);
+      */
 
       setBulkActionStatus('completed');
       setTimeout(() => {
@@ -2180,6 +3404,7 @@ function App() {
   }, [words, showFamilyMatches]);
 
   let processedWords = words.filter(word => {
+    if (word._status === 'deleted') return false;
     if (showDuplicates && !duplicateIds.has(word.id)) return false;
     if (showSameRoots && !sameRootIds.has(word.id)) return false;
     if (showFamilyMatches && !familyMatchIds.has(word.id)) return false;
@@ -2202,7 +3427,7 @@ function App() {
     if (filters.starred.unstarred && !filters.starred.starred && word.isStarred) return false;
 
     if (filters.startDate || filters.endDate) {
-      const wDateObj = word.createdAt ? (word.createdAt.toDate ? word.createdAt.toDate() : new Date(word.createdAt)) : null;
+      const wDateObj = parseDate(word.createdAt);
       if (wDateObj) {
         if (filters.startDate && wDateObj < parseLocalDate(filters.startDate)) return false;
         if (filters.endDate) {
@@ -2251,8 +3476,10 @@ function App() {
         let bVal = b[rule.field];
 
         if (rule.field === 'createdAt') {
-          aVal = aVal ? (aVal.toDate ? aVal.toDate().getTime() : new Date(aVal).getTime()) : 0;
-          bVal = bVal ? (bVal.toDate ? bVal.toDate().getTime() : new Date(bVal).getTime()) : 0;
+          const aDate = parseDate(aVal);
+          const bDate = parseDate(bVal);
+          aVal = aDate ? aDate.getTime() : 0;
+          bVal = bDate ? bDate.getTime() : 0;
         } else if (rule.field === 'learningStage') {
           aVal = aVal ?? 0;
           bVal = bVal ?? 0;
@@ -2318,7 +3545,7 @@ function App() {
     if (filters.starred.unstarred && !filters.starred.starred && word.isStarred) return false;
 
     if (filters.startDate || filters.endDate) {
-      const wDateObj = word.createdAt ? (word.createdAt.toDate ? word.createdAt.toDate() : new Date(word.createdAt)) : null;
+      const wDateObj = parseDate(word.createdAt);
       if (wDateObj) {
         if (filters.startDate && wDateObj < parseLocalDate(filters.startDate)) return false;
         if (filters.endDate) {
@@ -3088,11 +4315,10 @@ function App() {
                             <div className="d-flex gap-3">
                               <span className="text-muted d-flex align-items-center gap-2 fw-medium small" title="Eklenme Tarihi">
                                 <i className="bi bi-calendar3" style={{ fontSize: '15px' }}></i>
-                                {word.createdAt ? (
-                                  word.createdAt.toDate
-                                    ? word.createdAt.toDate().toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })
-                                    : new Date(word.createdAt).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })
-                                ) : ''}
+                                {(() => {
+                                  const parsed = parseDate(word.createdAt);
+                                  return parsed ? parsed.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' }) : '';
+                                })()}
                               </span>
                               <Button
                                 variant="link"
@@ -3190,20 +4416,22 @@ function App() {
             onUpdateStatus={handleUpdateStatus}
             onUpdateStage={handleUpdateStage}
             onUpdateStagesBatch={handleUpdateStagesBatch}
+            onUpdateStatusBatch={handleUpdateStatusBatch}
             onToggleStar={handleToggleStar}
+            onToggleStarBatch={handleToggleStarBatch}
             onDelete={handleDelete}
             onEdit={handleEdit}
             onLogTestResults={handleLogTestResults}
             dailyStats={dailyStats}
-            practiceTests={practiceTests}
+            practiceTests={activePracticeTests}
             onSaveTest={handleSaveTest}
             onDeleteTest={handleDeleteTest}
             onDeleteAllTests={handleDeleteAllTests}
             onTogglePinTest={handleTogglePinTest}
-            customLists={customLists}
+            customLists={activeCustomLists}
             onAddWordsToList={handleAddWordsToList}
             onRemoveWordFromList={handleRemoveWordFromList}
-            stickyNotes={stickyNotes}
+            stickyNotes={activeStickyNotes}
             onUpdateNote={handleUpdateNote}
           />
         </Container>
@@ -3232,7 +4460,7 @@ function App() {
           closeModal={closeModal}
           onWordClick={setSelectedWord}
           dailyStats={dailyStats}
-          customLists={customLists}
+          customLists={activeCustomLists}
           selectedListIds={selectedListIds}
           setSelectedListIds={setSelectedListIds}
         />
@@ -3241,7 +4469,7 @@ function App() {
       {/* Sticky Notes Page */}
       {currentView === 'sticky-notes' && (
         <StickyNotesPage
-          stickyNotes={stickyNotes}
+          stickyNotes={activeStickyNotes}
           manualNoteText={manualNoteText}
           setManualNoteText={setManualNoteText}
           manualNoteTitle={manualNoteTitle}
@@ -3287,7 +4515,7 @@ function App() {
       {/* Custom Lists Page */}
       {currentView === 'custom-lists' && (
         <CustomListsPage
-          customLists={customLists}
+          customLists={activeCustomLists}
           handleCreateList={handleCreateList}
           handleUpdateList={handleUpdateList}
           handleDeleteList={handleDeleteList}
@@ -3302,15 +4530,178 @@ function App() {
       {currentView === 'list-detail' && (
         <ListDetailPage
           listId={currentListId}
-          customLists={customLists}
+          customLists={activeCustomLists}
           words={words}
           handleRemoveWordFromList={handleRemoveWordFromList}
           navigateTo={navigateTo}
           onWordClick={setSelectedWord}
           handleSpeak={handleSpeak}
           dailyStats={dailyStats}
-          stickyNotes={stickyNotes}
+          stickyNotes={activeStickyNotes}
         />
+      )}
+
+      {/* FLOATING SYNC STATUS BAR */}
+      {!isKeyboardOpen && authUser && (
+        <div className="sync-status-bar d-flex flex-column align-items-stretch gap-2" style={{ transition: 'all 0.3s ease' }}>
+          {/* Main Row */}
+          <div className="d-flex align-items-center justify-content-between w-100 gap-2">
+            <div 
+              className="d-flex align-items-center gap-2 cursor-pointer" 
+              onClick={() => setShowSyncDetails(prev => !prev)}
+              style={{ userSelect: 'none', flex: 1, minWidth: 0 }}
+              title="Senkronizasyon detaylarını göster/gizle"
+            >
+              <div className="position-relative flex-shrink-0 d-flex align-items-center justify-content-center">
+                <i className={`bi fs-5 ${syncSuccess ? 'bi-cloud-check-fill text-success' : 'bi-cloud-arrow-up-fill text-primary'} transition-all`}></i>
+
+              </div>
+              <div className="text-truncate d-flex flex-column" style={{ lineHeight: '1.2', minWidth: 0 }}>
+                <span className="fw-bold text-body text-truncate" style={{ fontSize: '13px' }}>
+                  {syncing ? 'Eşitleniyor...' : (unsyncedChangesCount > 0 ? 'Senkronize edilmemiş değişiklikler var' : 'Bulut ile Eşitlendi')}
+                </span>
+                <span className="text-muted text-truncate" style={{ fontSize: '11px' }}>
+                  {unsyncedChangesCount > 0 ? `${unsyncedChangesCount} yerel değişiklik bekliyor` : (lastSyncedMs > 0 ? `Son eşitleme: ${formatRelativeTime(lastSyncedMs)}` : 'Hiç eşitlenmedi')}
+                </span>
+              </div>
+              <i className={`bi bi-chevron-${showSyncDetails ? 'down' : 'right'} text-muted ms-auto me-1`} style={{ fontSize: '10px', flexShrink: 0 }}></i>
+            </div>
+            <button
+              onClick={() => handleSync()}
+              disabled={syncing}
+              className={`btn btn-sm d-flex align-items-center gap-2 fw-bold px-3 py-2 transition-all rounded-pill ${unsyncedChangesCount > 0 ? 'btn-primary shadow-sm' : 'btn-outline-secondary'}`}
+              style={{ fontSize: '12px', border: unsyncedChangesCount > 0 ? 'none' : '1px solid rgba(0,0,0,0.15)', flexShrink: 0 }}
+            >
+              {syncing ? (
+                <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+              ) : (
+                <>
+                  <i className="bi bi-arrow-repeat"></i>
+                  <span>Sync Et</span>
+                </>
+              )}
+            </button>
+          </div>
+
+          {/* Progress Bar */}
+          {syncing && (
+            <div className="w-100 animate-fade-in d-flex flex-column gap-1">
+              <div className="progress w-100" style={{ height: '4px', borderRadius: '2px', backgroundColor: 'rgba(0,0,0,0.05)' }}>
+                <div 
+                  className="progress-bar progress-bar-striped progress-bar-animated bg-primary" 
+                  role="progressbar" 
+                  style={{ width: `${syncProgress}%`, transition: 'width 0.2s ease-in-out' }}
+                  aria-valuenow={syncProgress} 
+                  aria-valuemin="0" 
+                  aria-valuemax="100"
+                ></div>
+              </div>
+              {currentSyncStep && (
+                <div className="d-flex flex-column gap-1 w-100 mt-1 animate-fade-in" style={{ paddingLeft: '2px' }}>
+                  <div className="d-flex align-items-center gap-2 text-primary" style={{ fontSize: '10.5px', fontWeight: '500' }}>
+                    <span className="spinner-border spinner-border-sm text-primary flex-shrink-0" role="status" aria-hidden="true" style={{ width: '9px', height: '9px', borderWidth: '1.2px' }}></span>
+                    <span className="text-truncate flex-grow-1" style={{ maxWidth: '100%' }}>{currentSyncStep}</span>
+                  </div>
+                  <div className="d-flex justify-content-end w-100 mt-0.5">
+                    <button
+                      type="button"
+                      onClick={handleCancelSync}
+                      className="btn btn-link p-0 text-danger text-decoration-none fw-bold d-flex align-items-center gap-1"
+                      style={{ fontSize: '10.5px', height: '18px' }}
+                    >
+                      <i className="bi bi-x-circle-fill" style={{ fontSize: '11px' }}></i>
+                      <span>Eşitlemeyi Durdur</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Collapsible Details */}
+          {showSyncDetails && (
+            <div className="w-100 border-top pt-2 mt-1 animate-fade-in" style={{ borderColor: 'rgba(0,0,0,0.08)' }}>
+              <div className="d-flex flex-column gap-1 custom-sidebar-scroll" style={{ maxHeight: '180px', overflowY: 'auto', paddingRight: '4px' }}>
+                {syncing ? (
+                  // While syncing, show current sync logs
+                  syncSteps.map((step, idx) => (
+                    <div key={idx} className="d-flex align-items-center gap-2 text-muted animate-fade-in" style={{ fontSize: '11px' }}>
+                      <i className="bi bi-check-circle-fill text-success" style={{ fontSize: '10px', flexShrink: 0 }}></i>
+                      <span className="text-truncate">{step}</span>
+                    </div>
+                  ))
+                ) : (
+                  // When not syncing
+                  unsyncedChangesCount > 0 ? (
+                    // If there are unsynced changes, show what is waiting to be synced
+                    unsyncedItemsList.map((step, idx) => {
+                      const itemState = itemSyncStates[step.key];
+                      const itemProgress = itemSyncProgress[step.key] || 0;
+                      
+                      let iconClass = "bi bi-arrow-clockwise text-primary";
+                      if (itemState === 'syncing') iconClass = "bi bi-arrow-clockwise text-primary spin-anim";
+                      else if (itemState === 'completed') iconClass = "bi bi-check-circle-fill text-success";
+                      else if (itemState === 'error') iconClass = "bi bi-exclamation-circle-fill text-danger";
+                      
+                      const isClickable = !itemState || itemState === 'idle';
+                      
+                      return (
+                        <div key={idx} className="d-flex flex-column gap-1 animate-fade-in w-100">
+                          <div className="d-flex align-items-center gap-2 text-muted" style={{ fontSize: '11px' }}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (isClickable) {
+                                  handleSyncCategory(step.category, step.key);
+                                }
+                              }}
+                              disabled={!isClickable}
+                              className="btn btn-link p-0 m-0 border-0 d-flex align-items-center justify-content-center flex-shrink-0 transition-all"
+                              style={{ 
+                                outline: 'none', 
+                                boxShadow: 'none', 
+                                cursor: isClickable ? 'pointer' : 'default',
+                                opacity: isClickable ? 1 : 0.8
+                              }}
+                              title="Sadece Bu Kategoriyi Eşitle"
+                            >
+                              <i className={iconClass} style={{ fontSize: '12px', flexShrink: 0 }}></i>
+                            </button>
+                            <span className="text-truncate fw-medium flex-grow-1" style={{ cursor: isClickable ? 'pointer' : 'default' }} onClick={() => {
+                              if (isClickable) {
+                                handleSyncCategory(step.category, step.key);
+                              }
+                            }}>{step.text}</span>
+                          </div>
+                          {itemState === 'syncing' && (
+                            <div className="progress w-100 mt-1" style={{ height: '3px', borderRadius: '1.5px', backgroundColor: 'rgba(0,0,0,0.05)', marginLeft: '18px', width: 'calc(100% - 18px)' }}>
+                              <div 
+                                className="progress-bar progress-bar-striped progress-bar-animated bg-primary" 
+                                role="progressbar" 
+                                style={{ width: `${itemProgress}%`, transition: 'width 0.2s ease-in-out' }}
+                                aria-valuenow={itemProgress} 
+                                aria-valuemin="0" 
+                                aria-valuemax="100"
+                              ></div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                  ) : (
+                    // If everything is fully synced, show success completion
+                    <div className="d-flex align-items-center gap-2 text-muted animate-fade-in" style={{ fontSize: '11px' }}>
+                      <i className="bi bi-check-circle-fill text-success" style={{ fontSize: '10px', flexShrink: 0 }}></i>
+                      <span className="text-truncate fw-medium">Tüm verileriniz güncel ve bulut ile eşitlenmiş durumda.</span>
+                    </div>
+                  )
+                )}
+              </div>
+              
+
+            </div>
+          )}
+        </div>
       )}
 
       {/* MOBILE BOTTOM NAVIGATION BAR */}
@@ -3424,15 +4815,15 @@ function App() {
         onEdit={(word) => handleEdit(null, word)}
         onToggleStar={(e, word) => handleToggleStar(e, word)}
         onAddToList={(e, word) => handleOpenAddToList(e, word)}
-        customLists={customLists}
+        customLists={activeCustomLists}
         onAddWordsToList={handleAddWordsToList}
         onRemoveWordFromList={handleRemoveWordFromList}
-        stickyNotes={stickyNotes}
+        stickyNotes={activeStickyNotes}
         onAddNote={handleAddNote}
         onUpdateNote={handleUpdateNote}
         onDeleteNote={handleDeleteNote}
         onUpdateStatus={handleUpdateStatus}
-        stickyHighlights={selectedWord ? stickyNotes.filter(n => n.wordId === selectedWord.id).map(n => n.text) : []}
+        stickyHighlights={selectedWord ? activeStickyNotes.filter(n => n.wordId === selectedWord.id).map(n => n.text) : []}
         onOpenNotesModal={() => setCurrentView('sticky-notes')}
       />
 
