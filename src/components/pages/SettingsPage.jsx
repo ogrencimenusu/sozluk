@@ -54,13 +54,13 @@ const SettingsPage = ({ theme, setTheme, viewMode, setViewMode, wordsPerPage, se
 
   const handleClearCache = async () => {
     const result = await Swal.fire({
-      title: 'Önbelleği Temizle',
-      text: 'Uygulamanın en güncel versiyonunu yüklemek için önbellek temizlenecek ve sayfa yenilenecek. Devam etmek istiyor musunuz?',
-      icon: 'question',
+      title: 'Önbelleği ve Verileri Temizle',
+      text: 'Uygulamanın en güncel versiyonunu yüklemek ve tüm cihaz verilerini sıfırlamak için önbellek ve veritabanı temizlenecek, sayfa yenilenecektir. Senkronize edilmemiş yerel verileriniz silinecektir. Devam etmek istiyor musunuz?',
+      icon: 'warning',
       showCancelButton: true,
-      confirmButtonColor: '#3085d6',
-      cancelButtonColor: '#d33',
-      confirmButtonText: 'Evet, Temizle ve Yenile',
+      confirmButtonColor: '#d33',
+      cancelButtonColor: '#3085d6',
+      confirmButtonText: 'Evet, Sıfırla ve Yenile',
       cancelButtonText: 'İptal',
       background: theme === 'dark' ? '#1e293b' : '#fff',
       color: theme === 'dark' ? '#f8fafc' : '#1e293b'
@@ -68,17 +68,22 @@ const SettingsPage = ({ theme, setTheme, viewMode, setViewMode, wordsPerPage, se
 
     if (result.isConfirmed) {
       try {
+        // 1. Clear application assets cache
         if ('caches' in window) {
           const cacheNames = await caches.keys();
           await Promise.all(cacheNames.map(name => caches.delete(name)));
         }
+        // 2. Unregister service workers
         if ('serviceWorker' in navigator) {
           const registrations = await navigator.serviceWorker.getRegistrations();
           await Promise.all(registrations.map(reg => reg.unregister()));
         }
+        // 3. Clear localStorage completely (Factory Reset / Clean Installation)
+        localStorage.clear();
+
         await Swal.fire({
-          title: 'Başarılı!',
-          text: 'Önbellek temizlendi. Uygulama v2.1.5 olarak yenilenecek.',
+          title: 'Sıfırlandı!',
+          text: 'Önbellek ve cihaz veritabanı temizlendi. Uygulama v2.1.6 olarak yeniden başlatılacak.',
           icon: 'success',
           timer: 1500,
           showConfirmButton: false,
@@ -89,7 +94,7 @@ const SettingsPage = ({ theme, setTheme, viewMode, setViewMode, wordsPerPage, se
         console.error('Cache clearing failed:', error);
         Swal.fire({
           title: 'Hata!',
-          text: 'Önbellek temizlenirken bir sorun oluştu.',
+          text: 'Temizleme işlemi gerçekleştirilirken bir sorun oluştu.',
           icon: 'error',
           background: theme === 'dark' ? '#1e293b' : '#fff',
           color: theme === 'dark' ? '#f8fafc' : '#1e293b'

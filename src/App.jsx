@@ -341,7 +341,8 @@ const getUniqueAndDuplicateTests = (tests) => {
   const seenKeys = new Set();
   
   tests.forEach(t => {
-    const dateStr = t.createdAt ? new Date(t.createdAt).getTime().toString() : '';
+    const parsedDate = parseDate(t.createdAt);
+    const dateStr = parsedDate ? parsedDate.getTime().toString() : '';
     const questionCount = t.questions?.length || 0;
     const firstQuestionId = t.questions?.[0]?.wordId || '';
     
@@ -351,7 +352,7 @@ const getUniqueAndDuplicateTests = (tests) => {
       for (const seenKey of seenKeys) {
         const [seenTimeStr, seenCount, seenFirstId] = seenKey.split('|');
         const seenTime = parseInt(seenTimeStr, 10);
-        if (Math.abs(timeNum - seenTime) < 3000 && parseInt(seenCount, 10) === questionCount && seenFirstId === firstQuestionId) {
+        if (!isNaN(timeNum) && !isNaN(seenTime) && Math.abs(timeNum - seenTime) < 3000 && parseInt(seenCount, 10) === questionCount && seenFirstId === firstQuestionId) {
           isDuplicate = true;
           break;
         }
@@ -676,6 +677,36 @@ function App() {
       timer: 2000
     });
   }, []);
+
+  const handleRevertLocalChanges = useCallback(async () => {
+    if (!authUser) return;
+    const theme = document.documentElement.getAttribute('data-bs-theme');
+    const result = await Swal.fire({
+      title: 'Değişiklikleri İptal Et',
+      text: 'Senkronize edilmemiş tüm yerel değişiklikleriniz (yeni eklenen kelimeler, test sonuçları, notlar vb.) silinecek ve buluttaki en son verileriniz geri yüklenecektir. Bu işlem geri alınamaz. Devam etmek istiyor musunuz?',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#d33',
+      cancelButtonColor: '#3085d6',
+      confirmButtonText: 'Evet, Geri Al',
+      cancelButtonText: 'Vazgeç',
+      background: theme === 'dark' ? '#1e293b' : '#fff',
+      color: theme === 'dark' ? '#f8fafc' : '#1e293b'
+    });
+
+    if (result.isConfirmed) {
+      await fetchAllFromFirestoreOnce(authUser);
+      Swal.fire({
+        title: 'Başarılı!',
+        text: 'Yerel değişiklikleriniz iptal edildi ve bulut verileriniz geri yüklendi.',
+        icon: 'success',
+        timer: 1500,
+        showConfirmButton: false,
+        background: theme === 'dark' ? '#1e293b' : '#fff',
+        color: theme === 'dark' ? '#f8fafc' : '#1e293b'
+      });
+    }
+  }, [authUser]);
 
   const [selectedWords, setSelectedWords] = useState(() => {
     try {
@@ -1408,6 +1439,37 @@ function App() {
     };
 
     try {
+      // 1. Fetch remote metadata first to check what collections actually changed on the server before we push!
+      // This is crucial to prevent concurrent sync operations from overwriting/hiding changes made on other devices.
+      setSyncProgress(10);
+      setCurrentSyncStep('Bulut değişiklik tarihleri sorgulanıyor (getDoc)...');
+      checkAborted();
+      let remoteMetadata = null;
+      try {
+        const metaSnap = await getDoc(doc(db, 'sync_metadata', authUser.uid));
+        if (metaSnap.exists()) {
+          remoteMetadata = metaSnap.data();
+        }
+      } catch (metaErr) {
+        console.warn("Could not read sync metadata, fallback to full sync:", metaErr);
+      }
+
+      const localSyncedMs = parseInt(localStorage.getItem('last_synced_ms') || '0', 10);
+      const isFirstSync = localSyncedMs === 0;
+
+      const isLocalWordsEmpty = words.length === 0;
+      const isLocalListsEmpty = customLists.length === 0;
+      const isLocalTestsEmpty = practiceTests.length === 0;
+      const isLocalStatsEmpty = Object.keys(dailyStats).length === 0;
+      const isLocalNotesEmpty = stickyNotes.length === 0;
+
+      // Determine what collections need to be pulled based on the pre-push remote metadata!
+      const needPullWords = isFirstSync || isLocalWordsEmpty || !remoteMetadata || (remoteMetadata.wordsUpdatedAt && remoteMetadata.wordsUpdatedAt > localSyncedMs);
+      const needPullLists = isFirstSync || isLocalListsEmpty || !remoteMetadata || (remoteMetadata.listsUpdatedAt && remoteMetadata.listsUpdatedAt > localSyncedMs);
+      const needPullTests = isFirstSync || isLocalTestsEmpty || !remoteMetadata || (remoteMetadata.testsUpdatedAt && remoteMetadata.testsUpdatedAt > localSyncedMs);
+      const needPullStats = isFirstSync || isLocalStatsEmpty || !remoteMetadata || (remoteMetadata.statsUpdatedAt && remoteMetadata.statsUpdatedAt > localSyncedMs);
+      const needPullNotes = isFirstSync || isLocalNotesEmpty || !remoteMetadata || (remoteMetadata.notesUpdatedAt && remoteMetadata.notesUpdatedAt > localSyncedMs);
+
       const batch = writeBatch(db);
       let hasChanges = false;
 
@@ -1417,6 +1479,13 @@ function App() {
       const localTestsChanged = practiceTests.some(t => t._status === 'created' || t._status === 'updated' || t._status === 'deleted');
       const localStatsChanged = Object.values(dailyStats).some(s => s._status === 'created' || s._status === 'updated');
       const localNotesChanged = stickyNotes.some(n => n._status === 'created' || n._status === 'updated' || n._status === 'deleted');
+
+      // Baseline arrays for pull & merge, initialized to current states
+      let remoteWords = words;
+      let remoteLists = customLists;
+      let remoteTests = practiceTests;
+      let remoteStats = dailyStats;
+      let remoteNotes = stickyNotes;
 
       // Calculate specific counts for descriptive sync logging
       const newWordsCount = words.filter(w => w._status === 'created').length;
@@ -1518,13 +1587,14 @@ function App() {
           delete cleanTest.id;
           delete cleanTest._status;
           delete cleanTest.localId;
+          cleanTest.userId = authUser.uid; // Force correct userId to prevent disappearing
           
           const newDocRef = doc(collection(db, 'practice_tests'));
           batch.set(newDocRef, cleanTest);
           
           const idx = updatedTests.findIndex(item => item.id === t.id);
           if (idx !== -1) {
-            updatedTests[idx] = { ...cleanTest, id: newDocRef.id, localId: t.id };
+            updatedTests[idx] = { ...cleanTest, id: newDocRef.id, localId: t.id, userId: authUser.uid };
             // Permanently record local→Firestore ID mapping to prevent re-pushing on concurrent saves
             localTestIdMapRef.current[t.id] = newDocRef.id;
             // Migrate active-test localStorage backup to the new Firestore ID (fixes blank-resume bug)
@@ -1540,11 +1610,13 @@ function App() {
         } else if (t._status === 'updated') {
           const cleanTest = { ...t };
           delete cleanTest._status;
+          cleanTest.userId = authUser.uid; // Force correct userId to prevent disappearing
           batch.update(doc(db, 'practice_tests', t.id), cleanTest);
           
           const idx = updatedTests.findIndex(item => item.id === t.id);
           if (idx !== -1) {
             delete updatedTests[idx]._status;
+            updatedTests[idx].userId = authUser.uid;
           }
           hasChanges = true;
         } else if (t._status === 'deleted') {
@@ -1561,14 +1633,18 @@ function App() {
         if (item._status === 'created') {
           const cleanItem = { ...item };
           delete cleanItem._status;
+          cleanItem.userId = authUser.uid; // Force correct userId to prevent disappearing
           batch.set(doc(db, 'daily_stats', statsDocId), cleanItem);
           delete updatedStats[key]._status;
+          updatedStats[key] = { ...cleanItem, userId: authUser.uid };
           hasChanges = true;
         } else if (item._status === 'updated') {
           const cleanItem = { ...item };
           delete cleanItem._status;
+          cleanItem.userId = authUser.uid; // Force correct userId to prevent disappearing
           batch.update(doc(db, 'daily_stats', statsDocId), cleanItem);
           delete updatedStats[key]._status;
+          updatedStats[key] = { ...cleanItem, userId: authUser.uid };
           hasChanges = true;
         }
       });
@@ -1580,24 +1656,27 @@ function App() {
           const cleanNote = { ...n };
           delete cleanNote.id;
           delete cleanNote._status;
+          cleanNote.userId = authUser.uid; // Force correct userId to prevent disappearing
           
           const newDocRef = doc(collection(db, 'sticky_notes'));
           batch.set(newDocRef, cleanNote);
           
           const idx = updatedNotes.findIndex(item => item.id === n.id);
           if (idx !== -1) {
-            updatedNotes[idx] = { ...cleanNote, id: newDocRef.id };
+            updatedNotes[idx] = { ...cleanNote, id: newDocRef.id, userId: authUser.uid };
           }
           hasChanges = true;
         } else if (n._status === 'updated') {
           const cleanNote = { ...n };
           delete cleanNote.id;
           delete cleanNote._status;
+          cleanNote.userId = authUser.uid; // Force correct userId to prevent disappearing
           batch.update(doc(db, 'sticky_notes', n.id), cleanNote);
           
           const idx = updatedNotes.findIndex(item => item.id === n.id);
           if (idx !== -1) {
             delete updatedNotes[idx]._status;
+            updatedNotes[idx].userId = authUser.uid;
           }
           hasChanges = true;
         } else if (n._status === 'deleted') {
@@ -1627,41 +1706,29 @@ function App() {
         setCurrentSyncStep('Yerel değişiklikler buluta gönderiliyor (batch.commit)...');
         checkAborted();
         await batch.commit();
-        // Immediately update local state with promoted Firestore IDs to prevent race-condition re-pushing
-        setPracticeTests(updatedTests.filter(t => t._status !== 'deleted'));
+        
+        // Immediately promote local state to avoid race conditions and redundant pulls
+        const cleanWords = updatedWords.filter(w => w._status !== 'deleted');
+        const cleanLists = updatedLists.filter(l => l._status !== 'deleted');
+        const cleanTests = updatedTests.filter(t => t._status !== 'deleted');
+        const cleanNotes = updatedNotes.filter(n => n._status !== 'deleted');
+        
+        // Update baseline remote arrays to contain the clean local modifications
+        remoteWords = cleanWords;
+        remoteLists = cleanLists;
+        remoteTests = cleanTests;
+        remoteNotes = cleanNotes;
+        remoteStats = updatedStats;
+
+        // Instant localStorage backup of clean data
+        safeSetItem('local_words', JSON.stringify(compactObj(cleanWords)));
+        safeSetItem('local_custom_lists', JSON.stringify(compactObj(cleanLists)));
+        safeSetItem('local_practice_tests', JSON.stringify(compactObj(cleanTests)));
+        safeSetItem('local_sticky_notes', JSON.stringify(compactObj(cleanNotes)));
+        safeSetItem('local_daily_stats', JSON.stringify(compactObj(updatedStats)));
       } else {
         setSyncProgress(30);
       }
-
-      setSyncProgress(40);
-      setCurrentSyncStep('Bulut değişiklik tarihleri sorgulanıyor (getDoc)...');
-      checkAborted();
-      // Fetch remote metadata first to check what collections actually changed on the server!
-      let remoteMetadata = null;
-      try {
-        const metaSnap = await getDoc(doc(db, 'sync_metadata', authUser.uid));
-        if (metaSnap.exists()) {
-          remoteMetadata = metaSnap.data();
-        }
-      } catch (metaErr) {
-        console.warn("Could not read sync metadata, fallback to full sync:", metaErr);
-      }
-
-      const localSyncedMs = parseInt(localStorage.getItem('last_synced_ms') || '0', 10);
-      const isFirstSync = localSyncedMs === 0;
-
-      const isLocalWordsEmpty = words.length === 0;
-      const isLocalListsEmpty = customLists.length === 0;
-      const isLocalTestsEmpty = practiceTests.length === 0;
-      const isLocalStatsEmpty = Object.keys(dailyStats).length === 0;
-      const isLocalNotesEmpty = stickyNotes.length === 0;
-
-      // Determine what collections need to be pulled
-      const needPullWords = isFirstSync || isLocalWordsEmpty || !remoteMetadata || (remoteMetadata.wordsUpdatedAt && remoteMetadata.wordsUpdatedAt > localSyncedMs) || localWordsChanged;
-      const needPullLists = isFirstSync || isLocalListsEmpty || !remoteMetadata || (remoteMetadata.listsUpdatedAt && remoteMetadata.listsUpdatedAt > localSyncedMs) || localListsChanged;
-      const needPullTests = isFirstSync || isLocalTestsEmpty || !remoteMetadata || (remoteMetadata.testsUpdatedAt && remoteMetadata.testsUpdatedAt > localSyncedMs) || localTestsChanged;
-      const needPullStats = isFirstSync || isLocalStatsEmpty || !remoteMetadata || (remoteMetadata.statsUpdatedAt && remoteMetadata.statsUpdatedAt > localSyncedMs) || localStatsChanged;
-      const needPullNotes = isFirstSync || isLocalNotesEmpty || !remoteMetadata || (remoteMetadata.notesUpdatedAt && remoteMetadata.notesUpdatedAt > localSyncedMs) || localNotesChanged;
 
       // Pull Remote Changes from Firestore conditionally (two-way merge)
       // 1. Words
@@ -1673,7 +1740,6 @@ function App() {
       if (editedWordsCount > 0) setSyncSteps(prev => [...prev, `${editedWordsCount} kelime düzenlemesi eşitleniyor...`]);
       if (deletedWordsCount > 0) setSyncSteps(prev => [...prev, `${deletedWordsCount} silinen kelime eşitleniyor...`]);
 
-      let remoteWords = words;
       if (needPullWords) {
         setCurrentSyncStep('Buluttaki kelimeler indiriliyor (getDocs)...');
         checkAborted();
@@ -1693,7 +1759,6 @@ function App() {
       if (updatedListsCount > 0) setSyncSteps(prev => [...prev, `${updatedListsCount} özel liste düzenlemesi eşitleniyor...`]);
       if (deletedListsCount > 0) setSyncSteps(prev => [...prev, `${deletedListsCount} silinen özel liste eşitleniyor...`]);
 
-      let remoteLists = customLists;
       if (needPullLists) {
         setCurrentSyncStep('Buluttaki özel listeler indiriliyor (getDocs)...');
         checkAborted();
@@ -1709,7 +1774,6 @@ function App() {
       if (updatedTestsCount > 0) setSyncSteps(prev => [...prev, `${updatedTestsCount} pratik test güncellemesi eşitleniyor...`]);
       if (deletedTestsCount > 0) setSyncSteps(prev => [...prev, `${deletedTestsCount} silinen pratik test eşitleniyor...`]);
 
-      let remoteTests = practiceTests;
       if (needPullTests) {
         setCurrentSyncStep('Buluttaki pratik testler indiriliyor (getDocs)...');
         checkAborted();
@@ -1738,7 +1802,6 @@ function App() {
       if (newStatsCount > 0) setSyncSteps(prev => [...prev, `${newStatsCount} yeni günlük çalışma istatistiği eşitleniyor...`]);
       if (updatedStatsCount > 0) setSyncSteps(prev => [...prev, `${updatedStatsCount} günlük çalışma istatistiği güncellemesi eşitleniyor...`]);
 
-      let remoteStats = dailyStats;
       if (needPullStats) {
         setCurrentSyncStep('Buluttaki günlük çalışma istatistikleri indiriliyor (getDocs)...');
         checkAborted();
@@ -1759,7 +1822,6 @@ function App() {
       if (updatedNotesCount > 0) setSyncSteps(prev => [...prev, `${updatedNotesCount} yapışkan not güncellemesi eşitleniyor...`]);
       if (deletedNotesCount > 0) setSyncSteps(prev => [...prev, `${deletedNotesCount} silinen yapışkan not eşitleniyor...`]);
 
-      let remoteNotes = stickyNotes;
       if (needPullNotes) {
         setCurrentSyncStep('Buluttaki yapışkan notlar indiriliyor (getDocs)...');
         checkAborted();
@@ -1902,12 +1964,17 @@ function App() {
 
         if (hasChanges) {
           await batch.commit();
+          // Promote local state immediately to avoid re-fetching
+          const cleanWords = updatedWords.filter(w => w._status !== 'deleted');
+          setWords(cleanWords);
+          safeSetItem('local_words', JSON.stringify(compactObj(cleanWords)));
+          remoteWords = cleanWords;
         }
 
         setItemSyncProgress(prev => ({ ...prev, [itemKey]: 65 }));
         
         const isLocalWordsEmpty = words.length === 0;
-        const needPullWords = isFirstSync || isLocalWordsEmpty || localWordsChanged;
+        const needPullWords = isFirstSync || isLocalWordsEmpty;
         
         if (needPullWords) {
           const qWords = query(collection(db, 'words'), where('userId', '==', authUser.uid));
@@ -1959,12 +2026,17 @@ function App() {
 
         if (hasChanges) {
           await batch.commit();
+          // Promote local state immediately to avoid re-fetching
+          const cleanLists = updatedLists.filter(l => l._status !== 'deleted');
+          setCustomLists(cleanLists);
+          safeSetItem('local_custom_lists', JSON.stringify(compactObj(cleanLists)));
+          remoteLists = cleanLists;
         }
 
         setItemSyncProgress(prev => ({ ...prev, [itemKey]: 65 }));
         
         const isLocalListsEmpty = customLists.length === 0;
-        const needPullLists = isFirstSync || isLocalListsEmpty || localListsChanged;
+        const needPullLists = isFirstSync || isLocalListsEmpty;
         
         if (needPullLists) {
           const qLists = query(collection(db, 'customLists'), where('userId', '==', authUser.uid));
@@ -1986,11 +2058,13 @@ function App() {
             delete cleanTest.id;
             delete cleanTest._status;
             delete cleanTest.localId;
+            cleanTest.userId = authUser.uid; // Force correct userId to prevent disappearing
+            
             const newDocRef = doc(collection(db, 'practice_tests'));
             batch.set(newDocRef, cleanTest);
             const idx = updatedTests.findIndex(item => item.id === t.id);
             if (idx !== -1) {
-              updatedTests[idx] = { ...cleanTest, id: newDocRef.id, localId: t.id };
+              updatedTests[idx] = { ...cleanTest, id: newDocRef.id, localId: t.id, userId: authUser.uid };
               localTestIdMapRef.current[t.id] = newDocRef.id;
               try {
                 const savedActive = localStorage.getItem(`active_test_${t.id}`);
@@ -2004,9 +2078,13 @@ function App() {
           } else if (t._status === 'updated') {
             const cleanTest = { ...t };
             delete cleanTest._status;
+            cleanTest.userId = authUser.uid; // Force correct userId to prevent disappearing
             batch.update(doc(db, 'practice_tests', t.id), cleanTest);
             const idx = updatedTests.findIndex(item => item.id === t.id);
-            if (idx !== -1) delete updatedTests[idx]._status;
+            if (idx !== -1) {
+              delete updatedTests[idx]._status;
+              updatedTests[idx].userId = authUser.uid;
+            }
             hasChanges = true;
           } else if (t._status === 'deleted') {
             batch.delete(doc(db, 'practice_tests', t.id));
@@ -2023,13 +2101,17 @@ function App() {
 
         if (hasChanges) {
           await batch.commit();
-          setPracticeTests(updatedTests.filter(t => t._status !== 'deleted'));
+          // Promote local state immediately to avoid re-fetching
+          const cleanTests = updatedTests.filter(t => t._status !== 'deleted');
+          setPracticeTests(cleanTests);
+          safeSetItem('local_practice_tests', JSON.stringify(compactObj(cleanTests)));
+          remoteTests = cleanTests;
         }
 
         setItemSyncProgress(prev => ({ ...prev, [itemKey]: 65 }));
         
         const isLocalTestsEmpty = practiceTests.length === 0;
-        const needPullTests = isFirstSync || isLocalTestsEmpty || localTestsChanged;
+        const needPullTests = isFirstSync || isLocalTestsEmpty;
         
         if (needPullTests) {
           const qTests = query(collection(db, 'practice_tests'), where('userId', '==', authUser.uid));
@@ -2062,14 +2144,18 @@ function App() {
           if (item._status === 'created') {
             const cleanItem = { ...item };
             delete cleanItem._status;
+            cleanItem.userId = authUser.uid; // Force correct userId to prevent disappearing
             batch.set(doc(db, 'daily_stats', statsDocId), cleanItem);
             delete updatedStats[key]._status;
+            updatedStats[key] = { ...cleanItem, userId: authUser.uid };
             hasChanges = true;
           } else if (item._status === 'updated') {
             const cleanItem = { ...item };
             delete cleanItem._status;
+            cleanItem.userId = authUser.uid; // Force correct userId to prevent disappearing
             batch.update(doc(db, 'daily_stats', statsDocId), cleanItem);
             delete updatedStats[key]._status;
+            updatedStats[key] = { ...cleanItem, userId: authUser.uid };
             hasChanges = true;
           }
         });
@@ -2083,12 +2169,16 @@ function App() {
 
         if (hasChanges) {
           await batch.commit();
+          // Promote local state immediately to avoid re-fetching
+          setDailyStats(updatedStats);
+          safeSetItem('local_daily_stats', JSON.stringify(compactObj(updatedStats)));
+          remoteStats = updatedStats;
         }
 
         setItemSyncProgress(prev => ({ ...prev, [itemKey]: 65 }));
         
         const isLocalStatsEmpty = Object.keys(dailyStats).length === 0;
-        const needPullStats = isFirstSync || isLocalStatsEmpty || localStatsChanged;
+        const needPullStats = isFirstSync || isLocalStatsEmpty;
         
         if (needPullStats) {
           const qStats = query(collection(db, 'daily_stats'), where('userId', '==', authUser.uid));
@@ -2114,18 +2204,26 @@ function App() {
             const cleanNote = { ...n };
             delete cleanNote.id;
             delete cleanNote._status;
+            cleanNote.userId = authUser.uid; // Force correct userId to prevent disappearing
+            
             const newDocRef = doc(collection(db, 'sticky_notes'));
             batch.set(newDocRef, cleanNote);
             const idx = updatedNotes.findIndex(item => item.id === n.id);
-            if (idx !== -1) updatedNotes[idx] = { ...cleanNote, id: newDocRef.id };
+            if (idx !== -1) {
+              updatedNotes[idx] = { ...cleanNote, id: newDocRef.id, userId: authUser.uid };
+            }
             hasChanges = true;
           } else if (n._status === 'updated') {
             const cleanNote = { ...n };
             delete cleanNote.id;
             delete cleanNote._status;
+            cleanNote.userId = authUser.uid; // Force correct userId to prevent disappearing
             batch.update(doc(db, 'sticky_notes', n.id), cleanNote);
             const idx = updatedNotes.findIndex(item => item.id === n.id);
-            if (idx !== -1) delete updatedNotes[idx]._status;
+            if (idx !== -1) {
+              delete updatedNotes[idx]._status;
+              updatedNotes[idx].userId = authUser.uid;
+            }
             hasChanges = true;
           } else if (n._status === 'deleted') {
             batch.delete(doc(db, 'sticky_notes', n.id));
@@ -2142,12 +2240,17 @@ function App() {
 
         if (hasChanges) {
           await batch.commit();
+          // Promote local state immediately to avoid re-fetching
+          const cleanNotes = updatedNotes.filter(n => n._status !== 'deleted');
+          setStickyNotes(cleanNotes);
+          safeSetItem('local_sticky_notes', JSON.stringify(compactObj(cleanNotes)));
+          remoteNotes = cleanNotes;
         }
 
         setItemSyncProgress(prev => ({ ...prev, [itemKey]: 65 }));
         
         const isLocalNotesEmpty = stickyNotes.length === 0;
-        const needPullNotes = isFirstSync || isLocalNotesEmpty || localNotesChanged;
+        const needPullNotes = isFirstSync || isLocalNotesEmpty;
         
         if (needPullNotes) {
           const qNotes = query(collection(db, 'sticky_notes'), where('userId', '==', authUser.uid));
@@ -4566,6 +4669,17 @@ function App() {
               </div>
               <i className={`bi bi-chevron-${showSyncDetails ? 'down' : 'right'} text-muted ms-auto me-1`} style={{ fontSize: '10px', flexShrink: 0 }}></i>
             </div>
+            {unsyncedChangesCount > 0 && !syncing && (
+              <button
+                onClick={handleRevertLocalChanges}
+                className="btn btn-sm btn-outline-danger d-flex align-items-center gap-2 fw-bold px-3 py-2 transition-all rounded-pill"
+                style={{ fontSize: '12px', flexShrink: 0 }}
+                title="Yerel değişiklikleri iptal et ve buluttan geri yükle"
+              >
+                <i className="bi bi-arrow-counterclockwise"></i>
+                <span>İptal Et</span>
+              </button>
+            )}
             <button
               onClick={() => handleSync()}
               disabled={syncing}

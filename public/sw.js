@@ -1,4 +1,4 @@
-const CACHE_NAME = 'sozluk-cache-v2.1.5';
+const CACHE_NAME = 'sozluk-cache-v2.1.6';
 
 // Shell assets to cache instantly on install
 const ASSETS_TO_CACHE = [
