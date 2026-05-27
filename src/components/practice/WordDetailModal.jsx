@@ -23,6 +23,35 @@ function highlightText(text, highlights) {
   });
 }
 
+const parseDate = (val) => {
+  if (!val) return null;
+  
+  if (val instanceof Date) {
+    return isNaN(val.getTime()) ? null : val;
+  }
+  
+  if (typeof val.toDate === 'function') {
+    try {
+      const d = val.toDate();
+      return isNaN(d.getTime()) ? null : d;
+    } catch (e) {}
+  }
+  
+  if (val && typeof val === 'object' && typeof val.seconds === 'number') {
+    try {
+      const d = new Date(val.seconds * 1000 + Math.floor((val.nanoseconds || 0) / 1000000));
+      return isNaN(d.getTime()) ? null : d;
+    } catch (e) {}
+  }
+  
+  try {
+    const d = new Date(val);
+    return isNaN(d.getTime()) ? null : d;
+  } catch (e) {
+    return null;
+  }
+};
+
 /**
  * Shared word detail modal.
  * Props:
@@ -592,10 +621,9 @@ function WordDetailModal({
                         ) : (
                             <div className="d-flex flex-column gap-3 mb-4">
                                 {wordNotes.map((note) => {
-                                    const dateStr = note.createdAt
-                                        ? (note.createdAt.toDate
-                                            ? note.createdAt.toDate().toLocaleString('tr-TR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
-                                            : new Date(note.createdAt).toLocaleString('tr-TR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }))
+                                    const parsedDate = parseDate(note.createdAt);
+                                    const dateStr = parsedDate
+                                        ? parsedDate.toLocaleString('tr-TR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
                                         : '';
                                     
                                     const isAssociated = note.wordId === word?.id;

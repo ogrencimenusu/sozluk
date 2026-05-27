@@ -8,7 +8,7 @@ import DailyGoalTracker from '../DailyGoalTracker';
 import Swal from 'sweetalert2';
 import nlp from 'compromise';
 
-function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpdateStage, onUpdateStagesBatch, onUpdateStatusBatch, onToggleStar, onToggleStarBatch, onDelete, onEdit, onRetakeSame, onRetakeNew, onRetakeMissed, onLogTestResults, dailyStats, testId, initialTestState, onSaveTest, customLists, onAddWordsToList, onRemoveWordFromList, stickyNotes, onUpdateNote, onUpdateStatus }) {
+function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpdateStage, onUpdateStagesBatch, onUpdateStatusBatch, onToggleStar, onToggleStarBatch, onDelete, onEdit, onRetakeSame, onRetakeNew, onRetakeMissed, onLogTestResults, dailyStats, testId, initialTestState, onSaveTest, customLists, onAddWordsToList, onRemoveWordFromList, stickyNotes, onUpdateNote, onUpdateStatus, onAddNote, onDeleteNote, onOpenNotesModal }) {
     const onSaveTestRef = useRef(onSaveTest);
     useEffect(() => {
         onSaveTestRef.current = onSaveTest;
@@ -205,7 +205,11 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
         };
 
         // 1. Instant LocalStorage backup (FREE - Zero cost Safari protection)
-        localStorage.setItem(`active_test_${testId}`, JSON.stringify(testData));
+        try {
+            localStorage.setItem(`active_test_${testId}`, JSON.stringify(testData));
+        } catch (e) {
+            console.warn(`Failed to save active_test_${testId} to localStorage:`, e);
+        }
 
         // 2. Debounced Firestore save: Waits for a 1.5s pause to reduce writes
         const timer = setTimeout(() => {
@@ -223,7 +227,11 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
             if (cached) {
                 const parsed = JSON.parse(cached);
                 parsed.activeQuestionIdx = activeQuestionIdx;
-                localStorage.setItem(`active_test_${testId}`, JSON.stringify(parsed));
+                try {
+                    localStorage.setItem(`active_test_${testId}`, JSON.stringify(parsed));
+                } catch (setItemErr) {
+                    console.warn(`Failed to save index update for active_test_${testId} to localStorage:`, setItemErr);
+                }
             }
         } catch (e) {
             console.error("Local storage active index sync failed:", e);
@@ -458,7 +466,11 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
         };
 
         // 1. Instant LocalStorage backup
-        localStorage.setItem(`active_test_${testId}`, JSON.stringify(testData));
+        try {
+            localStorage.setItem(`active_test_${testId}`, JSON.stringify(testData));
+        } catch (e) {
+            console.warn(`Failed to save active_test_${testId} (on blur) to localStorage:`, e);
+        }
 
         // 2. Immediate Firestore save
         onSaveTestRef.current(testId, testData);
@@ -825,7 +837,11 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                 status: 'completed'
             };
             onSaveTestRef.current(testId, finalTestData);
-            localStorage.setItem(`active_test_${testId}`, JSON.stringify(finalTestData));
+            try {
+                localStorage.removeItem(`active_test_${testId}`);
+            } catch (e) {
+                console.warn(`Failed to remove active_test_${testId} from localStorage on completion:`, e);
+            }
         }
 
         // Update learning stages for each answered question
@@ -1644,6 +1660,17 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                         setSelectedWordForModal(prev => ({ ...prev, learningStatus: newStatus }));
                     }
                 }}
+                onAddNote={onAddNote}
+                onDeleteNote={onDeleteNote}
+                onToggleStar={(e, word) => {
+                    if (onToggleStar) onToggleStar(e, word);
+                    setSelectedWordForModal(prev => prev && prev.id === word.id ? { ...prev, isStarred: !prev.isStarred } : prev);
+                }}
+                customLists={customLists}
+                onAddWordsToList={onAddWordsToList}
+                onRemoveWordFromList={onRemoveWordFromList}
+                stickyHighlights={selectedWordForModal ? stickyNotes.filter(n => n.wordId === selectedWordForModal.id).map(n => n.text) : []}
+                onOpenNotesModal={onOpenNotesModal}
             />
 
             {/* MOBILE NAVIGATION SIDEBAR (Offcanvas) */}

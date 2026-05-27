@@ -11,7 +11,11 @@ const LoginPage = ({ theme: initialTheme }) => {
   const toggleTheme = () => {
     const newTheme = theme === 'light' ? 'dark' : 'light';
     setTheme(newTheme);
-    localStorage.setItem('theme', newTheme);
+    try {
+      localStorage.setItem('theme', newTheme);
+    } catch (e) {
+      console.warn("Failed to save theme in localStorage:", e);
+    }
     // Force a theme class on body for standard components
     document.body.setAttribute('data-bs-theme', newTheme);
   };
@@ -190,7 +194,7 @@ const LoginPage = ({ theme: initialTheme }) => {
                       color: '#3b82f6',
                       fontSize: '0.75rem',
                       fontWeight: '700'
-                    }}>VERSION 2.1.6</span>
+                    }}>VERSION 2.1.7</span>
                     <span className="badge px-3 py-2 rounded-pill" style={{
                       background: isDark ? 'rgba(16, 185, 129, 0.1)' : '#ecfdf5',
                       color: '#10b981',

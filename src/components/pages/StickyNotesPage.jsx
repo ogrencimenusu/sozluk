@@ -4,6 +4,35 @@ import DOMPurify from 'dompurify';
 import nlp from 'compromise';
 import PageHeader from '../layout/PageHeader';
 
+const parseDate = (val) => {
+  if (!val) return null;
+  
+  if (val instanceof Date) {
+    return isNaN(val.getTime()) ? null : val;
+  }
+  
+  if (typeof val.toDate === 'function') {
+    try {
+      const d = val.toDate();
+      return isNaN(d.getTime()) ? null : d;
+    } catch (e) {}
+  }
+  
+  if (val && typeof val === 'object' && typeof val.seconds === 'number') {
+    try {
+      const d = new Date(val.seconds * 1000 + Math.floor((val.nanoseconds || 0) / 1000000));
+      return isNaN(d.getTime()) ? null : d;
+    } catch (e) {}
+  }
+  
+  try {
+    const d = new Date(val);
+    return isNaN(d.getTime()) ? null : d;
+  } catch (e) {
+    return null;
+  }
+};
+
 const RichTextEditor = React.memo(({ value, onChange, placeholder, className, onBlur, onAddWord, highlightTags, words, getWordStatus }) => {
   const editorRef = useRef(null);
   const [tooltip, setTooltip] = useState(null); // { x, y, text }
@@ -167,8 +196,8 @@ const NoteItem = React.memo(({
     filteredTitles,
     handleAddWordsToDictionary
 }) => {
-    const noteDate = note.createdAt?.toDate ? note.createdAt.toDate() : new Date(note.createdAt);
-    const isValidDate = noteDate instanceof Date && !isNaN(noteDate);
+    const noteDate = parseDate(note.createdAt);
+    const isValidDate = noteDate instanceof Date && !isNaN(noteDate.getTime());
     const isEditing = editingNoteId === note.id;
 
     return (
@@ -480,7 +509,7 @@ const NoteItem = React.memo(({
             <div className="d-flex justify-content-between align-items-center mt-2 px-1">
               <span className="sticky-note-list-date d-flex align-items-center gap-1">
                 <i className="bi bi-clock"></i>
-                {isValidDate ? noteDate.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : '—'}
+                {isValidDate ? noteDate.toLocaleString('tr-TR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'}
               </span>
               <div className="d-flex gap-3 align-items-center">
                 {isEditing && (
@@ -686,13 +715,15 @@ const StickyNotesPage = ({
   const groupNotesArray = (notesArray) => {
     const groups = {};
     const sortedNotes = [...notesArray].sort((a, b) => {
-      const aVal = a.createdAt ? (a.createdAt.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt).getTime()) : 0;
-      const bVal = b.createdAt ? (b.createdAt.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt).getTime()) : 0;
+      const aDate = parseDate(a.createdAt);
+      const bDate = parseDate(b.createdAt);
+      const aVal = aDate ? aDate.getTime() : 0;
+      const bVal = bDate ? bDate.getTime() : 0;
       return bVal - aVal;
     });
 
     sortedNotes.forEach(note => {
-      const dateObj = note.createdAt ? (note.createdAt.toDate ? note.createdAt.toDate() : new Date(note.createdAt)) : new Date();
+      const dateObj = parseDate(note.createdAt) || new Date();
       const opts = { day: 'numeric', month: 'long', year: 'numeric' };
       const dateStr = dateObj.toLocaleDateString('tr-TR', opts);
 

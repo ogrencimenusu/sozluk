@@ -12,7 +12,8 @@ const PracticeTestContainer = forwardRef((props, ref) => {
         initialConfig, onLogTestResults, dailyStats, 
         practiceTests, onSaveTest, onDeleteTest, onDeleteAllTests, onTogglePinTest,
         customLists, onAddWordsToList, onRemoveWordFromList,
-        stickyNotes, onUpdateNote, onUpdateStatus
+        stickyNotes, onUpdateNote, onUpdateStatus,
+        onLoadTestDetails, onAddNote, onDeleteNote, onOpenNotesModal
     } = props;
 
     const [testState, setTestState] = useState('options'); // 'options' | 'running' | 'results'
@@ -384,9 +385,40 @@ const PracticeTestContainer = forwardRef((props, ref) => {
         setTestKey(prev => prev + 1);
     };
 
-    const handleResumeTest = (testId) => {
-        const test = practiceTests.find(t => t.id === testId);
+    const handleResumeTest = async (testId) => {
+        let test = practiceTests.find(t => t.id === testId);
         if (test) {
+            if (test.status === 'completed' && (!test.questions || test.questions.length === 0)) {
+                if (onLoadTestDetails) {
+                    Swal.fire({
+                        title: 'Test Detayları Yükleniyor...',
+                        text: 'Lütfen bekleyin, test ayrıntıları buluttan indiriliyor.',
+                        allowOutsideClick: false,
+                        didOpen: () => {
+                            Swal.showLoading();
+                        }
+                    });
+                    const fullTest = await onLoadTestDetails(testId);
+                    Swal.close();
+                    if (fullTest) {
+                        test = fullTest;
+                    } else {
+                        Swal.fire({
+                            title: 'Hata',
+                            text: 'Test detayları buluttan indirilemedi. Lütfen internet bağlantınızı kontrol edin.',
+                            icon: 'error'
+                        });
+                        return;
+                    }
+                } else {
+                    Swal.fire({
+                        title: 'Bilgi',
+                        text: 'Bu eski bir test olduğu için detayları yerel olarak mevcut değil.',
+                        icon: 'info'
+                    });
+                    return;
+                }
+            }
             setLastConfig(test.config);
             setQuestions(test.questions);
             setActiveTestId(testId);
@@ -486,6 +518,9 @@ const PracticeTestContainer = forwardRef((props, ref) => {
                         onUpdateNote={onUpdateNote}
                         onUpdateStatus={onUpdateStatus}
                         onUpdateStatusBatch={onUpdateStatusBatch}
+                        onAddNote={onAddNote}
+                        onDeleteNote={onDeleteNote}
+                        onOpenNotesModal={onOpenNotesModal}
                     />
                 )
             )}

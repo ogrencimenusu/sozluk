@@ -323,6 +323,138 @@ const expandList = (l) => ({
   wordIds: l.wordIds || []
 });
 
+const reconstructRawTemplate = (w) => {
+  if (!w) return '';
+  const lines = [];
+  lines.push(`Kelime: ${w.term}`);
+  if (w.pronunciation) lines.push(`Türkçe Okunuşu: ${w.pronunciation.replace(/^\/|\/$/g, '')}`);
+  if (w.shortMeanings) lines.push(`Kısa Anlamları: ${w.shortMeanings}`);
+  if (w.generalDefinition) lines.push(`Genel Tanımı: ${w.generalDefinition}`);
+  
+  if (w.meanings && w.meanings.length > 0) {
+    lines.push('\nAnlamları ve Örnek Cümleler:');
+    w.meanings.forEach((m, idx) => {
+      lines.push(`${idx + 1}. Anlamı${m.context ? ` (${m.context})` : ''}: ${m.definition}`);
+      if (m.examples && m.examples.length > 0) {
+        m.examples.forEach(ex => {
+          lines.push(`- "${ex.replace(/^['"]|['"]$/g, '')}"`);
+        });
+      }
+    });
+  }
+  
+  if (w.cefrLevel) {
+    lines.push('\nDetaylı İnceleme:');
+    lines.push(`Zorluk Seviyesi (CEFR): ${w.cefrLevel}`);
+  }
+  
+  if (w.grammar && w.grammar.length > 0) {
+    lines.push('\nGramer Özellikleri:');
+    w.grammar.forEach(g => {
+      lines.push(`- ${g}`);
+    });
+  }
+  
+  if (w.synonyms || w.antonyms) {
+    lines.push('\nEş ve Zıt Anlamlılar:');
+    if (w.synonyms) lines.push(`- Eş Anlamlılar: ${w.synonyms}`);
+    if (w.antonyms) lines.push(`- Zıt Anlamlılar: ${w.antonyms}`);
+  }
+  
+  if (w.collocations && w.collocations.length > 0) {
+    lines.push('\nBirlikte Kullanıldığı Edatlar:');
+    w.collocations.forEach(c => {
+      lines.push(`- ${c}`);
+    });
+  }
+  
+  if (w.idioms && w.idioms.length > 0) {
+    lines.push('\nYaygın Deyimler:');
+    w.idioms.forEach(i => {
+      lines.push(`- ${i}`);
+    });
+  }
+  
+  if (w.wordFamily && w.wordFamily.length > 0) {
+    lines.push('\nKelime Ailesi:');
+    w.wordFamily.forEach(wf => {
+      lines.push(`- ${wf}`);
+    });
+  }
+  
+  if (w.tips && w.tips.length > 0) {
+    lines.push('\nSık Yapılan Hatalar:');
+    w.tips.forEach(t => {
+      lines.push(`- ${t}`);
+    });
+  }
+  
+  return lines.join('\n');
+};
+
+const getOptimizedWords = (wordsList) => {
+  if (!wordsList) return [];
+  return wordsList.map(w => {
+    if (w._status) return w;
+    const { raw, ...rest } = w;
+    return rest;
+  });
+};
+
+const getOptimizedTests = (testsList) => {
+  if (!testsList) return [];
+  const ongoing = testsList.filter(t => t.status !== 'completed' || t._status);
+  const pinned = testsList.filter(t => t.isPinned && t.status === 'completed' && !t._status);
+  const completed = testsList.filter(t => t.status === 'completed' && !t.isPinned && !t._status);
+  
+  const sortedCompleted = completed.sort((a, b) => {
+    const dateA = a.updatedAt?.toDate ? a.updatedAt.toDate() : new Date(a.updatedAt || a.createdAt || 0);
+    const dateB = b.updatedAt?.toDate ? b.updatedAt.toDate() : new Date(b.updatedAt || b.createdAt || 0);
+    return dateB - dateA;
+  });
+  
+  const completedToKeep = sortedCompleted.slice(0, 3);
+  const completedToStrip = sortedCompleted.slice(3).map(t => {
+    let total = t.questions?.length || t.totalCount || 0;
+    let answeredCount = t.answeredCount !== undefined ? t.answeredCount : 0;
+    let correctCount = t.correctCount !== undefined ? t.correctCount : 0;
+    
+    if (t.questions && t.questions.length > 0) {
+      answeredCount = 0;
+      correctCount = 0;
+      t.questions.forEach((q, idx) => {
+        if (t.answers && t.answers[idx]) {
+          answeredCount++;
+          if (t.answers[idx].selected?.isCorrect) {
+            correctCount++;
+          }
+        } else if (q.type === 'written' && t.writtenInputs && (t.writtenInputs[idx] || '').trim().length > 0) {
+          answeredCount++;
+        }
+      });
+    }
+    
+    return {
+      id: t.id,
+      userId: t.userId,
+      createdAt: t.createdAt,
+      updatedAt: t.updatedAt,
+      status: t.status,
+      isPinned: t.isPinned,
+      totalCount: total,
+      answeredCount,
+      correctCount,
+      questions: [],
+      answers: {},
+      writtenInputs: {},
+      hintsUsed: {},
+      hiddenOptions: {}
+    };
+  });
+  
+  return [...ongoing, ...pinned, ...completedToKeep, ...completedToStrip];
+};
+
 const defaultTest = {
   isPinned: false,
   questions: [],
@@ -448,7 +580,33 @@ function App() {
 
   const safeSetItem = useCallback((key, value) => {
     try {
-      localStorage.setItem(key, value);
+      let optimizedValue = value;
+      
+      // 1. Optimize local_words serialization on-the-fly
+      if (key === 'local_words') {
+        try {
+          const parsedWords = JSON.parse(value);
+          if (Array.isArray(parsedWords)) {
+            optimizedValue = JSON.stringify(compactObj(getOptimizedWords(parsedWords)));
+          }
+        } catch (err) {
+          console.warn("Failed to optimize words for localStorage:", err);
+        }
+      }
+      
+      // 2. Optimize local_practice_tests serialization on-the-fly
+      if (key === 'local_practice_tests') {
+        try {
+          const parsedTests = JSON.parse(value);
+          if (Array.isArray(parsedTests)) {
+            optimizedValue = JSON.stringify(compactObj(getOptimizedTests(parsedTests)));
+          }
+        } catch (err) {
+          console.warn("Failed to optimize tests for localStorage:", err);
+        }
+      }
+
+      localStorage.setItem(key, optimizedValue);
     } catch (e) {
       console.warn(`Failed to save key "${key}" to localStorage:`, e);
       if (e.name === 'QuotaExceededError' || e.code === 22 || e.code === 1014) {
@@ -470,12 +628,12 @@ function App() {
         try {
           for (let i = localStorage.length - 1; i >= 0; i--) {
             const k = localStorage.key(i);
-            if (k && !activeKeys.includes(k)) {
+            if (k && !activeKeys.includes(k) && !k.startsWith('active_test_')) {
               localStorage.removeItem(k);
             }
           }
           // Retry once
-          localStorage.setItem(key, value);
+          localStorage.setItem(key, optimizedValue); // Fallback retry
         } catch (retryErr) {
           console.error("Retry failed, localStorage is fully saturated:", retryErr);
         }
@@ -550,9 +708,7 @@ function App() {
             ];
           }
           setTimeout(() => {
-            try {
-              localStorage.setItem('local_practice_tests', JSON.stringify(compactObj(uniqueTests)));
-            } catch (e) {}
+            safeSetItem('local_practice_tests', JSON.stringify(compactObj(uniqueTests)));
           }, 0);
           return uniqueTests;
         }
@@ -718,12 +874,12 @@ function App() {
   });
 
   useEffect(() => {
-    localStorage.setItem('isSelectionMode', JSON.stringify(isSelectionMode));
-  }, [isSelectionMode]);
+    safeSetItem('isSelectionMode', JSON.stringify(isSelectionMode));
+  }, [isSelectionMode, safeSetItem]);
 
   useEffect(() => {
-    localStorage.setItem('selectedWords', JSON.stringify(selectedWords));
-  }, [selectedWords]);
+    safeSetItem('selectedWords', JSON.stringify(selectedWords));
+  }, [selectedWords, safeSetItem]);
 
   const [showFilterModal, setShowFilterModal] = useState(false);
   const [showSortModal, setShowSortModal] = useState(false);
@@ -733,8 +889,8 @@ function App() {
   });
 
   useEffect(() => {
-    localStorage.setItem('show_filters_collapse', showFiltersCollapse ? 'true' : 'false');
-  }, [showFiltersCollapse]);
+    safeSetItem('show_filters_collapse', showFiltersCollapse ? 'true' : 'false');
+  }, [showFiltersCollapse, safeSetItem]);
   const [showTemplateExampleModal, setShowTemplateExampleModal] = useState(false);
   const [showStickyNotesModal, setShowStickyNotesModal] = useState(false);
   const [manualNoteText, setManualNoteText] = useState('');
@@ -970,12 +1126,12 @@ function App() {
   });
 
   useEffect(() => {
-    localStorage.setItem('showOnlyStarred', JSON.stringify(showOnlyStarred));
-  }, [showOnlyStarred]);
+    safeSetItem('showOnlyStarred', JSON.stringify(showOnlyStarred));
+  }, [showOnlyStarred, safeSetItem]);
 
   useEffect(() => {
-    localStorage.setItem('quickStatusFilter', quickStatusFilter);
-  }, [quickStatusFilter]);
+    safeSetItem('quickStatusFilter', quickStatusFilter);
+  }, [quickStatusFilter, safeSetItem]);
 
 
   const [sortRules, setSortRules] = useState([]);
@@ -1025,8 +1181,8 @@ function App() {
   });
 
   useEffect(() => {
-    localStorage.setItem('bulkExportFields', JSON.stringify(bulkExportFields));
-  }, [bulkExportFields]);
+    safeSetItem('bulkExportFields', JSON.stringify(bulkExportFields));
+  }, [bulkExportFields, safeSetItem]);
 
   const downloadCSV = (data, filename) => {
     if (data.length === 0) return;
@@ -1065,8 +1221,8 @@ function App() {
   });
 
   useEffect(() => {
-    localStorage.setItem('viewMode', viewMode);
-  }, [viewMode]);
+    safeSetItem('viewMode', viewMode);
+  }, [viewMode, safeSetItem]);
 
   // Reset pagination when any filter/sort changes
   useEffect(() => {
@@ -1110,7 +1266,7 @@ function App() {
         if (data.theme) {
           setTheme(prev => {
             if (prev !== data.theme) {
-              localStorage.setItem('theme', data.theme);
+              safeSetItem('theme', data.theme);
               return data.theme;
             }
             return prev;
@@ -1119,7 +1275,7 @@ function App() {
         if (data.wordsPerPage) {
           setWordsPerPage(prev => {
             if (prev !== data.wordsPerPage) {
-              localStorage.setItem('wordsPerPage', data.wordsPerPage.toString());
+              safeSetItem('wordsPerPage', data.wordsPerPage.toString());
               return data.wordsPerPage;
             }
             return prev;
@@ -1182,7 +1338,7 @@ function App() {
     };
 
     applyTheme(theme);
-    localStorage.setItem('theme', theme);
+    safeSetItem('theme', theme);
     
     if (!isConfigMissing && settingsLoaded.current && authUser) {
       setDoc(doc(db, 'users', authUser.uid, 'settings', 'app'), { theme }, { merge: true }).catch(() => { });
@@ -1194,15 +1350,15 @@ function App() {
       mediaQuery.addEventListener('change', listener);
       return () => mediaQuery.removeEventListener('change', listener);
     }
-  }, [theme]);
+  }, [theme, safeSetItem]);
 
   // Save wordsPerPage to Firestore and localStorage
   useEffect(() => {
-    localStorage.setItem('wordsPerPage', wordsPerPage.toString());
+    safeSetItem('wordsPerPage', wordsPerPage.toString());
     if (!isConfigMissing && settingsLoaded.current && authUser) {
       setDoc(doc(db, 'users', authUser.uid, 'settings', 'app'), { wordsPerPage }, { merge: true }).catch(() => { });
     }
-  }, [wordsPerPage]);
+  }, [wordsPerPage, safeSetItem]);
 
   // Save sortRules to Firestore when they change
   useEffect(() => {
@@ -1301,7 +1457,7 @@ function App() {
         return dateB - dateA;
       });
       setWords(wordsData);
-      safeSetItem('local_words', JSON.stringify(compactObj(wordsData)));
+      safeSetItem('local_words', JSON.stringify(compactObj(getOptimizedWords(wordsData))));
 
       // 2. Custom Lists
       const qLists = query(collection(db, 'customLists'), where('userId', '==', user.uid));
@@ -1329,7 +1485,7 @@ function App() {
         return dateB - dateA;
       });
       setPracticeTests(testsData);
-      safeSetItem('local_practice_tests', JSON.stringify(compactObj(testsData)));
+      safeSetItem('local_practice_tests', JSON.stringify(compactObj(getOptimizedTests(testsData))));
 
       // 4. Daily Stats
       const qStats = query(collection(db, 'daily_stats'), where('userId', '==', user.uid));
@@ -1601,7 +1757,7 @@ function App() {
             try {
               const savedActive = localStorage.getItem(`active_test_${t.id}`);
               if (savedActive) {
-                localStorage.setItem(`active_test_${newDocRef.id}`, savedActive);
+                safeSetItem(`active_test_${newDocRef.id}`, savedActive);
                 localStorage.removeItem(`active_test_${t.id}`);
               }
             } catch (e) {}
@@ -2069,7 +2225,7 @@ function App() {
               try {
                 const savedActive = localStorage.getItem(`active_test_${t.id}`);
                 if (savedActive) {
-                  localStorage.setItem(`active_test_${newDocRef.id}`, savedActive);
+                  safeSetItem(`active_test_${newDocRef.id}`, savedActive);
                   localStorage.removeItem(`active_test_${t.id}`);
                 }
               } catch (e) {}
@@ -2330,7 +2486,7 @@ function App() {
     try {
       for (let i = localStorage.length - 1; i >= 0; i--) {
         const key = localStorage.key(i);
-        if (key && !activeKeys.includes(key)) {
+        if (key && !activeKeys.includes(key) && !key.startsWith('active_test_')) {
           console.log("Proactively removing legacy localStorage key:", key);
           localStorage.removeItem(key);
         }
@@ -2339,6 +2495,48 @@ function App() {
       console.warn("Failed to clean up legacy keys proactively:", e);
     }
   }, []);
+
+  // 1.5 Self-healing garbage collection for obsolete/completed active_test_ keys
+  useEffect(() => {
+    try {
+      const keysToRemove = [];
+      const testIds = new Set(practiceTests.filter(t => t._status !== 'deleted').map(t => t.id));
+      
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('active_test_')) {
+          const testId = key.replace('active_test_', '');
+          
+          // If the test ID is not in active practiceTests, it is obsolete
+          if (!testIds.has(testId)) {
+            keysToRemove.push(key);
+            continue;
+          }
+          
+          // If the test in localStorage is already completed, it's redundant
+          try {
+            const val = localStorage.getItem(key);
+            if (val) {
+              const parsed = JSON.parse(val);
+              if (parsed.completed === true || parsed.status === 'completed') {
+                keysToRemove.push(key);
+              }
+            }
+          } catch (e) {
+            // Malformed JSON, safe to clean up
+            keysToRemove.push(key);
+          }
+        }
+      }
+      
+      if (keysToRemove.length > 0) {
+        console.log(`GC: Removing ${keysToRemove.length} obsolete/completed active_test_ keys from localStorage:`, keysToRemove);
+        keysToRemove.forEach(key => localStorage.removeItem(key));
+      }
+    } catch (gcErr) {
+      console.warn("GC: Failed to clean up active test cache keys:", gcErr);
+    }
+  }, [practiceTests]);
 
   // 2. Cloud Sync / Seed when Authentication becomes ready
   useEffect(() => {
@@ -2369,9 +2567,9 @@ function App() {
   // Local storage auto-sync state persist hooks
   useEffect(() => {
     if (words && words.length > 0) {
-      safeSetItem('local_words', JSON.stringify(compactObj(words)));
+      safeSetItem('local_words', JSON.stringify(compactObj(getOptimizedWords(words))));
     }
-  }, [words]);
+  }, [words, safeSetItem]);
 
   useEffect(() => {
     if (customLists && customLists.length > 0) {
@@ -2381,9 +2579,9 @@ function App() {
 
   useEffect(() => {
     if (practiceTests && practiceTests.length > 0) {
-      safeSetItem('local_practice_tests', JSON.stringify(compactObj(practiceTests)));
+      safeSetItem('local_practice_tests', JSON.stringify(compactObj(getOptimizedTests(practiceTests))));
     }
-  }, [practiceTests]);
+  }, [practiceTests, safeSetItem]);
 
   useEffect(() => {
     if (stickyNotes && stickyNotes.length > 0) {
@@ -2482,6 +2680,22 @@ function App() {
       */
       return generatedId;
     }
+  }, [authUser]);
+
+  const handleLoadTestDetails = useCallback(async (testId) => {
+    if (!authUser) return null;
+    try {
+      const docSnap = await getDoc(doc(db, 'practice_tests', testId));
+      if (docSnap.exists()) {
+        const fullTestData = { id: docSnap.id, ...docSnap.data() };
+        // Update local practiceTests state so it has the full details!
+        setPracticeTests(prev => prev.map(t => t.id === testId ? fullTestData : t));
+        return fullTestData;
+      }
+    } catch (e) {
+      console.error("Failed to load test details from Firestore:", e);
+    }
+    return null;
   }, [authUser]);
 
   const handleAddNote = async (wordId, wordTerm, text, title = '') => {
@@ -2688,6 +2902,11 @@ function App() {
       } else {
         setPracticeTests(prev => prev.map(t => t.id === testId ? { ...t, _status: 'deleted' } : t));
       }
+      try {
+        localStorage.removeItem(`active_test_${testId}`);
+      } catch (e) {
+        console.warn("Failed to remove active test cache on deletion:", e);
+      }
     }
   };
 
@@ -2717,6 +2936,13 @@ function App() {
     });
 
     if (result.isConfirmed) {
+      unpinnedTests.forEach(t => {
+        try {
+          localStorage.removeItem(`active_test_${t.id}`);
+        } catch (e) {
+          console.warn(`Failed to remove active test cache for ${t.id} on bulk deletion:`, e);
+        }
+      });
       setPracticeTests(prev => prev.map(t => {
         if (t.isPinned) return t;
         if (t._status === 'created') return null;
@@ -2732,7 +2958,7 @@ function App() {
       return;
     }
     setEditingWordId(word.id);
-    setTermText(word.raw || '');
+    setTermText(word.raw || reconstructRawTemplate(word));
     setLearningStatus(word.learningStatus || 'Yeni');
     
     // Initialize selected lists
@@ -4536,6 +4762,10 @@ function App() {
             onRemoveWordFromList={handleRemoveWordFromList}
             stickyNotes={activeStickyNotes}
             onUpdateNote={handleUpdateNote}
+            onAddNote={handleAddNote}
+            onDeleteNote={handleDeleteNote}
+            onOpenNotesModal={() => setCurrentView('sticky-notes')}
+            onLoadTestDetails={handleLoadTestDetails}
           />
         </Container>
       )}
