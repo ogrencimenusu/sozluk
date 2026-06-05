@@ -75,6 +75,22 @@ const PracticeTestContainer = forwardRef((props, ref) => {
             pool = pool.filter(w => allowedWordIds.has(w.id));
         }
 
+        // Filter out correctly solved words from existing tests if excludeSolvedToday is enabled
+        if (config.excludeSolvedToday && practiceTests) {
+            const solvedIds = new Set();
+            practiceTests.forEach(test => {
+                if (test.questions) {
+                    test.questions.forEach((q, idx) => {
+                        const isCorrect = test.answers && test.answers[idx] && test.answers[idx].selected?.isCorrect === true;
+                        if (isCorrect && q.wordId) {
+                            solvedIds.add(q.wordId);
+                        }
+                    });
+                }
+            });
+            pool = pool.filter(w => !solvedIds.has(w.id));
+        }
+
         if (pool.length === 0) {
             Swal.fire({
                 icon: 'warning',
@@ -443,8 +459,20 @@ const PracticeTestContainer = forwardRef((props, ref) => {
         if (questionTypeOverrides) {
              const newConfig = { ...lastConfig, questionTypes: questionTypeOverrides };
              const currentSelectedWords = questions.map(q => words.find(w => w.id === q.wordId)).filter(Boolean);
-             handleStart(newConfig, currentSelectedWords);
+             const shuffledWords = [...currentSelectedWords].sort(() => Math.random() - 0.5);
+             handleStart(newConfig, shuffledWords);
         } else {
+             const shuffledQuestions = [...questions].sort(() => Math.random() - 0.5);
+             const shuffledQuestionsWithOptions = shuffledQuestions.map(q => {
+                 if (q.type === 'mcq' && q.options) {
+                     return {
+                         ...q,
+                         options: [...q.options].sort(() => Math.random() - 0.5)
+                     };
+                 }
+                 return q;
+             });
+             setQuestions(shuffledQuestionsWithOptions);
              setTestKey(prev => prev + 1);
         }
     };

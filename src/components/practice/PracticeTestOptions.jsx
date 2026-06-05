@@ -2,6 +2,29 @@ import React, { useState, useEffect } from 'react';
 import { Container, Form, Button, FormCheck, Badge } from 'react-bootstrap';
 import Swal from 'sweetalert2';
 
+const parseDate = (val) => {
+    if (!val) return null;
+    if (val instanceof Date) return isNaN(val.getTime()) ? null : val;
+    if (typeof val.toDate === 'function') {
+        try {
+            const d = val.toDate();
+            return isNaN(d.getTime()) ? null : d;
+        } catch (e) {}
+    }
+    if (val && typeof val === 'object' && typeof val.seconds === 'number') {
+        try {
+            const d = new Date(val.seconds * 1000 + Math.floor((val.nanoseconds || 0) / 1000000));
+            return isNaN(d.getTime()) ? null : d;
+        } catch (e) {}
+    }
+    try {
+        const d = new Date(val);
+        return isNaN(d.getTime()) ? null : d;
+    } catch (e) {
+        return null;
+    }
+};
+
 const availableContexts = [
     'Yalın Hal',
     'Geniş Zaman',
@@ -16,6 +39,7 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
     const [questionFormat, setQuestionFormat] = useState('mixed'); // 'definition' or 'term' or 'mixed'
     const [shuffle, setShuffle] = useState(true);
     const [excludeStarred, setExcludeStarred] = useState(false);
+    const [excludeSolvedToday, setExcludeSolvedToday] = useState(false);
 
     // New State for Learning Status
     const [learningStatus, setLearningStatus] = useState({
@@ -75,6 +99,7 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
             if (savedOptions.questionFormat !== undefined) setQuestionFormat(savedOptions.questionFormat);
             if (savedOptions.shuffle !== undefined) setShuffle(savedOptions.shuffle);
             if (savedOptions.excludeStarred !== undefined) setExcludeStarred(savedOptions.excludeStarred);
+            if (savedOptions.excludeSolvedToday !== undefined) setExcludeSolvedToday(savedOptions.excludeSolvedToday);
             if (savedOptions.learningStatus !== undefined) setLearningStatus(savedOptions.learningStatus);
             if (savedOptions.questionTypes !== undefined) setQuestionTypes(savedOptions.questionTypes);
             if (savedOptions.advancedOptions !== undefined) setAdvancedOptions(savedOptions.advancedOptions);
@@ -125,15 +150,38 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
             selectedLists,
             selectedContexts,
             testHelps,
-            excludeStarred
+            excludeStarred,
+            excludeSolvedToday
         });
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [hasLoaded, questionCount, onlyStarred, questionFormat, shuffle, learningStatus, questionTypes, advancedOptions, selectedLists, selectedContexts, excludeStarred, testHelps]);
+    }, [hasLoaded, questionCount, onlyStarred, questionFormat, shuffle, learningStatus, questionTypes, advancedOptions, selectedLists, selectedContexts, excludeStarred, testHelps, excludeSolvedToday]);
+
+    // Find all word IDs correctly solved in existing tests
+    const solvedWordIds = React.useMemo(() => {
+        const solvedIds = new Set();
+        if (practiceTests) {
+            practiceTests.forEach(test => {
+                if (test.solvedWordIds && Array.isArray(test.solvedWordIds)) {
+                    test.solvedWordIds.forEach(id => solvedIds.add(id));
+                }
+                if (test.questions) {
+                    test.questions.forEach((q, idx) => {
+                        const isCorrect = test.answers && test.answers[idx] && test.answers[idx].selected?.isCorrect === true;
+                        if (isCorrect && q.wordId) {
+                            solvedIds.add(q.wordId);
+                        }
+                    });
+                }
+            });
+        }
+        return solvedIds;
+    }, [practiceTests]);
 
     // Calculate available questions based on current filters
     const availableWordsCount = (words || []).filter(w => {
         if (onlyStarred && !w.isStarred) return false;
         if (excludeStarred && w.isStarred) return false;
+        if (excludeSolvedToday && solvedWordIds.has(w.id)) return false;
         
         // Filter by Custom Lists
         const activeListIds = Object.keys(selectedLists).filter(id => selectedLists[id]);
@@ -202,7 +250,8 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
             selectedLists,
             selectedContexts,
             testHelps,
-            excludeStarred
+            excludeStarred,
+            excludeSolvedToday
         });
     };
 
@@ -294,15 +343,17 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
                         </div>
                         <div className="d-flex gap-2 pb-2" style={{ overflowX: 'auto', scrollbarWidth: 'thin', whiteSpace: 'nowrap' }}>
                             {practiceTests.map(test => {
-                                const dateObj = test.updatedAt?.toDate ? test.updatedAt.toDate() : new Date(test.updatedAt || test.createdAt || Date.now());
+                                const dateObj = parseDate(test.updatedAt) || parseDate(test.createdAt) || new Date();
                                 const date = dateObj.toLocaleDateString('tr-TR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
                                 const isCompleted = test.status === 'completed';
 
-                                const total = test.questions?.length || 0;
-                                let answeredCount = 0;
-                                let correctCount = 0;
+                                const total = (test.questions && test.questions.length > 0) ? test.questions.length : (test.totalCount || 0);
+                                let answeredCount = test.answeredCount !== undefined ? test.answeredCount : 0;
+                                let correctCount = test.correctCount !== undefined ? test.correctCount : 0;
 
-                                if (test.questions) {
+                                if (test.questions && test.questions.length > 0) {
+                                    answeredCount = 0;
+                                    correctCount = 0;
                                     test.questions.forEach((q, idx) => {
                                         if (test.answers && test.answers[idx]) {
                                             answeredCount++;
@@ -689,6 +740,21 @@ function PracticeTestOptions({ words, maxQuestions, onStart, onCancel, savedOpti
                             checked={shuffle}
                             onChange={(e) => setShuffle(e.target.checked)}
                         />
+                    </div>
+                    <div className="d-flex justify-content-between align-items-center text-body mt-3">
+                        <span>
+                            Doğru Çözülen Kelimeleri Ekleme (Test Geçmişine Göre)
+                        </span>
+                        <FormCheck
+                            type="switch"
+                            id="option-exclude-solved-today"
+                            className="custom-switch-lg"
+                            checked={excludeSolvedToday}
+                            onChange={(e) => setExcludeSolvedToday(e.target.checked)}
+                        />
+                    </div>
+                    <div className="text-muted small mt-1 ms-1" style={{ fontSize: '12px' }}>
+                        Mevcut testlerde doğru çözülen ve tekrar edilmeyecek kelime sayısı: <strong className="text-primary">{solvedWordIds.size}</strong>
                     </div>
                 </div>
 

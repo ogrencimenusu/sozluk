@@ -418,20 +418,27 @@ const getOptimizedTests = (testsList) => {
     let total = t.questions?.length || t.totalCount || 0;
     let answeredCount = t.answeredCount !== undefined ? t.answeredCount : 0;
     let correctCount = t.correctCount !== undefined ? t.correctCount : 0;
+    const solvedIds = new Set();
     
     if (t.questions && t.questions.length > 0) {
       answeredCount = 0;
       correctCount = 0;
       t.questions.forEach((q, idx) => {
+        const isCorrect = t.answers && t.answers[idx] && t.answers[idx].selected?.isCorrect === true;
         if (t.answers && t.answers[idx]) {
           answeredCount++;
-          if (t.answers[idx].selected?.isCorrect) {
+          if (isCorrect) {
             correctCount++;
           }
         } else if (q.type === 'written' && t.writtenInputs && (t.writtenInputs[idx] || '').trim().length > 0) {
           answeredCount++;
         }
+        if (isCorrect && q.wordId) {
+          solvedIds.add(q.wordId);
+        }
       });
+    } else if (t.solvedWordIds) {
+      t.solvedWordIds.forEach(id => solvedIds.add(id));
     }
     
     return {
@@ -444,6 +451,7 @@ const getOptimizedTests = (testsList) => {
       totalCount: total,
       answeredCount,
       correctCount,
+      solvedWordIds: Array.from(solvedIds),
       questions: [],
       answers: {},
       writtenInputs: {},
@@ -464,7 +472,8 @@ const defaultTest = {
 const expandTest = (t) => ({
   ...defaultTest,
   ...t,
-  questions: t.questions || []
+  questions: t.questions || [],
+  solvedWordIds: t.solvedWordIds || []
 });
 
 const getUniqueAndDuplicateTests = (tests) => {
@@ -558,6 +567,58 @@ const parseDate = (val) => {
   }
 };
 
+const mergeCollections = (localItems, remoteItems) => {
+  if (!localItems) return remoteItems || [];
+  if (!remoteItems) return localItems || [];
+  
+  // Start with all local items that have unsynced changes
+  const merged = [...localItems.filter(item => item && (item._status === 'created' || item._status === 'updated' || item._status === 'deleted'))];
+  
+  remoteItems.forEach(ri => {
+    if (ri && !merged.some(li => li.id === ri.id)) {
+      merged.push(ri);
+    }
+  });
+  return merged;
+};
+
+const mergeStats = (localStats, remoteStats) => {
+  if (!localStats) return remoteStats || {};
+  if (!remoteStats) return localStats || {};
+  
+  const merged = { ...remoteStats };
+  
+  Object.keys(localStats).forEach(key => {
+    const local = localStats[key];
+    const remote = remoteStats[key];
+    
+    if (local && remote) {
+      const mergedWords = { ...remote.words };
+      if (local.words) {
+        for (const [wId, stats] of Object.entries(local.words)) {
+          if (!mergedWords[wId]) {
+            mergedWords[wId] = { ...stats };
+          } else {
+            mergedWords[wId].correct = Math.max(mergedWords[wId].correct || 0, stats.correct || 0);
+            mergedWords[wId].incorrect = Math.max(mergedWords[wId].incorrect || 0, stats.incorrect || 0);
+          }
+        }
+      }
+      
+      merged[key] = {
+        ...remote,
+        correctCount: Math.max(local.correctCount || 0, remote.correctCount || 0),
+        words: mergedWords,
+        _status: local._status || remote._status
+      };
+    } else if (local) {
+      merged[key] = local;
+    }
+  });
+  
+  return merged;
+};
+
 // ─── Static View / Page Routing Configurations ───
 const VIEW_CONFIGS = {
   home: { title: 'Sözlük | Ana Sayfa', path: '/' },
@@ -575,6 +636,7 @@ const VIEW_CONFIGS = {
 
 function App() {
   const duplicateIdsToDeleteRef = useRef([]);
+  const hasCheckedInitialSyncRef = useRef(false);
   const [authUser, setAuthUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
 
@@ -1445,26 +1507,32 @@ function App() {
     }
   }, [authUser]);
 
-  const fetchAllFromFirestoreOnce = async (user) => {
+  const fetchAllFromFirestoreOnce = async (user, forceOverwrite = false) => {
     setLoading(true);
     try {
       // 1. Words
       const qWords = query(collection(db, 'words'), where('userId', '==', user.uid));
       const snapWords = await getDocs(qWords);
-      const wordsData = snapWords.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a, b) => {
+      const fetchedWords = snapWords.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a, b) => {
         const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
         const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
         return dateB - dateA;
       });
-      setWords(wordsData);
-      safeSetItem('local_words', JSON.stringify(compactObj(getOptimizedWords(wordsData))));
+      const finalWords = forceOverwrite 
+        ? fetchedWords 
+        : mergeCollections(words, fetchedWords);
+      setWords(finalWords);
+      safeSetItem('local_words', JSON.stringify(compactObj(getOptimizedWords(finalWords))));
 
       // 2. Custom Lists
       const qLists = query(collection(db, 'customLists'), where('userId', '==', user.uid));
       const snapLists = await getDocs(qLists);
-      const listsData = snapLists.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setCustomLists(listsData);
-      safeSetItem('local_custom_lists', JSON.stringify(compactObj(listsData)));
+      const fetchedLists = snapLists.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const finalLists = forceOverwrite 
+        ? fetchedLists 
+        : mergeCollections(customLists, fetchedLists);
+      setCustomLists(finalLists);
+      safeSetItem('local_custom_lists', JSON.stringify(compactObj(finalLists)));
 
       // 3. Practice Tests
       const qTests = query(collection(db, 'practice_tests'), where('userId', '==', user.uid));
@@ -1477,38 +1545,47 @@ function App() {
         deleteBatchFromFirestoreInBackground(duplicateIds);
       }
 
-      const testsData = uniqueTests.sort((a, b) => {
+      const sortedTests = uniqueTests.sort((a, b) => {
         if (a.isPinned && !b.isPinned) return -1;
         if (!a.isPinned && b.isPinned) return 1;
         const dateA = a.updatedAt?.toDate ? a.updatedAt.toDate() : new Date(a.updatedAt || 0);
         const dateB = b.updatedAt?.toDate ? b.updatedAt.toDate() : new Date(b.updatedAt || 0);
         return dateB - dateA;
       });
-      setPracticeTests(testsData);
-      safeSetItem('local_practice_tests', JSON.stringify(compactObj(getOptimizedTests(testsData))));
+      const finalTests = forceOverwrite 
+        ? sortedTests 
+        : mergeCollections(practiceTests, sortedTests);
+      setPracticeTests(finalTests);
+      safeSetItem('local_practice_tests', JSON.stringify(compactObj(getOptimizedTests(finalTests))));
 
       // 4. Daily Stats
       const qStats = query(collection(db, 'daily_stats'), where('userId', '==', user.uid));
       const snapStats = await getDocs(qStats);
-      const stats = {};
+      const fetchedStats = {};
       snapStats.forEach(docSnap => {
         const data = docSnap.data();
         const key = data.date || docSnap.id;
-        stats[key] = data;
+        fetchedStats[key] = data;
       });
-      setDailyStats(stats);
-      safeSetItem('local_daily_stats', JSON.stringify(compactObj(stats)));
+      const finalStats = forceOverwrite 
+        ? fetchedStats 
+        : mergeStats(dailyStats, fetchedStats);
+      setDailyStats(finalStats);
+      safeSetItem('local_daily_stats', JSON.stringify(compactObj(finalStats)));
 
       // 5. Sticky Notes
       const qNotes = query(collection(db, 'sticky_notes'), where('userId', '==', user.uid));
       const snapNotes = await getDocs(qNotes);
-      const notesData = snapNotes.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a, b) => {
+      const fetchedNotes = snapNotes.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a, b) => {
         const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
         const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
         return dateB - dateA;
       });
-      setStickyNotes(notesData);
-      safeSetItem('local_sticky_notes', JSON.stringify(compactObj(notesData)));
+      const finalNotes = forceOverwrite 
+        ? fetchedNotes 
+        : mergeCollections(stickyNotes, fetchedNotes);
+      setStickyNotes(finalNotes);
+      safeSetItem('local_sticky_notes', JSON.stringify(compactObj(finalNotes)));
 
       // Update sync time
       const nowMs = Date.now();
@@ -1530,6 +1607,22 @@ function App() {
     count += Object.values(dailyStats).filter(s => s._status).length;
     return count;
   }, [words, customLists, practiceTests, stickyNotes, dailyStats]);
+
+  // Prevent accidental reload when there are unsynced changes
+  useEffect(() => {
+    const handleBeforeUnload = (e) => {
+      if (unsyncedChangesCount > 0) {
+        const message = 'Senkronize edilmemiş verileriniz var. Sayfayı yenilerseniz bu veriler kaybolacaktır.';
+        e.preventDefault();
+        e.returnValue = message;
+        return message;
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [unsyncedChangesCount]);
 
   const unsyncedItemsList = useMemo(() => {
     const list = [];
@@ -1901,11 +1994,12 @@ function App() {
         checkAborted();
         const qWords = query(collection(db, 'words'), where('userId', '==', authUser.uid));
         const snapWords = await getDocs(qWords);
-        remoteWords = snapWords.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a, b) => {
+        const fetchedWords = snapWords.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a, b) => {
           const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
           const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
           return dateB - dateA;
         });
+        remoteWords = mergeCollections(remoteWords, fetchedWords);
       }
       
       // 2. Custom Lists
@@ -1920,7 +2014,8 @@ function App() {
         checkAborted();
         const qLists = query(collection(db, 'customLists'), where('userId', '==', authUser.uid));
         const snapLists = await getDocs(qLists);
-        remoteLists = snapLists.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const fetchedLists = snapLists.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        remoteLists = mergeCollections(remoteLists, fetchedLists);
       }
 
       // 3. Practice Tests
@@ -1943,13 +2038,14 @@ function App() {
           deleteBatchFromFirestoreInBackground(duplicateIds);
         }
 
-        remoteTests = uniqueTests.sort((a, b) => {
+        const sortedTests = uniqueTests.sort((a, b) => {
           if (a.isPinned && !b.isPinned) return -1;
           if (!a.isPinned && b.isPinned) return 1;
           const dateA = a.updatedAt?.toDate ? a.updatedAt.toDate() : new Date(a.updatedAt || 0);
           const dateB = b.updatedAt?.toDate ? b.updatedAt.toDate() : new Date(b.updatedAt || 0);
           return dateB - dateA;
         });
+        remoteTests = mergeCollections(remoteTests, sortedTests);
       }
 
       // 4. Daily Stats
@@ -1963,12 +2059,13 @@ function App() {
         checkAborted();
         const qStats = query(collection(db, 'daily_stats'), where('userId', '==', authUser.uid));
         const snapStats = await getDocs(qStats);
-        remoteStats = {};
+        const fetchedStats = {};
         snapStats.forEach(docSnap => {
           const data = docSnap.data();
           const key = data.date || docSnap.id;
-          remoteStats[key] = data;
+          fetchedStats[key] = data;
         });
+        remoteStats = mergeStats(remoteStats, fetchedStats);
       }
 
       // 5. Sticky Notes
@@ -1983,11 +2080,12 @@ function App() {
         checkAborted();
         const qNotes = query(collection(db, 'sticky_notes'), where('userId', '==', authUser.uid));
         const snapNotes = await getDocs(qNotes);
-        remoteNotes = snapNotes.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a, b) => {
+        const fetchedNotes = snapNotes.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a, b) => {
           const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
           const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
           return dateB - dateA;
         });
+        remoteNotes = mergeCollections(remoteNotes, fetchedNotes);
       }
 
       // Update local state with remote state (fully merged)
@@ -2541,26 +2639,26 @@ function App() {
   // 2. Cloud Sync / Seed when Authentication becomes ready
   useEffect(() => {
     if (!authUser) return;
+    if (hasCheckedInitialSyncRef.current) return;
+    hasCheckedInitialSyncRef.current = true;
 
     if (duplicateIdsToDeleteRef.current && duplicateIdsToDeleteRef.current.length > 0) {
       deleteBatchFromFirestoreInBackground(duplicateIdsToDeleteRef.current);
       duplicateIdsToDeleteRef.current = [];
     }
 
-    const localWords = localStorage.getItem('local_words');
-    if (!localWords || localWords === '[]') {
-      if (navigator.onLine) {
-        // First load or cache cleared: Fetch everything once from Firestore to seed localStorage
-        fetchAllFromFirestoreOnce(authUser);
+    if (navigator.onLine) {
+      console.log("Online on startup. Running silent auto-sync.");
+      if (handleSyncRef.current) {
+        handleSyncRef.current(true).finally(() => {
+          setLoading(false);
+        });
       } else {
-        // Offline: cannot seed from Firestore, set loading to false to display empty state gracefully
         setLoading(false);
-        console.log("Offline on initial load. Displaying empty local state.");
       }
     } else {
       setLoading(false);
-      // Startup background auto-sync is disabled to respect 100% manual sync preference.
-      console.log("Startup background sync is disabled. User will sync manually.");
+      console.log("Offline on initial load. Displaying empty or cached local state.");
     }
   }, [authUser, deleteBatchFromFirestoreInBackground]);
 
