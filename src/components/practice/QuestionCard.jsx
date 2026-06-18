@@ -733,7 +733,7 @@ const LetterCounter = React.memo(({ typed, target, helps }) => {
 
     // Only run expensive NLP if it's not an exact match but length might match or be close
     const isRootMatch = React.useMemo(() => {
-        if (!typed || isExactMatch) return false;
+        if (!typed || isExactMatch || !helps?.colorOnExactMatch) return false;
         try {
             const typedRoot = nlp(typed).verbs().toInfinitive().text() || nlp(typed).nouns().toSingular().text() || typed;
             const targetRoot = nlp(target).verbs().toInfinitive().text() || nlp(target).nouns().toSingular().text() || target;
@@ -741,15 +741,15 @@ const LetterCounter = React.memo(({ typed, target, helps }) => {
         } catch (e) {
             return false;
         }
-    }, [typed, target, isExactMatch]);
+    }, [typed, target, isExactMatch, helps?.colorOnExactMatch]);
 
     let colorClass = 'text-danger';
     let customStyle = { fontSize: '0.75rem', fontWeight: (isLengthMatch || isRootMatch) ? 'bold' : 'normal' };
 
     if (isLengthMatch) {
-        if (isExactMatch && helps.colorOnExactMatch) {
+        if (isExactMatch && helps?.colorOnExactMatch) {
             colorClass = 'text-primary';
-        } else if (helps.colorOnLengthMatch) {
+        } else if (helps?.colorOnLengthMatch) {
             colorClass = 'text-success';
         }
     } else if (isRootMatch) {

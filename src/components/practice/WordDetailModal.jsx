@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Modal, Button, Row, Col, Badge, Dropdown } from 'react-bootstrap';
+import Swal from 'sweetalert2';
 
 /**
  * Splits `text` into segments, wrapping matches from `highlights` in
@@ -50,6 +51,95 @@ const parseDate = (val) => {
   } catch (e) {
     return null;
   }
+};
+
+const getRelevantNoteText = (noteText, term, isAssociated, forCopy = false) => {
+    if (isAssociated || !noteText || !term) {
+        if (forCopy) {
+            const temp = document.createElement('div');
+            temp.innerHTML = noteText;
+            return temp.textContent || temp.innerText || noteText;
+        }
+        return noteText;
+    }
+
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = noteText;
+    
+    const lines = [];
+    let currentLineNodes = [];
+    const blockTags = new Set(['DIV', 'P', 'LI', 'BLOCKQUOTE', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'UL', 'OL', 'TR', 'TABLE']);
+    
+    const flushCurrentLine = () => {
+        if (currentLineNodes.length > 0) {
+            const lineDiv = document.createElement('div');
+            currentLineNodes.forEach(node => lineDiv.appendChild(node.cloneNode(true)));
+            if (lineDiv.textContent.trim()) {
+                lines.push({
+                    html: lineDiv.innerHTML,
+                    text: lineDiv.textContent.trim()
+                });
+            }
+            currentLineNodes = [];
+        }
+    };
+    
+    const traverse = (node) => {
+        const isBlock = node.nodeType === 1 && blockTags.has(node.nodeName);
+        
+        if (node.nodeType === 3) {
+            currentLineNodes.push(node);
+        } else if (node.nodeType === 1) {
+            if (node.nodeName === 'BR') {
+                flushCurrentLine();
+            } else if (isBlock) {
+                flushCurrentLine();
+                
+                const hasBlockOrBr = Array.from(node.querySelectorAll('*')).some(
+                    child => blockTags.has(child.nodeName) || child.nodeName === 'BR'
+                );
+                
+                if (hasBlockOrBr) {
+                    Array.from(node.childNodes).forEach(child => traverse(child));
+                } else {
+                    currentLineNodes.push(node);
+                }
+                
+                flushCurrentLine();
+            } else {
+                currentLineNodes.push(node);
+            }
+        }
+    };
+    
+    Array.from(tempDiv.childNodes).forEach(child => traverse(child));
+    flushCurrentLine();
+    
+    if (lines.length === 0) {
+        if (forCopy) {
+            const temp = document.createElement('div');
+            temp.innerHTML = noteText;
+            return temp.textContent || temp.innerText || noteText;
+        }
+        return noteText;
+    }
+    
+    const termLower = term.toLowerCase();
+    const relevant = lines.filter(line => line.text.toLowerCase().includes(termLower));
+    
+    if (relevant.length > 0) {
+        if (forCopy) {
+            return relevant.map(r => r.text).join('\n\n');
+        }
+        return relevant.map(r => r.html).join('');
+    }
+    
+    if (forCopy) {
+        const temp = document.createElement('div');
+        temp.innerHTML = noteText;
+        return temp.textContent || temp.innerText || noteText;
+    }
+    return noteText;
 };
 
 /**
@@ -134,6 +224,8 @@ function WordDetailModal({
         setSelectionTooltip(null);
     }, []);
 
+    // Selection listener disabled (now manual only)
+    /*
     useEffect(() => {
         if (!word) return;
         let timeoutId;
@@ -158,6 +250,7 @@ function WordDetailModal({
             document.removeEventListener('touchstart', handleMouseDown);
         };
     }, [word, handleMouseUp, handleMouseDown]);
+    */
 
     // Clear tooltip when word changes
     useEffect(() => {
@@ -209,54 +302,56 @@ function WordDetailModal({
         (n.selectedWords && n.selectedWords.some(sw => sw.toLowerCase() === word?.term?.toLowerCase()))
     );
 
+    const handleCopyNote = useCallback((note, isAssociated) => {
+        if (!word?.term) return;
+        
+        const cleanText = getRelevantNoteText(note.text, word.term, isAssociated, true);
+        const textToCopy = `${cleanText}\n\n${word.term}`;
+        
+        const showSuccessToast = () => {
+            Swal.fire({
+                toast: true,
+                position: 'top-end',
+                icon: 'success',
+                title: 'Not metni ve kelime kopyalandı!',
+                showConfirmButton: false,
+                timer: 1500,
+                timerProgressBar: true,
+            });
+        };
+
+        const fallbackCopy = (text) => {
+            try {
+                const textArea = document.createElement('textarea');
+                textArea.value = text;
+                textArea.style.position = 'fixed';
+                textArea.style.left = '-999999px';
+                textArea.style.top = '-999999px';
+                document.body.appendChild(textArea);
+                textArea.focus();
+                textArea.select();
+                document.execCommand('copy');
+                textArea.remove();
+                showSuccessToast();
+            } catch (e) {
+                console.error('Fallback kopyalama hatası:', e);
+            }
+        };
+
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(textToCopy)
+                .then(showSuccessToast)
+                .catch(() => fallbackCopy(textToCopy));
+        } else {
+            fallbackCopy(textToCopy);
+        }
+    }, [word]);
+
     if (!word) return null;
 
     return (
         <>
-            {/* Floating sticky note tooltip */}
-            {selectionTooltip && (() => {
-                const existingNote = stickyNotes.find(n => n.wordId === word.id && n.text === selectionTooltip.text);
-                return (
-                <div
-                    ref={tooltipRef}
-                    className="sticky-note-tooltip"
-                    style={{
-                        position: 'fixed',
-                        left: `${selectionTooltip.x}px`,
-                        top: `${selectionTooltip.y}px`,
-                        transform: 'translate(-50%, -100%)',
-                        zIndex: 9999,
-                        pointerEvents: 'all',
-                    }}
-                >
-                    {existingNote ? (
-                        <button
-                            className="btn btn-sm d-flex align-items-center gap-2"
-                            style={{ backgroundColor: '#ef4444', color: 'white', border: 'none', borderRadius: '6px', padding: '6px 12px', fontSize: '13px', fontWeight: '500', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}
-                            onMouseDown={(e) => e.preventDefault()}
-                            onClick={() => {
-                                onDeleteNote && onDeleteNote(existingNote.id);
-                                setSelectionTooltip(null);
-                                window.getSelection()?.removeAllRanges();
-                            }}
-                        >
-                            <i className="bi bi-trash3-fill"></i>
-                            <span>Notu Sil</span>
-                        </button>
-                    ) : (
-                        <button
-                            className="btn btn-sm sticky-note-save-btn d-flex align-items-center gap-2"
-                            onMouseDown={(e) => e.preventDefault()}
-                            onClick={handleSaveNote}
-                        >
-                            <i className="bi bi-pin-angle-fill"></i>
-                            <span>Sticky Not</span>
-                        </button>
-                    )}
-                    <div className="sticky-note-tooltip-arrow"></div>
-                </div>
-                );
-            })()}
+            {/* Floating sticky note tooltip disabled */}
 
             {/* Flash feedback */}
             {savedNoteFlash && (
@@ -735,21 +830,20 @@ function WordDetailModal({
                                                             whiteSpace: 'pre-wrap'
                                                         }}
                                                         dangerouslySetInnerHTML={{ 
-                                                            __html: (() => {
-                                                                if (isAssociated || !note.text || !word.term) return note.text;
-                                                                const tempDiv = document.createElement('div');
-                                                                tempDiv.innerHTML = note.text;
-                                                                const blocks = Array.from(tempDiv.querySelectorAll('p, blockquote, li, h1, h2, h3, h4, h5, h6'));
-                                                                if (blocks.length === 0) return note.text;
-                                                                const termLower = word.term.toLowerCase();
-                                                                const relevant = blocks.filter(b => b.textContent.toLowerCase().includes(termLower));
-                                                                return relevant.length > 0 ? relevant.map(b => b.outerHTML).join('') : note.text;
-                                                            })()
+                                                            __html: getRelevantNoteText(note.text, word.term, isAssociated, false)
                                                         }} 
                                                     />
                                                     <div className="d-flex align-items-center justify-content-between mt-2">
                                                         <span className="sticky-note-date">{dateStr}</span>
                                                         <div className="d-flex gap-2">
+                                                            <button
+                                                                className="btn btn-sm sticky-note-copy-btn p-0 opacity-50 hover-opacity-100"
+                                                                onClick={() => handleCopyNote(note, isAssociated)}
+                                                                title="Notu Kopyala"
+                                                                style={{ border: 'none', background: 'none' }}
+                                                            >
+                                                                <i className="bi bi-clipboard text-success"></i>
+                                                            </button>
                                                             <button
                                                                 className="btn btn-sm sticky-note-edit-btn p-0 opacity-50 hover-opacity-100"
                                                                 onClick={() => handleStartEdit(note)}

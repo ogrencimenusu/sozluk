@@ -978,3 +978,51 @@ html, body {
   color: #dc2626;
 }
 
+/* Question type toggle buttons style */
+.qtype-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1.5rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  border-radius: 50rem;
+  transition: all 0.15s ease-in-out;
+  cursor: pointer;
+  user-select: none;
+}
+
+.qtype-btn.active {
+  background-color: #0d6efd !important;
+  border-color: #0d6efd !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 4px rgba(13, 110, 253, 0.2);
+  border: 1px solid #0d6efd;
+}
+
+.qtype-btn.inactive {
+  background-color: var(--bs-body-bg) !important;
+  border: 1px solid rgba(108, 117, 125, 0.3) !important;
+  color: var(--bs-body-color) !important;
+}
+
+/* Override hover/focus/active to keep them clean on mobile */
+.qtype-btn.active:hover,
+.qtype-btn.active:focus,
+.qtype-btn.active:active {
+  background-color: #0d6efd !important;
+  border-color: #0d6efd !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 4px rgba(13, 110, 253, 0.2) !important;
+}
+
+.qtype-btn.inactive:hover,
+.qtype-btn.inactive:focus,
+.qtype-btn.inactive:active {
+  background-color: var(--bs-body-bg) !important;
+  border: 1px solid rgba(108, 117, 125, 0.3) !important;
+  color: var(--bs-body-color) !important;
+  box-shadow: none !important;
+}
+
+

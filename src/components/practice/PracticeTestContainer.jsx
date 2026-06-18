@@ -42,7 +42,11 @@ const PracticeTestContainer = forwardRef((props, ref) => {
     }));
 
     // Generate Questions when starting
-    const handleStart = async (config, forcedWords = null) => {
+    const handleStart = async (rawConfig, forcedWords = null) => {
+        const config = {
+            ...rawConfig,
+            testHelps: savedOptions?.testHelps || rawConfig.testHelps
+        };
         setLastConfig(config);
         let pool = [...words];
 
@@ -79,6 +83,9 @@ const PracticeTestContainer = forwardRef((props, ref) => {
         if (config.excludeSolvedToday && practiceTests) {
             const solvedIds = new Set();
             practiceTests.forEach(test => {
+                if (test.solvedWordIds && Array.isArray(test.solvedWordIds)) {
+                    test.solvedWordIds.forEach(id => solvedIds.add(id));
+                }
                 if (test.questions) {
                     test.questions.forEach((q, idx) => {
                         const isCorrect = test.answers && test.answers[idx] && test.answers[idx].selected?.isCorrect === true;
@@ -539,6 +546,7 @@ const PracticeTestContainer = forwardRef((props, ref) => {
                         testId={activeTestId}
                         initialTestState={initialTestState}
                         onSaveTest={onSaveTest}
+                        onSaveOptions={onSaveOptions}
                         customLists={customLists}
                         onAddWordsToList={onAddWordsToList}
                         onRemoveWordFromList={onRemoveWordFromList}

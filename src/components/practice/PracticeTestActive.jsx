@@ -8,7 +8,7 @@ import DailyGoalTracker from '../DailyGoalTracker';
 import Swal from 'sweetalert2';
 import nlp from 'compromise';
 
-function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpdateStage, onUpdateStagesBatch, onUpdateStatusBatch, onToggleStar, onToggleStarBatch, onDelete, onEdit, onRetakeSame, onRetakeNew, onRetakeMissed, onLogTestResults, dailyStats, testId, initialTestState, onSaveTest, customLists, onAddWordsToList, onRemoveWordFromList, stickyNotes, onUpdateNote, onUpdateStatus, onAddNote, onDeleteNote, onOpenNotesModal }) {
+function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpdateStage, onUpdateStagesBatch, onUpdateStatusBatch, onToggleStar, onToggleStarBatch, onDelete, onEdit, onRetakeSame, onRetakeNew, onRetakeMissed, onLogTestResults, dailyStats, testId, initialTestState, onSaveTest, onSaveOptions, customLists, onAddWordsToList, onRemoveWordFromList, stickyNotes, onUpdateNote, onUpdateStatus, onAddNote, onDeleteNote, onOpenNotesModal }) {
     const onSaveTestRef = useRef(onSaveTest);
     useEffect(() => {
         onSaveTestRef.current = onSaveTest;
@@ -79,6 +79,20 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
         colorOnLengthMatch: true,
         colorOnExactMatch: true
     });
+
+    // Sync live helps to global options
+    useEffect(() => {
+        if (onSaveOptions && testHelps) {
+            onSaveOptions(prev => {
+                if (!prev) return prev;
+                if (JSON.stringify(prev.testHelps) === JSON.stringify(testHelps)) return prev;
+                return {
+                    ...prev,
+                    testHelps
+                };
+            });
+        }
+    }, [testHelps, onSaveOptions]);
 
     const getParsedMeaningsWithNumbers = (text) => {
         if (typeof text !== 'string') return [{ number: 1, text: text }];
@@ -185,9 +199,13 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
             hintsUsed,
             hiddenOptions,
             activeQuestionIdx,
-            status: completed ? 'completed' : 'ongoing'
+            status: completed ? 'completed' : 'ongoing',
+            config: {
+                ...initialTestState?.config,
+                testHelps
+            }
         };
-    }, [answers, writtenInputs, completed, hintsUsed, hiddenOptions, activeQuestionIdx]);
+    }, [answers, writtenInputs, completed, hintsUsed, hiddenOptions, activeQuestionIdx, testHelps, initialTestState?.config]);
 
     // Auto-save progress: Debounced to reduce Firestore writes significantly while auto-saving properly
     // NOTE: We omit activeQuestionIdx from the dependencies to prevent write triggers on scroll.
@@ -201,7 +219,11 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
             hintsUsed,
             hiddenOptions,
             activeQuestionIdx: activeQuestionIdxRef.current,
-            status: completed ? 'completed' : 'ongoing'
+            status: completed ? 'completed' : 'ongoing',
+            config: {
+                ...initialTestState?.config,
+                testHelps
+            }
         };
 
         // 1. Instant LocalStorage backup (FREE - Zero cost Safari protection)
@@ -217,7 +239,7 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
         }, 1500);
 
         return () => clearTimeout(timer);
-    }, [answers, writtenInputs, completed, hintsUsed, hiddenOptions, testId, saveToFirestore]);
+    }, [answers, writtenInputs, completed, hintsUsed, hiddenOptions, testId, saveToFirestore, testHelps, initialTestState?.config]);
 
     // Dedicated local-only scroll position persistence (FREE - local storage only)
     useEffect(() => {
@@ -462,7 +484,11 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
             hintsUsed,
             hiddenOptions,
             activeQuestionIdx,
-            status: completed ? 'completed' : 'ongoing'
+            status: completed ? 'completed' : 'ongoing',
+            config: {
+                ...initialTestState?.config,
+                testHelps
+            }
         };
 
         // 1. Instant LocalStorage backup
@@ -474,7 +500,7 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
 
         // 2. Immediate Firestore save
         onSaveTestRef.current(testId, testData);
-    }, [answers, writtenInputs, completed, hintsUsed, hiddenOptions, activeQuestionIdx, testId]);
+    }, [answers, writtenInputs, completed, hintsUsed, hiddenOptions, activeQuestionIdx, testId, testHelps, initialTestState?.config]);
 
     const handleWrittenSubmit = React.useCallback((qIdx, correctAnswer) => {
         if (completed || !!answers[qIdx]) return;
@@ -834,7 +860,11 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                 hintsUsed,
                 hiddenOptions,
                 activeQuestionIdx,
-                status: 'completed'
+                status: 'completed',
+                config: {
+                    ...initialTestState?.config,
+                    testHelps
+                }
             };
             onSaveTestRef.current(testId, finalTestData);
             try {
@@ -1073,15 +1103,15 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                             let btnStyle = { width: '36px', height: '36px', padding: 0 };
 
                                             if (completed) {
-                                                // Show correct/incorrect in navigation map if completed
                                                 const ans = answers[idx]?.selected;
-                                                const isCorrect = ans?.isCorrect;
-                                                const hasTypo = ans?.hasTypo;
-
-                                                if (isCorrect) {
-                                                    btnClass += hasTypo ? "bg-warning text-dark border-warning" : "bg-success text-white border-success";
+                                                const isSkipped = !answers[idx] || ans?.text === 'Boş bırakıldı';
+                                                
+                                                if (isSkipped) {
+                                                    btnClass += "bg-secondary text-white border-secondary";
+                                                } else if (ans?.isCorrect) {
+                                                    btnClass += ans.hasTypo ? "bg-warning text-dark border-warning" : "bg-success text-white border-success";
                                                 } else {
-                                                    btnClass += isAnswered ? "bg-danger text-white border-danger" : "bg-transparent text-body-secondary";
+                                                    btnClass += "bg-danger text-white border-danger";
                                                 }
                                             } else {
                                                 if (isActive) {
@@ -1214,7 +1244,18 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                     <Col lg={6} className="border-start-lg border-secondary border-opacity-10 ps-lg-4">
                                         <h5 className="fw-bold text-body mb-3">Hızlı Tekrarla</h5>
                                         <div className="d-flex flex-column gap-2">
-                                            <Button variant="outline-success" className="d-flex justify-content-between align-items-center rounded-3 p-3 text-start bg-success bg-opacity-10 border-success border-opacity-50 border-2 transition-all hover-opacity-75" onClick={() => onRetakeSame(resultQuestionTypes)}>
+                                            <Button variant="outline-success" className="d-flex justify-content-between align-items-center rounded-3 p-3 text-start bg-success bg-opacity-10 border-success border-opacity-50 border-2 transition-all hover-opacity-75" onClick={() => {
+                                                if (!Object.values(resultQuestionTypes).some(v => v)) {
+                                                    Swal.fire({
+                                                        icon: 'warning',
+                                                        title: 'Uyarı',
+                                                        text: 'Lütfen en az bir Soru Tipi seçiniz.',
+                                                        confirmButtonText: 'Tamam'
+                                                    });
+                                                    return;
+                                                }
+                                                onRetakeSame(resultQuestionTypes);
+                                            }}>
                                                 <div>
                                                     <div className="fw-bold text-success mb-1">Aynı testi yeniden çöz</div>
                                                     <small className="text-body-secondary">Aynı kelimelerle testi tekrarla.</small>
@@ -1232,7 +1273,18 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                                 </Button>
                                             )}
 
-                                            <Button variant="outline-primary" className="d-flex justify-content-between align-items-center rounded-3 p-3 text-start bg-body-secondary border-secondary border-opacity-25 border-2 transition-all hover-opacity-75" onClick={() => onRetakeNew(resultQuestionTypes)}>
+                                            <Button variant="outline-primary" className="d-flex justify-content-between align-items-center rounded-3 p-3 text-start bg-body-secondary border-secondary border-opacity-25 border-2 transition-all hover-opacity-75" onClick={() => {
+                                                if (!Object.values(resultQuestionTypes).some(v => v)) {
+                                                    Swal.fire({
+                                                        icon: 'warning',
+                                                        title: 'Uyarı',
+                                                        text: 'Lütfen en az bir Soru Tipi seçiniz.',
+                                                        confirmButtonText: 'Tamam'
+                                                    });
+                                                    return;
+                                                }
+                                                onRetakeNew(resultQuestionTypes);
+                                            }}>
                                                 <div>
                                                     <div className="fw-bold text-body mb-1">Yeni test çöz</div>
                                                     <small className="text-body-secondary">Farklı kelimelerle yeni test başlat.</small>
@@ -1271,12 +1323,8 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                                     <button
                                                         key={key}
                                                         type="button"
-                                                        className={`btn btn-sm rounded-pill px-4 py-2 fw-medium d-flex align-items-center gap-2 transition-all ${resultQuestionTypes[key] ? 'btn-primary shadow-sm' : 'btn-outline-secondary border-opacity-50'}`}
-                                                        onClick={() => setResultQuestionTypes(prev => {
-                                                            const newState = { ...prev, [key]: !prev[key] };
-                                                            if (!Object.values(newState).some(v => v)) return prev;
-                                                            return newState;
-                                                        })}
+                                                        className={`qtype-btn ${resultQuestionTypes[key] ? 'active' : 'inactive'}`}
+                                                        onClick={() => setResultQuestionTypes(prev => ({ ...prev, [key]: !prev[key] }))}
                                                     >
                                                         <i className={`bi ${icon}`}></i>
                                                         {label}
@@ -1340,12 +1388,12 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                                     {
                                                         key: 'errors',
                                                         label: 'Hatalı Kelimeler',
-                                                        count: errorWordsUniqueCount,
+                                                        count: typoCount,
                                                         icon: 'bi-exclamation-triangle-fill',
                                                         color: 'warning',
                                                         bgOpacity: 'bg-warning bg-opacity-10',
                                                         borderColor: 'border-warning border-opacity-25',
-                                                        ids: Array.from(new Set(errorQuestions.map(q => q.wordId)))
+                                                        ids: Array.from(new Set(typoQuestions.map(q => q.wordId)))
                                                     },
                                                     {
                                                         key: 'corrects',
@@ -1768,10 +1816,14 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
 
                                     if (completed) {
                                         const ans = answers[idx]?.selected;
-                                        if (ans?.isCorrect) {
+                                        const isSkipped = !answers[idx] || ans?.text === 'Boş bırakıldı';
+                                        
+                                        if (isSkipped) {
+                                            btnClass += "bg-secondary text-white border-secondary";
+                                        } else if (ans?.isCorrect) {
                                             btnClass += ans.hasTypo ? "bg-warning text-dark border-warning" : "bg-success text-white border-success";
                                         } else {
-                                            btnClass += isAnswered ? "bg-danger text-white border-danger" : "bg-transparent text-body-secondary";
+                                            btnClass += "bg-danger text-white border-danger";
                                         }
                                     } else {
                                         if (isActive) {

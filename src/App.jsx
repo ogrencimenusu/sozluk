@@ -1100,6 +1100,8 @@ function App() {
     setHomeSelectionTooltip(null);
   }, []);
 
+  // Global text-selection events disabled (now manual only)
+  /*
   useEffect(() => {
     let timeoutId;
     const handleSelectionChange = () => {
@@ -1123,6 +1125,7 @@ function App() {
       document.removeEventListener('touchstart', handleGlobalMouseDown);
     };
   }, [handleGlobalMouseUp, handleGlobalMouseDown]);
+  */
 
   // Keyboard detection to hide bottom nav
   useEffect(() => {
@@ -1878,20 +1881,13 @@ function App() {
       const updatedStats = { ...dailyStats };
       Object.keys(dailyStats).forEach(key => {
         const item = dailyStats[key];
-        const statsDocId = `${item.date}_${authUser.uid}`;
-        if (item._status === 'created') {
+        if (!item || typeof item !== 'object') return;
+        const statsDocId = `${item.date || key}_${authUser.uid}`;
+        if (item._status === 'created' || item._status === 'updated') {
           const cleanItem = { ...item };
           delete cleanItem._status;
           cleanItem.userId = authUser.uid; // Force correct userId to prevent disappearing
-          batch.set(doc(db, 'daily_stats', statsDocId), cleanItem);
-          delete updatedStats[key]._status;
-          updatedStats[key] = { ...cleanItem, userId: authUser.uid };
-          hasChanges = true;
-        } else if (item._status === 'updated') {
-          const cleanItem = { ...item };
-          delete cleanItem._status;
-          cleanItem.userId = authUser.uid; // Force correct userId to prevent disappearing
-          batch.update(doc(db, 'daily_stats', statsDocId), cleanItem);
+          batch.set(doc(db, 'daily_stats', statsDocId), cleanItem, { merge: true });
           delete updatedStats[key]._status;
           updatedStats[key] = { ...cleanItem, userId: authUser.uid };
           hasChanges = true;
@@ -2394,20 +2390,13 @@ function App() {
         const updatedStats = { ...dailyStats };
         Object.keys(dailyStats).forEach(key => {
           const item = dailyStats[key];
-          const statsDocId = `${item.date}_${authUser.uid}`;
-          if (item._status === 'created') {
+          if (!item || typeof item !== 'object') return;
+          const statsDocId = `${item.date || key}_${authUser.uid}`;
+          if (item._status === 'created' || item._status === 'updated') {
             const cleanItem = { ...item };
             delete cleanItem._status;
             cleanItem.userId = authUser.uid; // Force correct userId to prevent disappearing
-            batch.set(doc(db, 'daily_stats', statsDocId), cleanItem);
-            delete updatedStats[key]._status;
-            updatedStats[key] = { ...cleanItem, userId: authUser.uid };
-            hasChanges = true;
-          } else if (item._status === 'updated') {
-            const cleanItem = { ...item };
-            delete cleanItem._status;
-            cleanItem.userId = authUser.uid; // Force correct userId to prevent disappearing
-            batch.update(doc(db, 'daily_stats', statsDocId), cleanItem);
+            batch.set(doc(db, 'daily_stats', statsDocId), cleanItem, { merge: true });
             delete updatedStats[key]._status;
             updatedStats[key] = { ...cleanItem, userId: authUser.uid };
             hasChanges = true;
@@ -2716,7 +2705,7 @@ function App() {
     }
 
     const isNew = !currentDoc.date;
-    const status = isNew ? 'created' : 'updated';
+    const status = (currentDoc._status === 'created' || isNew) ? 'created' : 'updated';
     const newStats = { 
       ...dailyStats, 
       [localToday]: { 
@@ -3614,20 +3603,33 @@ function App() {
             const currentWordIds = listDoc.data().wordIds || [];
             const idsToAdd = selectedWords.filter(id => !currentWordIds.includes(id));
             
-            for (let i = 0; i < idsToAdd.length; i++) {
-              // Note: For large lists, single updates are slow. 
-              // But for UI feedback we update in chunks or one by one.
-              // A better way would be using writeBatch but here we want progress animation
-              await updateDoc(doc(db, 'customLists', bulkListId), {
-                wordIds: arrayUnion(idsToAdd[i])
-              });
-              setBulkProgress(((i + 1) / idsToAdd.length) * 100);
+            if (idsToAdd.length === 0) {
+              setBulkProgress(100);
+            } else {
+              for (let i = 0; i < idsToAdd.length; i++) {
+                // Note: For large lists, single updates are slow. 
+                // But for UI feedback we update in chunks or one by one.
+                // A better way would be using writeBatch but here we want progress animation
+                await updateDoc(doc(db, 'customLists', bulkListId), {
+                  wordIds: arrayUnion(idsToAdd[i])
+                });
+                setBulkProgress(((i + 1) / idsToAdd.length) * 100);
+              }
             }
+
+            // Update local React state to reflect list changes in UI immediately
+            setCustomLists(prev => prev.map(l => {
+              if (l.id === bulkListId) {
+                const updatedWordIds = [...new Set([...(l.wordIds || []), ...selectedWords])];
+                return { ...l, wordIds: updatedWordIds };
+              }
+              return l;
+            }));
           }
         } else {
           setCustomLists(prev => prev.map(l => {
             if (l.id === bulkListId) {
-              const updatedWordIds = [...new Set([...l.wordIds, ...selectedWords])];
+              const updatedWordIds = [...new Set([...(l.wordIds || []), ...selectedWords])];
               return { ...l, wordIds: updatedWordIds };
             }
             return l;
@@ -4015,54 +4017,7 @@ function App() {
 
   return (
     <div className="min-vh-100 py-4">
-      {/* Global sticky note tooltip for homepage text selection */}
-      {homeSelectionTooltip && (() => {
-        const existingNoteHome = stickyNotes.find(note => note.wordId === homeSelectionTooltip.wordId && note.text === homeSelectionTooltip.text);
-        return (
-          <div
-            ref={homeTooltipRef}
-            className="sticky-note-tooltip"
-            style={{
-              position: 'fixed',
-              left: `${homeSelectionTooltip.x}px`,
-              top: `${homeSelectionTooltip.y}px`,
-              transform: 'translate(-50%, -100%)',
-              zIndex: 9999,
-              pointerEvents: 'all',
-            }}
-          >
-            {existingNoteHome ? (
-              <button
-                className="btn btn-sm d-flex align-items-center gap-2"
-                style={{ backgroundColor: '#ef4444', color: 'white', border: 'none', borderRadius: '6px', padding: '6px 12px', fontSize: '13px', fontWeight: '500', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => {
-                  handleDeleteNote(existingNoteHome.id);
-                  setHomeSelectionTooltip(null);
-                  window.getSelection()?.removeAllRanges();
-                }}
-              >
-                <i className="bi bi-trash3-fill"></i>
-                <span>Notu Sil</span>
-              </button>
-            ) : (
-              <button
-                className="btn btn-sm sticky-note-save-btn d-flex align-items-center gap-2"
-                onMouseDown={(e) => e.preventDefault()} // prevent losing selection
-                onClick={() => {
-                  handleAddNote(homeSelectionTooltip.wordId, homeSelectionTooltip.wordTerm, homeSelectionTooltip.text);
-                  setHomeSelectionTooltip(null);
-                  window.getSelection()?.removeAllRanges();
-                }}
-              >
-                <i className="bi bi-pin-angle-fill"></i>
-                <span>Sticky Not</span>
-              </button>
-            )}
-            <div className="sticky-note-tooltip-arrow"></div>
-          </div>
-        );
-      })()}
+      {/* Global sticky note tooltip for homepage text selection disabled */}
       {currentView === 'home' && (
       <Container fluid className="main-app-container">
             <div className={`sticky-top pt-2 ${showFiltersCollapse || isSelectionMode ? 'bg-body shadow-sm pb-3' : 'pb-1'} px-1 transition-all`} style={{ zIndex: 1020, top: 0 }}>
