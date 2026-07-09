@@ -502,14 +502,49 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
         onSaveTestRef.current(testId, testData);
     }, [answers, writtenInputs, completed, hintsUsed, hiddenOptions, activeQuestionIdx, testId, testHelps, initialTestState?.config]);
 
+    const normalizeArabicText = (str) => {
+        if (!str) return '';
+        let normalized = str.trim().toLowerCase();
+        // 1. Strip diacritics / Tashkeel
+        normalized = normalized.replace(/[\u064B-\u0652\u0653-\u065F\u0670]/g, '');
+        // 2. Normalize Alifs
+        normalized = normalized.replace(/[أإآ]/g, 'ا');
+        // 3. Normalize Ta Marbuta
+        normalized = normalized.replace(/ة/g, 'ه');
+        // 4. Normalize Ya/Alif Maqsura
+        normalized = normalized.replace(/ى/g, 'ي');
+        return normalized;
+    };
+
+    const compareAnswers = (typed, correct, wordObj) => {
+        const t = typed.trim().toLowerCase();
+        const c = correct.trim().toLowerCase();
+        
+        if (t === c) return true;
+        
+        // Arabic comparison
+        const isArabic = /[\u0600-\u06FF]/.test(c);
+        if (isArabic) {
+            return normalizeArabicText(t) === normalizeArabicText(c);
+        }
+        
+        // Japanese comparison
+        if (wordObj && wordObj.language?.toLowerCase() === 'japanese') {
+            const root = (wordObj.rootWord || '').trim().toLowerCase();
+            if (root && t === root) return true;
+        }
+        
+        return false;
+    };
+
     const handleWrittenSubmit = React.useCallback((qIdx, correctAnswer) => {
         if (completed || !!answers[qIdx]) return;
         const typed = (writtenInputs[qIdx] || '').trim().toLowerCase();
         const correct = correctAnswer.trim().toLowerCase();
-        let isCorrect = typed === correct;
+        const wordObj = words.find(w => w.id === questions[qIdx].wordId);
+        let isCorrect = compareAnswers(typed, correct, wordObj);
 
         if (!isCorrect && typed.length > 0) {
-            const wordObj = words.find(w => w.id === questions[qIdx].wordId);
             const isVariant = wordObj?.variants?.some(v => v.toLowerCase() === typed);
             
             if (isVariant) {
@@ -646,23 +681,82 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
         }
     }, [completed, answers, hintsUsed, hiddenOptions]);
 
-    const handleSpeak = React.useCallback((text) => {
+    const handleSpeak = React.useCallback((text, wordId = null) => {
         if (!('speechSynthesis' in window)) return;
+
+        let targetLang = 'en-US';
+        let lang = 'English';
+
+        if (wordId) {
+            const wordObj = words.find(w => w.id === wordId);
+            if (wordObj && wordObj.language) lang = wordObj.language;
+        } else {
+            const matchedWord = words.find(w => w.term.toLowerCase() === text.trim().toLowerCase());
+            if (matchedWord && matchedWord.language) lang = matchedWord.language;
+        }
+
+        const langLower = lang.toLowerCase();
+        if (langLower.includes('japanese') || langLower.includes('japonca') || langLower.includes('ja')) {
+            targetLang = 'ja-JP';
+        } else if (langLower.includes('arabic') || langLower.includes('arapça') || langLower.includes('ar')) {
+            targetLang = 'ar-SA';
+        } else if (langLower.includes('german') || langLower.includes('almanca') || langLower.includes('de')) {
+            targetLang = 'de-DE';
+        } else if (langLower.includes('spanish') || langLower.includes('ispanyolca') || langLower.includes('es')) {
+            targetLang = 'es-ES';
+        } else if (langLower.includes('french') || langLower.includes('fransızca') || langLower.includes('fr')) {
+            targetLang = 'fr-FR';
+        } else if (langLower.includes('turkish') || langLower.includes('türkçe') || langLower.includes('tr')) {
+            targetLang = 'tr-TR';
+        }
 
         const speak = (voices) => {
             window.speechSynthesis.cancel();
-            const utterance = new SpeechSynthesisUtterance(text);
-            utterance.lang = 'en-US';
+            
+            let targetText = text;
+            let preferredVoice = null;
+            if (targetLang === 'ja-JP') {
+                preferredVoice = voices.find(v => v.lang === 'ja-JP' || v.lang.startsWith('ja'));
+            } else if (targetLang === 'ar-SA') {
+                preferredVoice = voices.find(v => v.lang.startsWith('ar'));
+            } else if (targetLang === 'en-US') {
+                preferredVoice =
+                    voices.find(v => v.name.includes('Google US English')) ||
+                    voices.find(v => v.name.includes('Samantha')) ||
+                    voices.find(v => v.name.includes('Alex')) ||
+                    voices.find(v => v.lang === 'en-US' || v.lang === 'en-GB') ||
+                    voices.find(v => v.lang.startsWith('en-'));
+            } else {
+                preferredVoice = voices.find(v => v.lang === targetLang || v.lang.startsWith(targetLang.split('-')[0]));
+            }
+
+            let selectedVoice = preferredVoice;
+            let selectedLang = targetLang;
+
+            if (!selectedVoice) {
+                selectedVoice = voices.find(v => v.default) || voices[0];
+                if (selectedVoice) {
+                    selectedLang = selectedVoice.lang;
+                    
+                    const hasNonLatin = /[^\u0000-\u007F\u00C0-\u017F]/.test(text);
+                    if (hasNonLatin && wordObj) {
+                        let pron = wordObj.pronunciation || '';
+                        if (pron.includes('(')) {
+                            const match = pron.match(/\(([^)]+)\)/);
+                            if (match) targetText = match[1].trim();
+                        } else if (pron) {
+                            targetText = pron.replace(/^\/|\/$/g, '').trim();
+                        }
+                    }
+                }
+            } else {
+                selectedLang = selectedVoice.lang;
+            }
+
+            const utterance = new SpeechSynthesisUtterance(targetText);
             utterance.rate = 0.9;
-
-            const englishVoice =
-                voices.find(v => v.name.includes('Google US English')) ||
-                voices.find(v => v.name.includes('Samantha')) ||
-                voices.find(v => v.name.includes('Alex')) ||
-                voices.find(v => v.lang === 'en-US' || v.lang === 'en-GB') ||
-                voices.find(v => v.lang.startsWith('en-'));
-
-            if (englishVoice) utterance.voice = englishVoice;
+            if (selectedVoice) utterance.voice = selectedVoice;
+            utterance.lang = selectedLang;
             window.speechSynthesis.speak(utterance);
         };
 
@@ -674,7 +768,7 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                 speak(window.speechSynthesis.getVoices());
             }, { once: true });
         }
-    }, []);
+    }, [words]);
 
     const scrollToQuestion = React.useCallback((idx) => {
         if (idx >= visibleCount) {
@@ -803,11 +897,11 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                     let isCorrect = false;
                     let hasTypo = false;
 
-                    if (typed.length > 0) {
-                        if (typed.toLowerCase() === correct.toLowerCase()) {
+                     if (typed.length > 0) {
+                        const wordObj = words.find(w => w.id === q.wordId);
+                        if (compareAnswers(typed, correct, wordObj)) {
                             isCorrect = true;
                         } else {
-                            const wordObj = words.find(w => w.id === q.wordId);
                             const isVariant = wordObj?.variants?.some(v => v.toLowerCase() === typed.toLowerCase());
                             
                             const typedRoot = nlp(typed).verbs().toInfinitive().text() || nlp(typed).nouns().toSingular().text() || typed;
@@ -837,7 +931,10 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                 const typed = finalAnswers[idx].selected.text;
                 if (typed !== 'Boş bırakıldı') {
                     const correct = q.answer.trim();
-                    if (typed.toLowerCase() !== correct.toLowerCase()) {
+                    const wordObj = words.find(w => w.id === q.wordId);
+                    if (compareAnswers(typed, correct, wordObj)) {
+                        finalAnswers[idx].selected.isCorrect = true;
+                    } else if (typed.toLowerCase() !== correct.toLowerCase()) {
                         const distance = levenshteinDistance(typed.toLowerCase(), correct.toLowerCase());
                         if (distance <= 3) {
                             finalAnswers[idx].selected.hasTypo = true;
@@ -1026,7 +1123,7 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
 
     return (
         <>
-            <Container fluid className="py-4 bg-body">
+            <Container fluid className="py-4 bg-transparent">
                 {/* Internal header removed to avoid redundancy with global PageHeader */}
                 <div className="d-md-none">
                     <button 
@@ -1260,7 +1357,7 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                                     <div className="fw-bold text-success mb-1">Aynı testi yeniden çöz</div>
                                                     <small className="text-body-secondary">Aynı kelimelerle testi tekrarla.</small>
                                                 </div>
-                                                <div className="bg-body rounded-circle d-flex align-items-center justify-content-center border shadow-sm flex-shrink-0" style={{ width: 32, height: 32 }}><i className="bi bi-arrow-right fw-bold text-body fs-6"></i></div>
+                                                <div className="bg-body-tertiary rounded-circle d-flex align-items-center justify-content-center border shadow-sm flex-shrink-0" style={{ width: 32, height: 32 }}><i className="bi bi-arrow-right fw-bold text-body fs-6"></i></div>
                                             </Button>
 
                                             {missedQuestions.length > 0 && (
@@ -1269,7 +1366,7 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                                         <div className="fw-bold text-warning-emphasis mb-1">Sadece hataları çöz</div>
                                                         <small className="text-body-secondary">{missedQuestions.length} soruyu tekrarla.</small>
                                                     </div>
-                                                    <div className="bg-body rounded-circle d-flex align-items-center justify-content-center border shadow-sm flex-shrink-0" style={{ width: 32, height: 32 }}><i className="bi bi-arrow-right fw-bold text-body fs-6"></i></div>
+                                                    <div className="bg-body-tertiary rounded-circle d-flex align-items-center justify-content-center border shadow-sm flex-shrink-0" style={{ width: 32, height: 32 }}><i className="bi bi-arrow-right fw-bold text-body fs-6"></i></div>
                                                 </Button>
                                             )}
 
@@ -1289,7 +1386,7 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                                     <div className="fw-bold text-body mb-1">Yeni test çöz</div>
                                                     <small className="text-body-secondary">Farklı kelimelerle yeni test başlat.</small>
                                                 </div>
-                                                <div className="bg-body rounded-circle d-flex align-items-center justify-content-center border shadow-sm flex-shrink-0" style={{ width: 32, height: 32 }}><i className="bi bi-arrow-right fw-bold text-body fs-6"></i></div>
+                                                <div className="bg-body-tertiary rounded-circle d-flex align-items-center justify-content-center border shadow-sm flex-shrink-0" style={{ width: 32, height: 32 }}><i className="bi bi-arrow-right fw-bold text-body fs-6"></i></div>
                                             </Button>
                                         </div>
                                     </Col>
@@ -1300,7 +1397,7 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                 <Row className="g-4">
                                     {/* Question Type Selection Row */}
                                     <Col lg={12}>
-                                        <div className="p-3 rounded-4 bg-body border border-secondary border-opacity-10 shadow-sm">
+                                        <div className="p-3 rounded-4 bg-body-tertiary border border-secondary border-opacity-10 shadow-sm">
                                             <div className="d-flex justify-content-between align-items-center mb-3">
                                                 <div className="d-flex align-items-center gap-2">
                                                     <i className="bi bi-sliders2 text-primary fs-5"></i>
@@ -1336,7 +1433,7 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
 
                                     {/* Word Management Section Row */}
                                     <Col lg={12}>
-                                        <div className="p-3 rounded-4 bg-body border border-secondary border-opacity-10 shadow-sm">
+                                        <div className="p-3 rounded-4 bg-body-tertiary border border-secondary border-opacity-10 shadow-sm">
                                             <div className="d-flex justify-content-between align-items-center mb-3">
                                                 <div className="d-flex align-items-center gap-2">
                                                     <i className="bi bi-star-fill text-warning fs-5"></i>
@@ -1454,7 +1551,7 @@ function PracticeTestActive({ questions, words, onClose, onHome, onFinish, onUpd
                                                             {/* Collapsible content */}
                                                             <Collapse in={isExpanded}>
                                                                 <div>
-                                                                    <div className="p-3 bg-body border-top border-secondary border-opacity-10">
+                                                                    <div className="p-3 bg-body-tertiary border-top border-secondary border-opacity-10">
                                                                         {cat.count === 0 ? (
                                                                             <div className="text-center text-muted small py-2">
                                                                                 Bu kategoride kelime bulunmuyor.

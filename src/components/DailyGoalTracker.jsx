@@ -1,9 +1,66 @@
 import React, { useState, useMemo } from 'react';
 import { Button, OverlayTrigger, Popover, Modal } from 'react-bootstrap';
+import Swal from 'sweetalert2';
 
 function DailyGoalTracker({ dailyStats }) {
   const [showModal, setShowModal] = useState(false);
   const [currentMonthDate, setCurrentMonthDate] = useState(new Date());
+
+  const handleClearStreak = async () => {
+    const theme = document.documentElement.getAttribute('data-bs-theme');
+    const result = await Swal.fire({
+      title: 'Streak Verilerini Temizle',
+      text: 'Tüm çalışma geçmişinizi ve streak (seri) verilerinizi silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#d33',
+      cancelButtonColor: '#3085d6',
+      confirmButtonText: 'Evet, Sil!',
+      cancelButtonText: 'Vazgeç',
+      background: theme === 'dark' ? '#1e293b' : '#fff',
+      color: theme === 'dark' ? '#f8fafc' : '#1e293b'
+    });
+
+    if (result.isConfirmed) {
+      Swal.fire({
+        title: 'Siliniyor...',
+        text: 'Streak verileri siliniyor, lütfen bekleyin...',
+        allowOutsideClick: false,
+        didOpen: () => {
+          Swal.showLoading();
+        },
+        background: theme === 'dark' ? '#1e293b' : '#fff',
+        color: theme === 'dark' ? '#f8fafc' : '#1e293b'
+      });
+
+      const event = new CustomEvent('clear-daily-stats', {
+        detail: {
+          onComplete: () => {
+            Swal.fire({
+              title: 'Temizlendi!',
+              text: 'Tüm streak ve günlük istatistik verileri başarıyla silindi.',
+              icon: 'success',
+              timer: 1500,
+              showConfirmButton: false,
+              background: theme === 'dark' ? '#1e293b' : '#fff',
+              color: theme === 'dark' ? '#f8fafc' : '#1e293b'
+            });
+            setShowModal(false);
+          },
+          onError: (err) => {
+            Swal.fire({
+              title: 'Hata!',
+              text: 'Silme işlemi sırasında bir hata oluştu: ' + err.message,
+              icon: 'error',
+              background: theme === 'dark' ? '#1e293b' : '#fff',
+              color: theme === 'dark' ? '#f8fafc' : '#1e293b'
+            });
+          }
+        }
+      });
+      window.dispatchEvent(event);
+    }
+  };
 
   // Helper to get local date string YYYY-MM-DD
   const getLocalDateStr = (d) => {
@@ -134,13 +191,42 @@ function DailyGoalTracker({ dailyStats }) {
     <>
       <OverlayTrigger placement="bottom" overlay={renderPopover} trigger={['hover', 'focus']}>
         <Button
-          variant={isGoalReached ? "danger" : "outline-secondary"}
-          className={`rounded-pill d-flex align-items-center justify-content-center gap-2 px-3 fw-bold shadow-sm ${!isGoalReached ? 'bg-body-secondary text-body border-0' : ''}`}
-          style={{ height: '40px' }}
           onClick={() => { setShowModal(true); setSelectedDate(todayStr); }}
+          className="rounded-pill d-flex align-items-center justify-content-center gap-2 px-3 fw-bold border-0 transition-all"
+          style={{
+            height: '40px',
+            background: isGoalReached 
+              ? 'linear-gradient(135deg, #f97316, #ef4444)' 
+              : 'rgba(249, 115, 22, 0.08)',
+            color: isGoalReached ? '#ffffff' : '#ea580c',
+            border: isGoalReached ? 'none' : '1px solid rgba(249, 115, 22, 0.25)',
+            boxShadow: isGoalReached 
+              ? '0 4px 14px rgba(249, 115, 22, 0.3)' 
+              : '0 2px 8px rgba(249, 115, 22, 0.04)',
+            transition: 'all 0.2s ease',
+            cursor: 'pointer'
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = 'translateY(-1px)';
+            if (isGoalReached) {
+              e.currentTarget.style.boxShadow = '0 6px 18px rgba(249, 115, 22, 0.4)';
+            } else {
+              e.currentTarget.style.background = 'rgba(249, 115, 22, 0.14)';
+              e.currentTarget.style.borderColor = 'rgba(249, 115, 22, 0.45)';
+            }
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = 'translateY(0)';
+            if (isGoalReached) {
+              e.currentTarget.style.boxShadow = '0 4px 14px rgba(249, 115, 22, 0.3)';
+            } else {
+              e.currentTarget.style.background = 'rgba(249, 115, 22, 0.08)';
+              e.currentTarget.style.borderColor = 'rgba(249, 115, 22, 0.25)';
+            }
+          }}
         >
-          <i className={`bi bi-fire ${isGoalReached ? 'text-white' : 'text-danger'}`} style={{ fontSize: '18px' }}></i>
-          <span className="d-none d-lg-inline">{isGoalReached ? todayProgress : `${remaining} kaldı`}</span>
+          <i className="bi bi-fire" style={{ fontSize: '18px', color: isGoalReached ? '#ffffff' : '#f97316' }}></i>
+          <span>{isGoalReached ? `${streakCount} Gün` : `${remaining} Kelime`}</span>
         </Button>
       </OverlayTrigger>
 
@@ -148,6 +234,16 @@ function DailyGoalTracker({ dailyStats }) {
         <div className="position-relative mx-auto" style={{ maxWidth: '800px', width: '100%' }}>
           {/* Top section (header) */}
           <div className="bg-body-secondary rounded-top-4 pt-4 pb-5 position-relative text-center overflow-hidden" style={{ minHeight: '140px' }}>
+            <Button
+              variant="outline-danger"
+              className="position-absolute top-0 start-0 m-3 rounded-circle d-flex align-items-center justify-content-center p-0 shadow-sm border-0 bg-body-tertiary text-danger"
+              style={{ width: '30px', height: '30px', zIndex: 10 }}
+              onClick={handleClearStreak}
+              title="Streak Verilerini Temizle"
+            >
+              <i className="bi bi-trash fs-5"></i>
+            </Button>
+
             <Button
               variant="secondary"
               className="position-absolute top-0 end-0 m-3 rounded-circle d-flex align-items-center justify-content-center p-0 shadow-sm border-0 bg-body-tertiary text-body"

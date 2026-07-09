@@ -107,7 +107,7 @@ export default function PracticeTestMatchPairs({ questions, words, onClose, onHo
     };
 
     return (
-        <Container fluid className="py-4 h-100 bg-body d-flex flex-column">
+        <Container fluid className="py-4 h-100 bg-transparent d-flex flex-column">
              <div className="d-flex justify-content-between align-items-center mb-4 px-md-4">
                  <div className="d-flex align-items-center gap-2">
                      <i className="bi bi-controller fs-4 text-success"></i>
@@ -173,7 +173,7 @@ export default function PracticeTestMatchPairs({ questions, words, onClose, onHo
                                  extraStyle.transform = 'scale(1.05)';
                                  extraStyle.zIndex = 10;
                              } else if (card.type === 'eng') {
-                                 containerClass += "bg-body border border-primary border-opacity-25 text-body match-card-hover ";
+                                 containerClass += "bg-body-tertiary border border-primary border-opacity-25 text-body match-card-hover ";
                              } else {
                                  containerClass += "bg-body-tertiary border border-secondary border-opacity-25 text-body match-card-hover ";
                              }

@@ -203,17 +203,20 @@ const NoteItem = React.memo(({
     return (
         <div
           id={`note-${note.id}`}
-          className={`sticky-note-list-item d-flex align-items-start gap-3 p-3 overflow-hidden transition-all ${justUpdatedNoteId === note.id ? 'just-updated' : ''} ${!note.wordId && note.isCompleted ? 'completed' : ''}`}
+          className={`premium-note-block d-flex align-items-start gap-3 p-3 overflow-hidden transition-all ${justUpdatedNoteId === note.id ? 'just-updated' : ''} ${!note.wordId && note.isCompleted ? 'completed' : ''}`}
+          style={{
+            borderLeft: !note.wordId && note.isCompleted ? '4px solid #22c55e' : (note.wordTerm && note.wordTerm !== 'Manuel Not' && note.wordTerm !== 'MANUEL NOT' ? '4px solid #3b82f6' : '4px solid #f59e0b')
+          }}
         >
-          <div className={`sticky-note-list-pin flex-shrink-0 ${!note.wordId && note.isCompleted ? 'text-success' : ''}`}>
-            <i className={`bi ${!note.wordId && note.isCompleted ? 'bi-check-circle-fill' : 'bi-pin-angle-fill'}`}></i>
+          <div className="premium-note-pin flex-shrink-0">
+            <i className={`bi ${!note.wordId && note.isCompleted ? 'bi-check-circle-fill text-success' : 'bi-pin-fill'}`}></i>
           </div>
-          <div className="flex-grow-1 min-w-0">
+          <div className="flex-grow-1 min-w-0 ps-3">
             {note.wordTerm && (
               <div className="sticky-note-list-word-tag mb-2">
                 <i className="bi bi-link-45deg me-1 opacity-50" style={{ fontSize: '0.8rem' }}></i>
                 {(note.wordTerm === 'Manuel Not' || note.wordTerm === 'MANUEL NOT' || !note.wordTerm) 
-                  ? 'Not' 
+                  ? <span className="badge bg-warning bg-opacity-10 text-warning px-2 py-1 rounded-pill fw-bold" style={{ fontSize: '0.65rem' }}>Manuel Not</span> 
                   : (
                     <span 
                       className="cursor-pointer hover-opacity-100 opacity-75 transition-all d-inline-flex align-items-center"
@@ -223,7 +226,7 @@ const NoteItem = React.memo(({
                       }}
                       title="Kelime detaylarını gör"
                     >
-                      İlişkili Kelime: <strong className="ms-1">{renderHighlightedText(note.wordTerm, searchQuery)}</strong>
+                      İlişkili Kelime: <strong className="ms-1 text-primary">{renderHighlightedText(note.wordTerm, searchQuery)}</strong>
                     </span>
                   )}
               </div>
@@ -406,28 +409,28 @@ const NoteItem = React.memo(({
                     {inlineEditingSelectedWords.map((w, i) => {
                       const status = getWordStatus(w);
                       return (
-                        <Badge
+                        <span
                           key={i}
-                          bg={status === 'exact' ? 'primary' : status === 'root' ? 'pink' : 'danger'}
-                           style={{ backgroundColor: status === 'root' ? '#e83e8c' : undefined, cursor: 'pointer' }}
-                           className="d-flex align-items-center gap-2 rounded-pill px-3 py-2 shadow-sm border-0 transition-all hover-scale-sm"
-                           onClick={() => status !== 'none' && handleWordClickInternal(w)}
-                         >
-                           <span>{w}</span>
-                           <i 
-                             className="bi bi-x-lg cursor-pointer hover-opacity-100 opacity-75 ms-1"
-                             onClick={(e) => {
-                               e.stopPropagation();
-                               const newSelected = inlineEditingSelectedWords.filter(sw => sw !== w);
-                               setInlineEditingSelectedWords(newSelected);
-                               setInlineEditingText(prev => {
-                                 const escapedWord = w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                                 const regex = new RegExp(`<mark[^>]*>(${escapedWord})</mark>`, 'gi');
-                                 return prev.replace(regex, '$1');
-                               });
-                             }}
-                           ></i>
-                         </Badge>
+                          className={`premium-tag-badge badge-${status}`}
+                          style={{ cursor: status !== 'none' ? 'pointer' : 'default' }}
+                          onClick={() => status !== 'none' && handleWordClickInternal(w)}
+                        >
+                          <span>{w}</span>
+                          <i 
+                            className="bi bi-x-lg cursor-pointer hover-opacity-100 opacity-75 ms-1"
+                            style={{ fontSize: '0.65rem' }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const newSelected = inlineEditingSelectedWords.filter(sw => sw !== w);
+                              setInlineEditingSelectedWords(newSelected);
+                              setInlineEditingText(prev => {
+                                const escapedWord = w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                                const regex = new RegExp(`<mark[^>]*>(${escapedWord})</mark>`, 'gi');
+                                return prev.replace(regex, '$1');
+                              });
+                            }}
+                          ></i>
+                        </span>
                       );
                     })}
                   </div>
@@ -451,28 +454,30 @@ const NoteItem = React.memo(({
                   }}
                 >
                   {note.title && (
-                    <div className={`sticky-note-list-title h6 fw-bold mb-2 ${note.isCompleted ? 'opacity-50' : 'text-body'}`}>
+                    <div className={`h6 fw-bold mb-2 ${note.isCompleted ? 'opacity-50 text-secondary' : 'text-body-emphasis'}`} style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontSize: '1.1rem', letterSpacing: '-0.3px' }}>
                       {renderHighlightedText(note.title, searchQuery)}
                     </div>
                   )}
 
                   <div
-                    className={`sticky-note-list-text mb-2 bg-body p-3 rounded-3 border border-opacity-10 shadow-sm ${(!note.wordId || note.wordTerm === 'Manuel Not' || note.wordTerm === 'MANUEL NOT') && !expandedManualNotes.includes(note.id) ? 'line-clamp-5' : ''}`}
+                    className={`mb-2 p-1 ${(!note.wordId || note.wordTerm === 'Manuel Not' || note.wordTerm === 'MANUEL NOT') && !expandedManualNotes.includes(note.id) ? 'line-clamp-5' : ''}`}
                     style={{
-                      backgroundColor: theme === 'light' ? '#fef9c3 !important' : 'rgba(234, 179, 8, 0.1) !important',
                       whiteSpace: 'pre-wrap',
-                      wordBreak: 'break-word'
+                      wordBreak: 'break-word',
+                      fontSize: '0.96rem',
+                      lineHeight: '1.6',
+                      color: 'var(--bs-body-color)'
                     }}
                     dangerouslySetInnerHTML={{ __html: highlightWordsInHtml(note.text, note.selectedWords) }}
                   />
 
                   {/* Show More Button */}
                   {(!note.wordId || note.wordTerm === 'Manuel Not' || note.wordTerm === 'MANUEL NOT') && (
-                    <div className="d-flex flex-column align-items-center mt-n2 mb-2">
+                    <div className="d-flex flex-column align-items-start mt-2 mb-2">
                       <Button 
                         variant="link" 
                         size="sm" 
-                        className="text-primary text-decoration-none py-0 fw-semibold d-flex align-items-center gap-1"
+                        className="text-primary text-decoration-none p-0 fw-semibold d-flex align-items-center gap-1"
                         onClick={(e) => {
                           e.stopPropagation();
                           setExpandedManualNotes(prev => prev.includes(note.id) ? prev.filter(id => id !== note.id) : [...prev, note.id]);
@@ -482,14 +487,14 @@ const NoteItem = React.memo(({
                       </Button>
 
                       {note.selectedWords && note.selectedWords.length > 0 && (
-                        <div className="d-flex flex-wrap justify-content-center gap-1 mt-2">
+                        <div className="d-flex flex-wrap gap-2 mt-3">
                           {note.selectedWords.map((w, i) => {
                             const status = getWordStatus(w);
                             return (
                               <span 
                                 key={i} 
-                                className={`badge ${status === 'exact' ? 'bg-primary' : status === 'root' ? 'pink' : 'bg-danger'} bg-opacity-10 ${status === 'exact' ? 'text-primary' : status === 'root' ? 'pink' : 'text-danger'} border ${status === 'exact' ? 'border-primary' : status === 'root' ? 'pink' : 'border-danger'} border-opacity-25 rounded-pill`} 
-                                style={{ fontSize: '0.7rem', fontWeight: '500', cursor: status !== 'none' ? 'pointer' : 'default' }}
+                                className={`premium-tag-badge badge-${status}`} 
+                                style={{ cursor: status !== 'none' ? 'pointer' : 'default' }}
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   if (status !== 'none') handleWordClickInternal(w);
@@ -506,39 +511,53 @@ const NoteItem = React.memo(({
                 </div>
             )}
 
-            <div className="d-flex justify-content-between align-items-center mt-2 px-1">
-              <span className="sticky-note-list-date d-flex align-items-center gap-1">
-                <i className="bi bi-clock"></i>
+            <div className="d-flex justify-content-between align-items-center mt-3 pt-2 border-top border-opacity-10" style={{ borderColor: 'rgba(0,0,0,0.05)' }}>
+              <span className="sticky-note-list-date d-flex align-items-center gap-1 text-muted" style={{ fontSize: '0.75rem' }}>
+                <i className="bi bi-calendar3"></i>
                 {isValidDate ? noteDate.toLocaleString('tr-TR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'}
               </span>
-              <div className="d-flex gap-3 align-items-center">
+              <div className="d-flex gap-2 align-items-center">
                 {isEditing && (
-                  <a
-                    href="#!"
-                    className="sticky-note-list-complete fw-semibold d-flex align-items-center gap-1 text-primary"
-                    onClick={(e) => { 
-                      e.preventDefault(); 
-                      // Optimized Text Scan
-                      const plainText = inlineEditingText.replace(/<[^>]*>/g, ' ');
-                      const doc = nlp(plainText);
-                      const textWords = doc.terms().json().map(t => t.text.toLowerCase().replace(/[.,!?;:]/g, ''));
-                      
-                      const foundWords = [...new Set(textWords)].filter(tw => tw && tw.length > 2 && getWordStatus(tw) !== 'none');
-                      
-                      if (foundWords.length > 0) {
-                        const newWords = [...new Set([...inlineEditingSelectedWords, ...foundWords])];
-                        setInlineEditingSelectedWords(newWords);
-                        setInlineEditingText(prev => highlightWordsInHtml(prev, newWords));
-                      }
-                    }}
-                  >
-                    <i className="bi bi-search"></i> Metni Tara
-                  </a>
+                  <>
+                    <a
+                      href="#!"
+                      className="premium-action-btn text-success"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        saveCurrentNote();
+                        setEditingNoteId(null);
+                      }}
+                    >
+                      <i className="bi bi-check-circle-fill"></i>
+                      <span>Kaydet</span>
+                    </a>
+                    <a
+                      href="#!"
+                      className="premium-action-btn"
+                      onClick={(e) => { 
+                        e.preventDefault(); 
+                        // Optimized Text Scan
+                        const plainText = inlineEditingText.replace(/<[^>]*>/g, ' ');
+                        const doc = nlp(plainText);
+                        const textWords = doc.terms().json().map(t => t.text.toLowerCase().replace(/[.,!?;:]/g, ''));
+                        
+                        const foundWords = [...new Set(textWords)].filter(tw => tw && tw.length > 2 && getWordStatus(tw) !== 'none');
+                        
+                        if (foundWords.length > 0) {
+                          const newWords = [...new Set([...inlineEditingSelectedWords, ...foundWords])];
+                          setInlineEditingSelectedWords(newWords);
+                          setInlineEditingText(prev => highlightWordsInHtml(prev, newWords));
+                        }
+                      }}
+                    >
+                      <i className="bi bi-search"></i> Scan
+                    </a>
+                  </>
                 )}
                 {!note.wordId && (
                   <a
                     href="#!"
-                    className={`sticky-note-list-complete fw-semibold d-flex align-items-center gap-1 ${note.isCompleted ? 'text-secondary' : 'text-success'}`}
+                    className="premium-action-btn"
                     onClick={(e) => { 
                       e.preventDefault(); 
                       saveCurrentNote();
@@ -546,16 +565,17 @@ const NoteItem = React.memo(({
                       setEditingNoteId(null);
                     }}
                   >
-                    <i className={`bi ${note.isCompleted ? 'bi-arrow-counterclockwise' : 'bi-check2-circle'}`}></i>
-                    {note.isCompleted ? 'Geri Al' : 'Tamamlandı'}
+                    <i className={`bi ${note.isCompleted ? 'bi-arrow-counterclockwise text-secondary' : 'bi-check2-circle text-success'}`}></i>
+                    <span>{note.isCompleted ? 'Geri Al' : 'Tamamlandı'}</span>
                   </a>
                 )}
                 <a
                   href="#!"
-                  className="sticky-note-list-delete fw-semibold d-flex align-items-center gap-1 text-danger"
+                  className="premium-action-btn btn-delete text-danger"
                   onClick={(e) => { e.preventDefault(); handleDeleteNote(note.id); }}
                 >
-                  <i className="bi bi-trash"></i> Sil
+                  <i className="bi bi-trash3-fill"></i>
+                  <span>Sil</span>
                 </a>
               </div>
             </div>
@@ -913,132 +933,170 @@ const StickyNotesPage = ({
   };
 
   return (
-    <Container fluid className="main-app-container animation-fade-in" style={{ animation: 'fadeIn 0.3s ease-in-out' }}>
-      <PageHeader
-        title="Sticky Notlarım"
-        icon="bi-pin-angle-fill"
-        onBack={() => navigateTo('home')}
-        dailyStats={dailyStats}
-      />
-
-      {/* Mobile Sidebar Toggle Button */}
-      <div className="d-md-none">
-        <button 
-          className="mobile-nav-toggle-btn"
-          onClick={() => setShowMobileTitles(true)}
-          title="Not Başlıklarını Aç"
-          style={{ top: '150px' }} // Position it below any other global toggles
+    <div className="premium-notes-wrapper animate-fade-in py-2">
+      {/* Premium Dashboard Header Banner */}
+      <div 
+        className="premium-header-banner mb-4 p-4 p-md-5 rounded-4 d-flex align-items-center gap-4 text-white position-relative overflow-hidden" 
+        style={{ 
+          background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+          boxShadow: '0 10px 30px rgba(245, 158, 11, 0.12)',
+          borderRadius: '24px'
+        }}
+      >
+        {/* Background glow overlay */}
+        <div 
+          className="position-absolute rounded-circle" 
+          style={{ 
+            width: '180px', 
+            height: '180px', 
+            background: 'rgba(255, 255, 255, 0.08)', 
+            top: '-60px', 
+            right: '-30px',
+            filter: 'blur(35px)',
+            pointerEvents: 'none'
+          }}
+        ></div>
+        
+        <div 
+          className="d-flex align-items-center justify-content-center rounded-circle flex-shrink-0" 
+          style={{ 
+            width: '56px', 
+            height: '56px', 
+            background: 'rgba(255, 255, 255, 0.15)',
+            border: '1px solid rgba(255, 255, 255, 0.25)',
+            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.05)',
+            backdropFilter: 'blur(4px)'
+          }}
         >
-          <i className="bi bi-list-ul"></i>
-        </button>
+          <i className="bi bi-pin-angle-fill fs-3 text-white"></i>
+        </div>
+        <div>
+          <h2 className="fw-extrabold mb-1" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontSize: '1.65rem', fontWeight: '800', letterSpacing: '-0.5px' }}>
+            Sticky Notlarım
+          </h2>
+          <p className="mb-0 text-white-50 small" style={{ fontSize: '0.88rem', opacity: 0.85 }}>
+            Seçtiğiniz kelimelere özel aldığınız notları ve genel notlarınızı buradan yönetin.
+          </p>
+        </div>
       </div>
 
-      <Row className="g-4 position-relative">
-        {/* Sol Kolon: Başlık Listesi Sidebar - Desktop'ta solda, Mobil'de altta (hidden by default on mobile) */}
-        <Col md={5} lg={4} className="order-2 order-md-1 d-none d-md-block sticky-sidebar">
-          <Card className="border-0 shadow-sm rounded-4 bg-body-tertiary">
-            <Card.Header className="bg-transparent border-0 pt-4 pb-2 px-4">
-              <h5 className="fw-bold m-0 d-flex align-items-center gap-2 text-primary">
-                <i className="bi bi-list-ul"></i> Not Başlıkları
-              </h5>
-            </Card.Header>
-            <Card.Body className="p-0">
-              {Object.keys(allGroupedNotes).length === 0 ? (
-                <div className="text-muted text-center p-4">Not bulunamadı.</div>
-              ) : (
-                <div className="d-flex flex-column gap-3 p-4 pt-1" style={{ maxHeight: 'calc(100vh - 250px)', overflowY: 'auto', overflowX: 'hidden' }}>
-                  {Object.entries(allGroupedNotes).map(([dateLabel, items], idx) => (
-                    <div key={idx}>
-                      <div className="small fw-bold text-muted mb-2 ps-2" style={{ letterSpacing: '0.5px' }}>{dateLabel}</div>
-                      <div className="d-flex flex-column gap-2">
-                        {(() => {
-                          const linkedItems = items.filter(n => n.wordTerm && n.wordTerm !== 'Manuel Not' && n.wordTerm !== 'MANUEL NOT');
-                          const manualItems = items.filter(n => !n.wordTerm || n.wordTerm === 'Manuel Not' || n.wordTerm === 'MANUEL NOT');
-                          const isLinkedExpanded = expandedLinkedGroups.includes(dateLabel);
+        {/* Mobile Sidebar Toggle Button */}
+        <div className="d-md-none">
+          <button 
+            className="mobile-nav-toggle-btn"
+            onClick={() => setShowMobileTitles(true)}
+            title="Not Başlıklarını Aç"
+            style={{ top: '150px' }}
+          >
+            <i className="bi bi-list-ul"></i>
+          </button>
+        </div>
 
-                          return (
-                            <>
-                              {linkedItems.length > 0 && (
-                                <Button 
-                                  variant="primary" 
-                                  size="sm" 
-                                  className="w-100 rounded-4 mb-2 py-2 d-flex align-items-center justify-content-between px-3 shadow-sm border-0"
-                                  onClick={() => toggleLinkedGroup(dateLabel)}
-                                  style={{ background: 'linear-gradient(135deg, #3b82f6, #2563eb)' }}
-                                >
-                                  <span className="fw-bold small"><i className="bi bi-link-45deg me-1"></i> {linkedItems.length} tane ilişkili not</span>
-                                  <i className={`bi ${isLinkedExpanded ? 'bi-chevron-up' : 'bi-chevron-down'} small`}></i>
-                                </Button>
-                              )}
-                              
-                              {isLinkedExpanded && linkedItems.map((note, i) => (
-                                <div
-                                  key={note.id}
-                                  className="bg-body shadow-sm p-3 rounded-4 d-flex align-items-center gap-3 interactive-card mb-1 border-start border-4 border-primary"
-                                  style={{ cursor: 'pointer' }}
-                                  onClick={() => scrollToNote(note.id)}
-                                >
-                                  <div className="fw-bold fs-6 flex-grow-1 d-flex justify-content-between align-items-center gap-2" style={{ minWidth: 0 }}>
-                                    <div className="text-truncate text-body-secondary fw-normal" style={{ flexShrink: 1, minWidth: 0 }}>
-                                      {i + 1}. {note.wordTerm}
-                                    </div>
-                                    {note.title && (
-                                      <div className="text-truncate text-primary text-end flex-grow-1" style={{ minWidth: 0 }}>
-                                        {note.title}
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              ))}
+        <Row className="g-4 position-relative">
+          {/* Sol Kolon: Başlık Listesi Sidebar - Desktop'ta solda */}
+          <Col md={5} lg={4} className="order-2 order-md-1 d-none d-md-block sticky-sidebar">
+            <Card className="border-0 premium-notes-card">
+              <Card.Header className="bg-transparent border-0 pt-4 pb-2 px-4">
+                <h5 className="fw-bold m-0 d-flex align-items-center gap-2 text-primary" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+                  <i className="bi bi-list-ul"></i> Not Başlıkları
+                </h5>
+              </Card.Header>
+              <Card.Body className="p-0">
+                {Object.keys(allGroupedNotes).length === 0 ? (
+                  <div className="text-muted text-center p-4">Not bulunamadı.</div>
+                ) : (
+                  <div className="d-flex flex-column gap-3 p-4 pt-1" style={{ maxHeight: 'calc(100vh - 250px)', overflowY: 'auto', overflowX: 'hidden' }}>
+                    {Object.entries(allGroupedNotes).map(([dateLabel, items], idx) => (
+                      <div key={idx}>
+                        <div className="small fw-bold text-muted mb-2 ps-2" style={{ letterSpacing: '0.5px' }}>{dateLabel}</div>
+                        <div className="d-flex flex-column gap-2">
+                          {(() => {
+                            const linkedItems = items.filter(n => n.wordTerm && n.wordTerm !== 'Manuel Not' && n.wordTerm !== 'MANUEL NOT');
+                            const manualItems = items.filter(n => !n.wordTerm || n.wordTerm === 'Manuel Not' || n.wordTerm === 'MANUEL NOT');
+                            const isLinkedExpanded = expandedLinkedGroups.includes(dateLabel);
 
-                              {manualItems.slice(0, expandedDates.includes(dateLabel) ? manualItems.length : 4).map((note, i) => (
-                                <div
-                                  key={note.id}
-                                  className="bg-body shadow-sm p-3 rounded-4 d-flex align-items-center gap-3 interactive-card mb-1"
-                                  style={{ cursor: 'pointer' }}
-                                  onClick={() => scrollToNote(note.id)}
-                                >
-                                  <div className={`fw-bold fs-6 flex-grow-1 text-truncate ${note.isCompleted ? 'text-success opacity-75' : ''}`}
-                                       style={!note.isCompleted ? { color: '#f59e0b' } : {}}>
-                                    {i + 1}. {note.title || (note.text ? note.text.substring(0, 30) + '...' : 'Başlıksız Not')}
-                                  </div>
-                                  {note.isCompleted && <i className="bi bi-check-circle-fill text-success opacity-50"></i>}
-                                </div>
-                              ))}
-                              
-                              {manualItems.length > 4 && (
-                                <div className="text-center mt-1">
-                                  <span
-                                    className="text-primary small fw-medium"
-                                    style={{ cursor: 'pointer' }}
-                                    onClick={() => handleToggleExpand(dateLabel)}
+                            return (
+                              <>
+                                {linkedItems.length > 0 && (
+                                  <Button 
+                                    variant="primary" 
+                                    size="sm" 
+                                    className="w-100 rounded-4 mb-2 py-2 d-flex align-items-center justify-content-between px-3 shadow-sm border-0"
+                                    onClick={() => toggleLinkedGroup(dateLabel)}
+                                    style={{ background: 'linear-gradient(135deg, #3b82f6, #2563eb)' }}
                                   >
-                                    {expandedDates.includes(dateLabel) ? (
-                                      <><i className="bi bi-chevron-up"></i> Daha az göster</>
-                                    ) : (
-                                      <>({manualItems.length - 4} adet not daha) <i className="bi bi-chevron-down"></i></>
-                                    )}
-                                  </span>
-                                </div>
-                              )}
-                            </>
-                          );
-                        })()}
+                                    <span className="fw-bold small"><i className="bi bi-link-45deg me-1"></i> {linkedItems.length} ilişkili not</span>
+                                    <i className={`bi ${isLinkedExpanded ? 'bi-chevron-up' : 'bi-chevron-down'} small`}></i>
+                                  </Button>
+                                )}
+                                
+                                {isLinkedExpanded && linkedItems.map((note, i) => (
+                                  <div
+                                    key={note.id}
+                                    className="premium-sidebar-item bg-body shadow-sm p-3 rounded-4 d-flex align-items-center gap-3 mb-2 border-start border-4 border-primary"
+                                    style={{ cursor: 'pointer' }}
+                                    onClick={() => scrollToNote(note.id)}
+                                  >
+                                    <div className="fw-bold fs-6 flex-grow-1 d-flex justify-content-between align-items-center gap-2" style={{ minWidth: 0 }}>
+                                      <div className="text-truncate text-body-secondary fw-normal" style={{ flexShrink: 1, minWidth: 0 }}>
+                                        {i + 1}. {note.wordTerm}
+                                      </div>
+                                      {note.title && (
+                                        <div className="text-truncate text-primary text-end flex-grow-1" style={{ minWidth: 0 }}>
+                                          {note.title}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                ))}
+
+                                {manualItems.slice(0, expandedDates.includes(dateLabel) ? manualItems.length : 4).map((note, i) => (
+                                  <div
+                                    key={note.id}
+                                    className="premium-sidebar-item bg-body shadow-sm p-3 rounded-4 d-flex align-items-center gap-3 mb-2 border-start border-4 border-warning"
+                                    style={{ cursor: 'pointer' }}
+                                    onClick={() => scrollToNote(note.id)}
+                                  >
+                                    <div className={`fw-bold fs-6 flex-grow-1 text-truncate ${note.isCompleted ? 'text-success opacity-75' : 'text-body'}`}>
+                                      {i + 1}. {note.title || (note.text ? note.text.replace(/<[^>]*>/g, '').substring(0, 30) + '...' : 'Başlıksız Not')}
+                                    </div>
+                                    {note.isCompleted && <i className="bi bi-check-circle-fill text-success opacity-50"></i>}
+                                  </div>
+                                ))}
+                                
+                                {manualItems.length > 4 && (
+                                  <div className="text-center mt-1">
+                                    <span
+                                      className="text-primary small fw-medium"
+                                      style={{ cursor: 'pointer' }}
+                                      onClick={() => handleToggleExpand(dateLabel)}
+                                    >
+                                      {expandedDates.includes(dateLabel) ? (
+                                        <><i className="bi bi-chevron-up"></i> Daha az göster</>
+                                      ) : (
+                                        <>({manualItems.length - 4} adet not daha) <i className="bi bi-chevron-down"></i></>
+                                      )}
+                                    </span>
+                                  </div>
+                                )}
+                              </>
+                            );
+                          })()}
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </Card.Body>
-          </Card>
-        </Col>
+                    ))}
+                  </div>
+                )}
+              </Card.Body>
+            </Card>
+          </Col>
 
         {/* Sağ Kolon: Form ve Liste */}
         <Col xs={12} md={7} lg={8} className="order-1 order-md-2">
           {/* Yeni Not Ekleme Alanı */}
-          <Card className="border-0 shadow-sm rounded-4 mb-4 bg-body-tertiary">
+          <Card className="border-0 premium-notes-card mb-4">
             <Card.Body className="p-4">
-              <h6 className="fw-bold mb-3 text-primary d-flex align-items-center gap-2">
+              <h6 className="fw-bold mb-3 text-warning d-flex align-items-center gap-2" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
                 <i className="bi bi-pencil-square"></i> Hızlı Not Ekle
               </h6>
               <div className="d-flex flex-column gap-3">
@@ -1051,14 +1109,14 @@ const StickyNotesPage = ({
                   }}
                   className="w-100"
                 >
-                  <div className="d-flex bg-body-secondary rounded-pill align-items-center mb-0 pe-2">
+                  <div className="d-flex bg-body rounded-3 align-items-center mb-0 pe-2 border border-opacity-25" style={{ borderColor: 'var(--bs-border-color)' }}>
                     <Form.Control
                       type="text"
                       placeholder="Not Başlığı (İsteğe bağlı)..."
                       value={manualNoteTitle}
                       onChange={(e) => setManualNoteTitle(e.target.value)}
                       onClick={() => setShowTitleDropdown('new')}
-                      className="bg-transparent border-0 shadow-none px-4 py-3 flex-grow-1"
+                      className="bg-transparent border-0 shadow-none px-4 py-3 flex-grow-1 fw-bold text-body"
                     />
                     {manualNoteTitle && (
                       <Button 
@@ -1114,10 +1172,23 @@ const StickyNotesPage = ({
                     className="flex-grow-1"
                   />
                   <Button
-                    variant="primary"
-                    className="rounded-pill px-4 py-3 fw-semibold shadow-sm text-nowrap d-flex align-items-center justify-content-center gap-2 mt-sm-5"
+                    variant="warning"
+                    className="rounded-pill px-4 py-3 fw-bold shadow-sm text-nowrap d-flex align-items-center justify-content-center gap-2 mt-sm-5 border-0 text-white"
                     onClick={() => handleAddNote(null, null, manualNoteText, manualNoteTitle)}
                     disabled={!manualNoteText || !manualNoteText.trim() || manualNoteText === '<br>'}
+                    style={{
+                      background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                      transition: 'all 0.2s ease',
+                      cursor: 'pointer'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.transform = 'translateY(-2px)';
+                      e.currentTarget.style.boxShadow = '0 6px 20px rgba(245, 158, 11, 0.4)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.transform = 'translateY(0)';
+                      e.currentTarget.style.boxShadow = 'none';
+                    }}
                   >
                     <i className="bi bi-plus-lg"></i> Not Ekle
                   </Button>
@@ -1127,11 +1198,11 @@ const StickyNotesPage = ({
           </Card>
 
           {/* Not Listesi */}
-          <Card className="border-0 shadow-sm rounded-4 bg-body-tertiary">
+          <Card className="border-0 premium-notes-card">
             <Card.Body className="p-0">
               <div className="d-flex flex-column flex-sm-row align-items-sm-center justify-content-between p-4 border-bottom border-opacity-10 gap-3">
-                <h6 className="fw-bold m-0 text-secondary d-flex align-items-center gap-2">
-                  <i className="bi bi-card-text"></i> Kaydedilen Notlar
+                <h6 className="fw-bold m-0 text-secondary d-flex align-items-center gap-2" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+                  <i className="bi bi-card-text text-warning"></i> Kaydedilen Notlar
                 </h6>
                 
                 <div className="d-flex align-items-center gap-3">
@@ -1142,11 +1213,11 @@ const StickyNotesPage = ({
                       placeholder="Notlarda ara..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      className="bg-body-secondary border-0 shadow-none ps-5 pe-4 py-2 rounded-pill small"
-                      style={{ width: '200px', fontSize: '0.9rem' }}
+                      className="bg-body border-0 shadow-none ps-5 pe-4 py-2 rounded-pill small border border-opacity-25"
+                      style={{ width: '220px', fontSize: '0.9rem', borderColor: 'var(--bs-border-color)' }}
                     />
                   </div>
-                  <span className="badge bg-primary bg-opacity-10 text-primary rounded-pill px-3 py-2 fw-bold">
+                  <span className="badge bg-warning bg-opacity-10 text-warning rounded-pill px-3 py-2 fw-bold border border-warning border-opacity-25" style={{ fontSize: '0.8rem' }}>
                     {filteredNotes.length} Not
                   </span>
                 </div>
@@ -1307,7 +1378,7 @@ const StickyNotesPage = ({
           </div>
         </Offcanvas.Body>
       </Offcanvas>
-    </Container>
+    </div>
   );
 };
 

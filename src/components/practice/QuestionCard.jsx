@@ -3,6 +3,15 @@ import { Button, Row, Col, Card, Badge, OverlayTrigger, Popover, Dropdown } from
 import nlp from 'compromise';
 import LearningStageBar from '../LearningStageBar';
 
+const getTurkishPronunciation = (pron) => {
+    if (!pron) return '';
+    const match = pron.match(/\(([^)]+)\)/);
+    if (match) {
+        return `(${match[1]})`;
+    }
+    return pron.replace(/^\/+|\/+$/g, '').trim();
+};
+
 const QuestionCard = memo(({
     idx,
     currentQuestion,
@@ -374,12 +383,12 @@ const QuestionCard = memo(({
                             {currentQuestion.format === 'term' && currentQuestion.pronunciation && (
                                 <div
                                     className="d-flex align-items-center gap-1 text-primary bg-primary bg-opacity-10 px-2 py-1 rounded-pill"
-                                    onClick={() => handleSpeak(currentQuestion.prompt)}
+                                    onClick={() => handleSpeak(currentQuestion.prompt, currentQuestion.wordId)}
                                     title="Sesli Okunuş"
                                     style={{ cursor: 'pointer' }}
                                 >
                                     <i className="bi bi-volume-up-fill fs-5"></i>
-                                    <span className="small fw-semibold mx-1">/{currentQuestion.pronunciation}/</span>
+                                    <span className="small fw-semibold mx-1">{getTurkishPronunciation(currentQuestion.pronunciation)}</span>
                                 </div>
                             )}
                         </div>
@@ -487,11 +496,11 @@ const QuestionCard = memo(({
                                             <span className={`fw-bold fs-6 ${answer?.selected?.isCorrect && !answer?.selected?.hasTypo ? 'text-success' : 'text-body'}`}>{currentQuestion.format === 'term' ? displayMeaning(currentQuestion.answer, idx) : currentQuestion.answer}</span>
                                             {currentQuestion.format === 'definition' && currentQuestion.pronunciation && (
                                                 <>
-                                                    <span className="small font-monospace text-muted">/{currentQuestion.pronunciation}/</span>
+                                                    <span className="small font-monospace text-muted">{getTurkishPronunciation(currentQuestion.pronunciation)}</span>
                                                     <Button
                                                         variant="link"
                                                         className="p-0 text-primary opacity-75 text-decoration-none"
-                                                        onClick={() => handleSpeak(currentQuestion.answer)}
+                                                        onClick={() => handleSpeak(currentQuestion.answer, currentQuestion.wordId)}
                                                         title="Sesli Dinle"
                                                         onMouseEnter={e => e.currentTarget.classList.replace('opacity-75', 'opacity-100')}
                                                         onMouseLeave={e => e.currentTarget.classList.replace('opacity-100', 'opacity-75')}
@@ -522,12 +531,12 @@ const QuestionCard = memo(({
                                         {currentQuestion.format === 'definition' && currentQuestion.pronunciation && (
                                             <div
                                                 className="d-flex align-items-center gap-1 text-primary bg-primary bg-opacity-10 px-2 py-1 rounded-pill mt-2"
-                                                onClick={(e) => { e.stopPropagation(); handleSpeak(currentQuestion.answer); }}
+                                                onClick={(e) => { e.stopPropagation(); handleSpeak(currentQuestion.answer, currentQuestion.wordId); }}
                                                 style={{ cursor: 'pointer' }}
-                                                title="Sesli Okunüş"
+                                                title="Sesli Okunuş"
                                             >
                                                 <i className="bi bi-volume-up-fill"></i>
-                                                <span className="small fw-semibold mx-1">/{currentQuestion.pronunciation}/</span>
+                                                <span className="small fw-semibold mx-1">{getTurkishPronunciation(currentQuestion.pronunciation)}</span>
                                             </div>
                                         )}
                                     </>
@@ -576,12 +585,12 @@ const QuestionCard = memo(({
                                 {currentQuestion.format === 'definition' && currentQuestion.pronunciation && (
                                     <div
                                         className="d-flex align-items-center gap-1 text-primary bg-primary bg-opacity-10 px-2 py-1 rounded-pill"
-                                        onClick={() => handleSpeak(currentQuestion.displayedAnswerText)}
+                                        onClick={() => handleSpeak(currentQuestion.displayedAnswerText, currentQuestion.wordId)}
                                         title="Sesli Okunuş"
                                         style={{ cursor: 'pointer' }}
                                     >
                                         <i className="bi bi-volume-up-fill fs-5"></i>
-                                        <span className="small fw-semibold mx-1">/{currentQuestion.pronunciation}/</span>
+                                        <span className="small fw-semibold mx-1">{getTurkishPronunciation(currentQuestion.pronunciation)}</span>
                                     </div>
                                 )}
                             </div>
@@ -645,7 +654,7 @@ const QuestionCard = memo(({
 
                                         {/* For definition-format questions: options are terms (english words) — show each option's pronunciation */}
                                         {currentQuestion.format === 'definition' && opt.pronunciation && (
-                                            <span className="ms-1 small font-monospace text-muted">/{opt.pronunciation}/</span>
+                                            <span className="ms-1 small font-monospace text-muted">{getTurkishPronunciation(opt.pronunciation)}</span>
                                         )}
 
                                         {currentQuestion.format === 'definition' && currentQuestion.type !== 'tf' && (
@@ -654,7 +663,7 @@ const QuestionCard = memo(({
                                                 className="p-0 ms-auto text-primary opacity-50 text-decoration-none"
                                                 onClick={(e) => {
                                                     e.stopPropagation();
-                                                    handleSpeak(opt.text);
+                                                    handleSpeak(opt.text, currentQuestion.wordId);
                                                 }}
                                                 title="Sesli Dinle"
                                                 onMouseEnter={e => e.currentTarget.classList.replace('opacity-50', 'opacity-100')}

@@ -29,16 +29,54 @@ const CustomListsPage = ({
   };
 
   return (
-    <Container fluid className="main-app-container animation-fade-in" style={{ animation: 'fadeIn 0.3s ease-in-out' }}>
-      <PageHeader 
-        title="Özel Listelerim" 
-        icon="bi-collection-play-fill" 
-        onBack={() => navigateTo('home')} 
-        dailyStats={dailyStats} 
-      />
+    <div className="premium-lists-wrapper animate-fade-in py-2">
+      {/* Premium Dashboard Header Banner */}
+      <div 
+        className="premium-header-banner mb-4 p-4 p-md-5 rounded-4 d-flex align-items-center gap-4 text-white position-relative overflow-hidden" 
+        style={{ 
+          background: 'linear-gradient(135deg, #0d9488 0%, #14b8a6 100%)',
+          boxShadow: '0 10px 30px rgba(13, 148, 136, 0.12)',
+          borderRadius: '24px'
+        }}
+      >
+        {/* Background glow overlay */}
+        <div 
+          className="position-absolute rounded-circle" 
+          style={{ 
+            width: '180px', 
+            height: '180px', 
+            background: 'rgba(255, 255, 255, 0.08)', 
+            top: '-60px', 
+            right: '-30px',
+            filter: 'blur(35px)',
+            pointerEvents: 'none'
+          }}
+        ></div>
+        
+        <div 
+          className="d-flex align-items-center justify-content-center rounded-circle flex-shrink-0" 
+          style={{ 
+            width: '56px', 
+            height: '56px', 
+            background: 'rgba(255, 255, 255, 0.15)',
+            border: '1px solid rgba(255, 255, 255, 0.25)',
+            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.05)',
+            backdropFilter: 'blur(4px)'
+          }}
+        >
+          <i className="bi bi-collection-play-fill fs-3 text-white"></i>
+        </div>
+        <div>
+          <h2 className="fw-extrabold mb-1" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontSize: '1.65rem', fontWeight: '800', letterSpacing: '-0.5px' }}>
+            Özel Listelerim
+          </h2>
+          <p className="mb-0 text-white-50 small" style={{ fontSize: '0.88rem', opacity: 0.85 }}>
+            Kelimelerinizi dilediğiniz gibi gruplandırın, çalışma listeleri oluşturun.
+          </p>
+        </div>
+      </div>
 
-      <Row className="justify-content-center mx-0">
-        <Col md={10} lg={8}>
+      
           {/* Yeni Liste Oluşturma */}
           <Card className="border-0 shadow-sm rounded-4 mb-4 bg-body-tertiary">
             <Card.Body className="p-4">
@@ -89,7 +127,7 @@ const CustomListsPage = ({
               }
 
               return sortedLists.map((list, index) => (
-                <Col key={list.id} sm={6}>
+                <Col key={list.id} xs={12} sm={6} md={4} lg={3}>
                   <Card 
                     className="h-100 border-0 shadow-sm rounded-4 bg-body-tertiary transition-all glass-card hover-lift"
                     onClick={() => {
@@ -184,9 +222,7 @@ const CustomListsPage = ({
               ));
             })()}
           </Row>
-        </Col>
-      </Row>
-    </Container>
+    </div>
   );
 };
 

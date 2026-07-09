@@ -64,17 +64,43 @@ const getWordVariants = (word) => {
   }
 };
 
+const splitByCommaOutsideParentheses = (str) => {
+  const result = [];
+  let current = '';
+  let depth = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str[i];
+    if (char === '(') {
+      depth++;
+      current += char;
+    } else if (char === ')') {
+      depth = Math.max(0, depth - 1);
+      current += char;
+    } else if (char === ',' && depth === 0) {
+      result.push(current.trim());
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+  if (current.trim()) {
+    result.push(current.trim());
+  }
+  return result;
+};
+
 const parseTemplate = (text) => {
-  const lines = text.split('\n').map(l => l.trim()).filter(l => l);
   const data = {
     term: '',
+    language: 'English',
+    specialNote: '',
     pronunciation: '',
     shortMeanings: '',
     generalDefinition: '',
     cefrLevel: '',
     meanings: [],
-    synonyms: '',
-    antonyms: '',
+    synonyms: [],
+    antonyms: [],
     collocations: [],
     idioms: [],
     wordFamily: [],
@@ -85,138 +111,173 @@ const parseTemplate = (text) => {
     raw: text
   };
 
-  let currentSection = '';
-  let currentMeaning = null;
+  // 1. Extract term from WORD: line
+  const wordMatch = text.match(/WORD:\s*([^\n\r]+)/i);
+  if (wordMatch) {
+    data.term = wordMatch[1].trim();
+  }
 
-  for (let i = 0; i < lines.length; i++) {
-    const originalLine = lines[i];
-    // Remove markdown asterisks from the line
-    const cleanLine = originalLine.replace(/^[\*\-•]\s*/, '').replace(/\*/g, '').trim();
-    const lowerLine = cleanLine.toLowerCase();
+  // 2. Extract sections
+  const sections = {};
+  const sectionRegex = /\[SECTION:\s*([^\]]+)\]([\s\S]*?)\[SECTION_END\]/g;
+  let match;
+  while ((match = sectionRegex.exec(text)) !== null) {
+    const sectionName = match[1].trim().toUpperCase();
+    const sectionContent = match[2];
+    sections[sectionName] = sectionContent;
+  }
 
-    // Headers extraction
-    if (lowerLine.startsWith('kelime:')) {
-      data.term = cleanLine.substring(7).trim();
-    } else if (lowerLine.startsWith('türkçe okunuşu:')) {
-      data.pronunciation = cleanLine.substring(15).trim().replace(/^\/|\/$/g, '');
-    } else if (lowerLine.startsWith('kısa anlamları:')) {
-      data.shortMeanings = cleanLine.substring(15).trim();
-    } else if (lowerLine.startsWith('genel tanımı:')) {
-      data.generalDefinition = cleanLine.substring(13).trim();
-    } else if (lowerLine.startsWith('zorluk seviyesi')) {
-      const idx = cleanLine.indexOf(':');
-      data.cefrLevel = idx !== -1 ? cleanLine.substring(idx + 1).trim() : cleanLine;
-    } else if (lowerLine.startsWith('varyantlar:')) {
-      const content = cleanLine.substring(11).trim();
-      if (content) {
-        data.variants = content.split(',').map(v => v.trim()).filter(v => v);
-      }
+  // Helper to parse key-value lines
+  const parseKV = (str) => {
+    const res = {};
+    if (!str) return res;
+    const kvRegex = /^([^:\n]+):\s*(.*)$/gm;
+    let m;
+    while ((m = kvRegex.exec(str)) !== null) {
+      res[m[1].trim().toUpperCase()] = m[2].trim();
     }
-    // Section routing
-    else if (lowerLine.includes('anlamları ve örnek cümleler')) {
-      currentSection = 'meanings';
-    } else if (lowerLine.includes('gramer özellikleri')) {
-      currentSection = 'grammar';
-      const cIdx = cleanLine.indexOf(':');
-      if (cIdx !== -1) {
-        const content = cleanLine.substring(cIdx + 1).trim();
-        if (content) data.grammar.push(content);
-      }
-    } else if (lowerLine.includes('eş ve zıt anlamlılar')) {
-      currentSection = 'synant';
-    } else if (lowerLine.includes('birlikte kullanıldığı edatlar')) {
-      currentSection = 'collocations';
-      const cIdx = cleanLine.indexOf(':');
-      if (cIdx !== -1) {
-        const content = cleanLine.substring(cIdx + 1).trim();
-        if (content) data.collocations.push(content);
-      }
-    } else if (lowerLine.includes('yaygın deyimler')) {
-      currentSection = 'idioms';
-      const cIdx = cleanLine.indexOf(':');
-      if (cIdx !== -1) {
-        const content = cleanLine.substring(cIdx + 1).trim();
-        if (content) data.idioms.push(content);
-      }
-    } else if (lowerLine.includes('kelime ailesi')) {
-      currentSection = 'wordFamily';
-      const cIdx = cleanLine.indexOf(':');
-      if (cIdx !== -1) {
-        const content = cleanLine.substring(cIdx + 1).trim();
-        if (content) data.wordFamily.push(content);
-      }
-    } else if (lowerLine.includes('sık yapılan hatalar')) {
-      currentSection = 'tips';
-      const cIdx = cleanLine.indexOf(':');
-      if (cIdx !== -1) {
-        const content = cleanLine.substring(cIdx + 1).trim();
-        if (content) data.tips.push(content);
-      }
-    } else if (lowerLine.includes('detaylı inceleme')) {
-      currentSection = 'details';
+    return res;
+  };
+
+  // 3. Process DIL_BILGISI
+  if (sections['DIL_BILGISI']) {
+    const dbData = parseKV(sections['DIL_BILGISI']);
+    data.rootWord = dbData['BASE_FORM'] || '';
+    data.language = dbData['LANGUAGE'] || 'English';
+    data.specialNote = dbData['SPECIAL_NOTE'] || '';
+    data.cefrLevel = dbData['LEVEL'] || dbData['CEFR'] || '';
+    
+    const pronIpa = dbData['PRON_IPA'] || '';
+    const pronTr = dbData['PRON_TR'] || '';
+    if (pronIpa && pronTr) {
+      data.pronunciation = `${pronIpa} (${pronTr})`;
+    } else {
+      data.pronunciation = pronIpa || pronTr || '';
     }
-    else if (lowerLine.startsWith('kural') || lowerLine.startsWith('kullanılacak şablon')) {
-      currentSection = 'skip';
-    }
-    // Content parsing based on section
-    else if (currentSection === 'synant' && lowerLine.startsWith('eş anlamlılar:')) {
-      const idx = cleanLine.indexOf(':');
-      data.synonyms = idx !== -1 ? cleanLine.substring(idx + 1).trim() : cleanLine;
-    } else if (currentSection === 'synant' && lowerLine.startsWith('zıt anlamlılar:')) {
-      const idx = cleanLine.indexOf(':');
-      data.antonyms = idx !== -1 ? cleanLine.substring(idx + 1).trim() : cleanLine;
-    }
-    else if (currentSection === 'meanings' && (
-      lowerLine.startsWith('anlamı') ||
-      /^\d+\.\s*anlamı/.test(lowerLine) ||
-      (originalLine.trim().startsWith('-') && cleanLine.includes(':'))
-    )) {
-      const colonIdx = cleanLine.indexOf(':');
-      currentMeaning = {
-        definition: colonIdx !== -1 ? cleanLine.substring(colonIdx + 1).trim() : cleanLine,
-        context: colonIdx !== -1 ? cleanLine.substring(0, colonIdx).trim() : '',
-        examples: []
-      };
-      data.meanings.push(currentMeaning);
-    } else if (currentSection === 'meanings' && currentMeaning) {
-      if (!lowerLine.startsWith('detaylı inceleme') && cleanLine.replace(/['"]+/g, '').trim() !== '') {
-        currentMeaning.examples.push(cleanLine.replace(/^['"]|['"]$/g, ''));
-      }
-    } else if (currentSection === 'grammar' && (cleanLine.includes(':') || cleanLine.includes('–') || originalLine.trim().startsWith('-'))) {
-      data.grammar.push(cleanLine);
-      // Extra check for root word if V1 is found
-      if (lowerLine.includes('yalın hal (v1):')) {
-        const parts = cleanLine.split(':');
-        if (parts.length > 1) {
-          const rootVal = parts[1].split('(')[0].trim();
-          if (rootVal && rootVal.toLowerCase() !== data.term.toLowerCase()) {
-            data.rootWord = rootVal;
-          }
-        }
-      }
-    } else if (currentSection === 'collocations' && cleanLine.trim() !== '') {
-      if ((originalLine.trim().startsWith('(') || originalLine.trim().startsWith('[')) && data.collocations.length > 0) {
-        data.collocations[data.collocations.length - 1] += '\n' + cleanLine;
-      } else {
-        data.collocations.push(cleanLine);
-      }
-    } else if (currentSection === 'idioms' && cleanLine.trim() !== '') {
-      if ((originalLine.trim().startsWith('(') || originalLine.trim().startsWith('[')) && data.idioms.length > 0) {
-        data.idioms[data.idioms.length - 1] += '\n' + cleanLine;
-      } else {
-        data.idioms.push(cleanLine);
-      }
-    } else if (currentSection === 'wordFamily' && (cleanLine.includes(':') || cleanLine.includes(']') || cleanLine.includes('–') || originalLine.trim().startsWith('-'))) {
-      data.wordFamily.push(cleanLine);
-    } else if (currentSection === 'tips') {
-      data.tips.push(cleanLine);
-    } else if (currentSection === '' && !data.term && i === 0) {
-      // if they didn't include "Kelime:" and it's the first line
-      data.term = cleanLine;
+
+    if (dbData['WORD_TYPE']) data.grammar.push(`Türü: ${dbData['WORD_TYPE']}`);
+    if (dbData['ZELEME_DURUMU']) data.grammar.push(`Zaman/Çekim: ${dbData['ZELEME_DURUMU']}`);
+    if (dbData['TONE']) data.grammar.push(`Ton: ${dbData['TONE']}`);
+    if (dbData['CONJUGATION'] && dbData['CONJUGATION'] !== 'N/A') {
+      data.grammar.push(`Çekimler: ${dbData['CONJUGATION']}`);
     }
   }
 
+  // 4. Process ANLAMLAR
+  const anlamlarItems = [];
+  if (sections['ANLAMLAR']) {
+    const itemRegex = /^ITEM:\s*(.*)$/gm;
+    let itemMatch;
+    while ((itemMatch = itemRegex.exec(sections['ANLAMLAR'])) !== null) {
+      anlamlarItems.push(itemMatch[1].trim());
+    }
+    data.shortMeanings = anlamlarItems.join(', ');
+  }
+
+  // 5. Process ORNEKLER
+  const examplesList = [];
+  if (sections['ORNEKLER']) {
+    const lines = sections['ORNEKLER'].split('\n').map(l => l.trim()).filter(l => l);
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const isTarget = line.toUpperCase().startsWith('ITEM_TARGET:');
+      const isEn = line.toUpperCase().startsWith('ITEM_EN:');
+      if (isTarget || isEn) {
+        const startIdx = isTarget ? 12 : 8;
+        const enText = line.substring(startIdx).trim();
+        let trText = '';
+        if (i + 1 < lines.length && lines[i + 1].toUpperCase().startsWith('ITEM_TR:')) {
+          trText = lines[i + 1].substring(8).trim();
+          i++;
+        }
+        examplesList.push({ enText, trText });
+      }
+    }
+  }
+
+  // Populate meanings using ANLAMLAR items and map examples to the first meaning
+  data.meanings = anlamlarItems.map((def, idx) => ({
+    definition: def,
+    context: `Anlam ${idx + 1}`,
+    examples: idx === 0 ? examplesList.map(ex => ({ en: ex.enText, tr: ex.trText })) : []
+  }));
+
+  // 6. Process ES_ANLAMLAR
+  if (sections['ES_ANLAMLAR']) {
+    const esItems = [];
+    const esMatchRegex = /^ITEM:\s*(.*)$/gm;
+    let esMatch;
+    while ((esMatch = esMatchRegex.exec(sections['ES_ANLAMLAR'])) !== null) {
+      esItems.push(esMatch[1].trim());
+    }
+    data.synonyms = esItems.map(item => {
+      const parts = item.split('|').map(p => p.trim());
+      return { en: parts[0], tr: parts[1] || '' };
+    });
+  }
+
+  // 7. Process ZIT_ANLAMLAR
+  if (sections['ZIT_ANLAMLAR']) {
+    const zitItems = [];
+    const zitMatchRegex = /^ITEM:\s*(.*)$/gm;
+    let zitMatch;
+    while ((zitMatch = zitMatchRegex.exec(sections['ZIT_ANLAMLAR'])) !== null) {
+      zitItems.push(zitMatch[1].trim());
+    }
+    data.antonyms = zitItems.map(item => {
+      const parts = item.split('|').map(p => p.trim());
+      return { en: parts[0], tr: parts[1] || '' };
+    });
+  }
+
+  // 8. Process KALIPLAR
+  if (sections['KALIPLAR']) {
+    const kalipItems = [];
+    const kalipMatchRegex = /^ITEM:\s*(.*)$/gm;
+    let kalipMatch;
+    while ((kalipMatch = kalipMatchRegex.exec(sections['KALIPLAR'])) !== null) {
+      kalipItems.push(kalipMatch[1].trim());
+    }
+    data.collocations = kalipItems.map(item => {
+      const parts = item.split('|').map(p => p.trim());
+      return { en: parts[0], tr: parts[1] || '' };
+    });
+  }
+
+  // 9. Process KARISTIRMA
+  if (sections['KARISTIRMA']) {
+    const karistirmaKV = parseKV(sections['KARISTIRMA']);
+    if (karistirmaKV['CONFUSABLE'] && karistirmaKV['CONFUSABLE'] !== 'N/A') {
+      data.tips.push(`Karıştırılabilir: ${karistirmaKV['CONFUSABLE']}`);
+      if (karistirmaKV['NOTE'] && karistirmaKV['NOTE'] !== 'N/A') {
+        data.tips.push(`Açıklama: ${karistirmaKV['NOTE']}`);
+      }
+    }
+  }
+
+  // 10. Process IPCUCU
+  if (sections['IPCUCU']) {
+    const ipcucu = sections['IPCUCU'].trim();
+    if (ipcucu) {
+      data.tips.push(`İpucu: ${ipcucu}`);
+    }
+  }
+
+  // 11. Process TABLO
+  if (sections['TABLO']) {
+    const tablo = sections['TABLO'].trim();
+    if (tablo) {
+      const parts = tablo.split('|').map(p => p.trim());
+      if (parts.length >= 5) {
+        const otherForms = splitByCommaOutsideParentheses(parts[4]);
+        data.wordFamily = otherForms;
+      }
+    }
+  }
+
+  // Fallback term if not matched
   if (!data.term) {
+    const lines = text.split('\n').map(l => l.trim()).filter(l => l);
     const cleanFirstLine = lines[0]?.replace(/^[\*\-•]\s*/, '').trim();
     data.term = cleanFirstLine?.substring(0, 30) || 'Bilinmeyen Kelime';
   }
@@ -268,6 +329,9 @@ function highlightText(text, highlights, onClick) {
 }
 
 const compactObj = (obj) => {
+  if (obj instanceof Date) {
+    return obj;
+  }
   if (Array.isArray(obj)) {
     return obj.map(compactObj);
   }
@@ -276,7 +340,7 @@ const compactObj = (obj) => {
     for (const [key, val] of Object.entries(obj)) {
       if (val === null || val === undefined || val === '') continue;
       if (Array.isArray(val) && val.length === 0) continue;
-      if (typeof val === 'object' && Object.keys(val).length === 0) continue;
+      if (typeof val === 'object' && Object.keys(val).length === 0 && !(val instanceof Date)) continue;
       compacted[key] = compactObj(val);
     }
     return compacted;
@@ -306,6 +370,8 @@ const expandWord = (w) => ({
   meanings: w.meanings || [],
   grammar: w.grammar || [],
   collocations: w.collocations || [],
+  synonyms: w.synonyms || [],
+  antonyms: w.antonyms || [],
   idioms: w.idioms || [],
   wordFamily: w.wordFamily || [],
   tips: w.tips || []
@@ -326,69 +392,182 @@ const expandList = (l) => ({
 const reconstructRawTemplate = (w) => {
   if (!w) return '';
   const lines = [];
-  lines.push(`Kelime: ${w.term}`);
-  if (w.pronunciation) lines.push(`Türkçe Okunuşu: ${w.pronunciation.replace(/^\/|\/$/g, '')}`);
-  if (w.shortMeanings) lines.push(`Kısa Anlamları: ${w.shortMeanings}`);
-  if (w.generalDefinition) lines.push(`Genel Tanımı: ${w.generalDefinition}`);
+  lines.push(`WORD: ${w.term}`);
   
+  lines.push('\n[SECTION: DIL_BILGISI]');
+  lines.push(`LANGUAGE: ${w.language || 'English'}`);
+  lines.push(`BASE_FORM: ${w.rootWord || ''}`);
+  
+  let cefr = w.cefrLevel || '';
+  let pronTr = '';
+  let pronIpa = w.pronunciation || '';
+  if (w.pronunciation && w.pronunciation.includes('(')) {
+    const match = w.pronunciation.match(/^(.*?)\s*\(([^)]+)\)$/);
+    if (match) {
+      pronIpa = match[1].trim();
+      pronTr = match[2].trim();
+    }
+  }
+  
+  let wordType = 'N/A';
+  let tone = 'N/A';
+  let statusStr = 'Yalın';
+  let conj = 'N/A';
+  
+  if (w.grammar && Array.isArray(w.grammar)) {
+    w.grammar.forEach(g => {
+      if (g.startsWith('Türü:')) wordType = g.substring(5).trim();
+      else if (g.startsWith('Zaman/Çekim:')) statusStr = g.substring(12).trim();
+      else if (g.startsWith('Ton:')) tone = g.substring(4).trim();
+      else if (g.startsWith('Çekimler:')) conj = g.substring(9).trim();
+    });
+  }
+  
+  lines.push(`ZELEME_DURUMU: ${statusStr}`);
+  lines.push(`WORD_TYPE: ${wordType}`);
+  lines.push(`LEVEL: ${cefr}`);
+  lines.push(`PRON_IPA: ${pronIpa}`);
+  lines.push(`PRON_TR: ${pronTr}`);
+  lines.push(`TONE: ${tone}`);
+  lines.push(`CONJUGATION: ${conj}`);
+  lines.push(`SPECIAL_NOTE: ${w.specialNote || 'N/A'}`);
+  lines.push('[SECTION_END]');
+
+  lines.push('\n[SECTION: ANLAMLAR]');
+  if (w.shortMeanings) {
+    w.shortMeanings.split(',').forEach(m => {
+      lines.push(`ITEM: ${m.trim()}`);
+    });
+  } else if (w.meanings && w.meanings.length > 0) {
+    w.meanings.forEach(m => {
+      lines.push(`ITEM: ${m.definition}`);
+    });
+  }
+  lines.push('[SECTION_END]');
+
+  lines.push('\n[SECTION: ORNEKLER]');
   if (w.meanings && w.meanings.length > 0) {
-    lines.push('\nAnlamları ve Örnek Cümleler:');
-    w.meanings.forEach((m, idx) => {
-      lines.push(`${idx + 1}. Anlamı${m.context ? ` (${m.context})` : ''}: ${m.definition}`);
+    w.meanings.forEach(m => {
       if (m.examples && m.examples.length > 0) {
         m.examples.forEach(ex => {
-          lines.push(`- "${ex.replace(/^['"]|['"]$/g, '')}"`);
+          let engPart = '';
+          let trPart = '';
+          if (ex) {
+            if (typeof ex === 'object' && ex.en) {
+              engPart = ex.en;
+              trPart = ex.tr || '';
+            } else if (typeof ex === 'string') {
+              engPart = ex;
+              const trimmedEx = ex.trim();
+              if (trimmedEx.endsWith(')')) {
+                let balance = 0;
+                let openParenIdx = -1;
+                for (let i = trimmedEx.length - 1; i >= 0; i--) {
+                  if (trimmedEx[i] === ')') balance++;
+                  else if (trimmedEx[i] === '(') {
+                    balance--;
+                    if (balance === 0) {
+                      openParenIdx = i;
+                      break;
+                    }
+                  }
+                }
+                if (openParenIdx !== -1) {
+                  engPart = trimmedEx.substring(0, openParenIdx).trim();
+                  trPart = trimmedEx.substring(openParenIdx + 1, trimmedEx.length - 1).trim();
+                }
+              }
+            }
+          }
+          
+          lines.push(`ITEM_TARGET: ${engPart}`);
+          lines.push(`ITEM_TR: ${trPart}`);
         });
       }
     });
   }
-  
-  if (w.cefrLevel) {
-    lines.push('\nDetaylı İnceleme:');
-    lines.push(`Zorluk Seviyesi (CEFR): ${w.cefrLevel}`);
+  lines.push('[SECTION_END]');
+
+  lines.push('\n[SECTION: ES_ANLAMLAR]');
+  if (w.synonyms) {
+    if (Array.isArray(w.synonyms)) {
+      w.synonyms.forEach(s => {
+        if (s && s.en) {
+          lines.push(`ITEM: ${s.en} | ${s.tr || ''}`);
+        }
+      });
+    } else if (typeof w.synonyms === 'string') {
+      const sep = w.synonyms.includes(',,') ? ',,' : ',';
+      w.synonyms.split(sep).forEach(s => {
+        lines.push(`ITEM: ${s.trim()}`);
+      });
+    }
   }
-  
-  if (w.grammar && w.grammar.length > 0) {
-    lines.push('\nGramer Özellikleri:');
-    w.grammar.forEach(g => {
-      lines.push(`- ${g}`);
-    });
+  lines.push('[SECTION_END]');
+
+  lines.push('\n[SECTION: ZIT_ANLAMLAR]');
+  if (w.antonyms) {
+    if (Array.isArray(w.antonyms)) {
+      w.antonyms.forEach(a => {
+        if (a && a.en) {
+          lines.push(`ITEM: ${a.en} | ${a.tr || ''}`);
+        }
+      });
+    } else if (typeof w.antonyms === 'string') {
+      const sep = w.antonyms.includes(',,') ? ',,' : ',';
+      w.antonyms.split(sep).forEach(a => {
+        lines.push(`ITEM: ${a.trim()}`);
+      });
+    }
   }
-  
-  if (w.synonyms || w.antonyms) {
-    lines.push('\nEş ve Zıt Anlamlılar:');
-    if (w.synonyms) lines.push(`- Eş Anlamlılar: ${w.synonyms}`);
-    if (w.antonyms) lines.push(`- Zıt Anlamlılar: ${w.antonyms}`);
-  }
-  
-  if (w.collocations && w.collocations.length > 0) {
-    lines.push('\nBirlikte Kullanıldığı Edatlar:');
+  lines.push('[SECTION_END]');
+
+  lines.push('\n[SECTION: KALIPLAR]');
+  if (w.collocations && Array.isArray(w.collocations)) {
     w.collocations.forEach(c => {
-      lines.push(`- ${c}`);
+      if (c) {
+        if (typeof c === 'object' && c.en) {
+          lines.push(`ITEM: ${c.en} | ${c.tr || ''}`);
+        } else if (typeof c === 'string') {
+          lines.push(`ITEM: ${c}`);
+        }
+      }
     });
   }
-  
-  if (w.idioms && w.idioms.length > 0) {
-    lines.push('\nYaygın Deyimler:');
-    w.idioms.forEach(i => {
-      lines.push(`- ${i}`);
-    });
-  }
-  
-  if (w.wordFamily && w.wordFamily.length > 0) {
-    lines.push('\nKelime Ailesi:');
-    w.wordFamily.forEach(wf => {
-      lines.push(`- ${wf}`);
-    });
-  }
-  
-  if (w.tips && w.tips.length > 0) {
-    lines.push('\nSık Yapılan Hatalar:');
+  lines.push('[SECTION_END]');
+
+  lines.push('\n[SECTION: KARISTIRMA]');
+  let confusable = 'N/A';
+  let confNote = 'N/A';
+  if (w.tips && Array.isArray(w.tips)) {
     w.tips.forEach(t => {
-      lines.push(`- ${t}`);
+      if (t.startsWith('Karıştırılabilir:')) confusable = t.substring(17).trim();
+      else if (t.startsWith('Açıklama:')) confNote = t.substring(9).trim();
     });
   }
-  
+  lines.push(`CONFUSABLE: ${confusable}`);
+  lines.push(`NOTE: ${confNote}`);
+  lines.push('[SECTION_END]');
+
+  lines.push('\n[SECTION: IPCUCU]');
+  let tipText = '';
+  if (w.tips && Array.isArray(w.tips)) {
+    w.tips.forEach(t => {
+      if (t.startsWith('İpucu:')) tipText = t.substring(6).trim();
+    });
+  }
+  lines.push(tipText);
+  lines.push('[SECTION_END]');
+
+  lines.push('\n[SECTION: TABLO]');
+  const tabloCefr = w.cefrLevel || '';
+  const tabloType = wordType;
+  const tabloShortMeanings = w.shortMeanings || '';
+  const tabloFamily = w.wordFamily && Array.isArray(w.wordFamily) ? w.wordFamily.join(', ') : '';
+  lines.push(`${w.rootWord || w.term} | ${tabloType} | ${tabloCefr} | ${tabloShortMeanings.split(',').slice(0, 2).join(', ')} | ${tabloFamily}`);
+  lines.push('[SECTION_END]');
+  lines.push('\n[WORD_END]');
+
   return lines.join('\n');
 };
 
@@ -619,6 +798,28 @@ const mergeStats = (localStats, remoteStats) => {
   return merged;
 };
 
+// ─── Language helpers ───
+const languageMap = {
+  'english': 'İngilizce',
+  'german': 'Almanca',
+  'french': 'Fransızca',
+  'spanish': 'İspanyolca',
+  'italian': 'İtalyanca',
+  'russian': 'Rusça',
+  'turkish': 'Türkçe',
+  'japanese': 'Japonca',
+  'arabic': 'Arapça',
+  'chinese': 'Çince',
+  'korean': 'Korece',
+  'portuguese': 'Portekizce'
+};
+
+const getLanguageLabel = (lang) => {
+  if (!lang) return 'Belirtilmemiş';
+  const lower = lang.toLowerCase();
+  return languageMap[lower] || lang.charAt(0).toUpperCase() + lang.slice(1);
+};
+
 // ─── Static View / Page Routing Configurations ───
 const VIEW_CONFIGS = {
   home: { title: 'Sözlük | Ana Sayfa', path: '/' },
@@ -639,6 +840,26 @@ function App() {
   const hasCheckedInitialSyncRef = useRef(false);
   const [authUser, setAuthUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
+
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem('sidebar_collapsed') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const toggleSidebar = () => {
+    setIsSidebarCollapsed(prev => {
+      const nextVal = !prev;
+      try {
+        localStorage.setItem('sidebar_collapsed', nextVal ? 'true' : 'false');
+      } catch (e) {
+        console.warn("Failed to save sidebar state:", e);
+      }
+      return nextVal;
+    });
+  };
 
   const safeSetItem = useCallback((key, value) => {
     try {
@@ -709,6 +930,8 @@ function App() {
     const view = Object.keys(VIEW_CONFIGS).find(key => VIEW_CONFIGS[key].path === path);
     return view || 'home';
   });
+
+  const [showMobileHeaderMenu, setShowMobileHeaderMenu] = useState(false);
 
   const viewConfigs = VIEW_CONFIGS;
 
@@ -800,14 +1023,69 @@ function App() {
   }, [stickyNotes]);
   const [templates, setTemplates] = useState([
     {
-      id: 'standart',
-      name: 'Genel İngilizce Şablonu',
-      example: 'Kelime: compromise\nTürkçe Okunuşu: kom-pro-mayz\nKısa Anlamları: uzlaşma, anlaşma, taviz verme\nGenel Tanımı: Karşılıklı ödünler vererek bir anlaşmaya varma süreci veya sonucu.\n\nAnlamları ve Örnek Cümleler:\n1. Anlamı (Uzlaşma): Taraflar uzun pazarlıklar sonunda bir uzlaşmaya vardılar.\n- "After long negotiations, they reached a compromise."\n\nDetaylı İnceleme:\nZorluk Seviyesi (CEFR): B2\n\nGramer Özellikleri:\n- İsim (Noun): compromise\n- Fiil (Verb): compromise (uzlaşmak, ödün vermek)\n\nEş ve Zıt Anlamlılar:\n- Eş Anlamlılar: agreement, settlement, concession\n- Zıt Anlamlılar: disagreement, conflict, refusal\n\nBirlikte Kullanıldığı Edatlar:\n- reach a compromise: uzlaşmaya varmak\n\nYaygın Deyimler:\n- no room for compromise: uzlaşmaya yer yok\n\nKelime Ailesi:\n- uncompromising (sıfat): tavizsiz\n\nSık Yapılan Hatalar:\n- Hata: "make a compromise" yerine bazen yanlış edat kullanımı.\n- Doğru: We reached a compromise.'
-    },
-    {
-      id: 'sablon2',
-      name: 'Şablon 2',
-      example: 'Kelime: [Kök Kelime]\nTürkçe Okunuşu: [Okunuş]\nKısa Anlamları: [1, 2, 3...]\nGenel Tanımı: [Akademik Tanım]\n\nAnlamları ve Örnek Cümleler:\n\n- Yalın Hal (V1): [İngilizce Cümle]\n([Türkçe Çeviri])\n- Geniş Zaman (3. Tekil): ...\n- Geçmiş Zaman (Geniş Zaman Kurgulu): ...\n- Past Participle (Geniş Zaman Kurgulu): ...\n- Şimdiki Zaman / Devam Eden: ...\n\nDetaylı İnceleme:\nZorluk Seviyesi (CEFR): [A1-C2]\n\nGramer Özellikleri (Fiil Çekimleri):\n\n- Yalın Hal (V1): [Kelime] ([Türkçe Anlamı])\n- Geniş Zaman 3. Tekil (V+s): [Kelime] ([Türkçe Anlamı])\n- Geçmiş Zaman (V2): [Kelime] ([Türkçe Anlamı])\n- Past Participle (V3): [Kelime] ([Türkçe Anlamı])\n- Şimdiki Zaman / Sıfat Fiil (-ing): [Kelime] ([Türkçe Anlamı])\n\nEş ve Zıt Anlamlılar:\n\n- Eş Anlamlılar: [Kelime (Türkçe)], [Kelime (Türkçe)]...\n- Zıt Anlamlılar: [Kelime (Türkçe)], [Kelime (Türkçe)]...\n\nBirlikte Kullanıldığı Edatlar ve Kelimeler (Collocations):\n\n- [Kelime + Edat]: [Kısa Örnek Cümle]\n([Türkçe Çeviri])\n\nYaygın Deyimler ve İfadeler (Idioms): [Deyim (Türkçe)]...\nKelime Ailesi (Word Family): [İsim, Sıfat, Zarf halleri ve Türkçeleri]\n\nSık Yapılan Hatalar ve İpuçları:\n\n- **Hata Nedeni:** [Açıklama]\n- Yanlış Kullanım: *[İngilizce Cümle]*\n([Türkçe Çeviri])\n- Doğru Kullanım: *[İngilizce Cümle]*\n([Türkçe Çeviri])'
+      id: 'parser_sablon',
+      name: 'Düz Metin Parser Şablonu',
+      example: `WORD: agitated
+
+[SECTION: DIL_BILGISI]
+LANGUAGE: English
+BASE_FORM: agitate
+ZELEME_DURUMU: Past Participle (V3) / Sıfatlaşmış Fiil
+WORD_TYPE: Adjective
+LEVEL: B2
+PRON_IPA: /ˈædʒɪteɪtɪd/
+PRON_TR: ecıteytıd
+TONE: Formal
+CONJUGATION: V1: agitate | V2: agitated | V3: agitated
+SPECIAL_NOTE: N/A
+[SECTION_END]
+
+[SECTION: ANLAMLAR]
+ITEM: huzursuz
+ITEM: heyecanlı ve endişeli
+ITEM: çalkalanmış
+[SECTION_END]
+
+[SECTION: ORNEKLER]
+ITEM_TARGET: She seemed agitated after she spoke to her lawyer.
+ITEM_TR: Avukatıyla konuştuktan sonra huzursuz görünüyordu.
+ITEM_TARGET: The patient became increasingly agitated as the night went on.
+ITEM_TR: Gece ilerledikçe hasta giderek daha fazla endişeli ve huzursuz oldu.
+ITEM_TARGET: Do not mix the chemical while it is in an agitated state.
+ITEM_TR: Kimyasalı çalkalanmış bir durumdayken karıştırmayın.
+[SECTION_END]
+
+[SECTION: ES_ANLAMLAR]
+ITEM: anxious | endişeli
+ITEM: restless | huzursuz
+ITEM: upset | üzgün / keyfi kaçmış
+[SECTION_END]
+
+[SECTION: ZIT_ANLAMLAR]
+ITEM: calm | sakin
+ITEM: relaxed | rahatlamış
+ITEM: peaceful | huzurlu
+[SECTION_END]
+
+[SECTION: KALIPLAR]
+ITEM: become agitated | huzursuzlaşmak
+ITEM: highly agitated | aşırı derecede huzursuz
+[SECTION_END]
+
+[SECTION: KARISTIRMA]
+CONFUSABLE: aggravated
+NOTE: Agitated ruhsal veya fiziksel olarak çalkalanmış/huzursuz anlamına gelirken, aggravated mevcut bir kötü durumun daha da ağırlaşmış veya kötüleşmiş olduğunu ifade eder.
+[SECTION_END]
+
+[SECTION: IPCUCU]
+Ajite etmek kelimesi Türkçede de birini kışkırtmak, huzursuz etmek anlamında kullanılır; sonundaki -ed takısı kelimeyi huzursuz olmuş, ajite edilmiş durum sıfatına dönüştürür.
+[SECTION_END]
+
+[SECTION: TABLO]
+agitate | Verb / Adjective | B2 | huzursuz, çalkalanmış | agitate (huzursuz etmek/çalkalamak), agitates (huzursuz eder), agitating (huzursuz eden), agitated (huzursuz/çalkalanmış), agitation (huzursuzluk/çalkalanma)
+[SECTION_END]
+
+[WORD_END]`
     }
   ]);
   const [dailyStats, setDailyStats] = useState(() => {
@@ -985,6 +1263,20 @@ function App() {
     return customLists.filter(l => l._status !== 'deleted');
   }, [customLists]);
 
+  // Custom Quick Tests State
+  const [customQuickTests, setCustomQuickTests] = useState(() => {
+    try {
+      const local = localStorage.getItem('local_custom_quick_tests') || localStorage.getItem('custom_quick_tests');
+      return local ? JSON.parse(local) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+
+  const activeQuickTests = useMemo(() => {
+    return customQuickTests.filter(q => q._status !== 'deleted');
+  }, [customQuickTests]);
+
   const activeStickyNotes = useMemo(() => {
     return stickyNotes.filter(n => n._status !== 'deleted');
   }, [stickyNotes]);
@@ -1023,15 +1315,68 @@ function App() {
       setPracticeTests([]);
       setStickyNotes([]);
       setCustomLists([]);
+      setCustomQuickTests([]);
       // Clear local storage data on logout
       localStorage.removeItem('local_words');
       localStorage.removeItem('local_custom_lists');
       localStorage.removeItem('local_practice_tests');
       localStorage.removeItem('local_daily_stats');
       localStorage.removeItem('local_sticky_notes');
+      localStorage.removeItem('local_custom_quick_tests');
+      localStorage.removeItem('custom_quick_tests');
       localStorage.removeItem('last_synced_time');
     } catch (err) {
       console.error("Logout error:", err);
+    }
+  };
+
+  const handleClearCache = async () => {
+    const result = await Swal.fire({
+      title: 'Önbelleği ve Verileri Temizle',
+      text: 'Uygulamanın en güncel versiyonunu yüklemek ve tüm cihaz verilerini sıfırlamak için önbellek ve veritabanı temizlenecek, sayfa yenilenecektir. Senkronize edilmemiş yerel verileriniz silinecektir. Devam etmek istiyor musunuz?',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#d33',
+      cancelButtonColor: '#3085d6',
+      confirmButtonText: 'Evet, Sıfırla ve Yenile',
+      cancelButtonText: 'İptal',
+      background: theme === 'dark' ? '#1e293b' : '#fff',
+      color: theme === 'dark' ? '#f8fafc' : '#1e293b'
+    });
+
+    if (result.isConfirmed) {
+      try {
+        // 1. Clear application assets cache
+        if ('caches' in window) {
+          const cacheNames = await caches.keys();
+          await Promise.all(cacheNames.map(name => caches.delete(name)));
+        }
+        // 2. Unregister service workers
+        if ('serviceWorker' in navigator) {
+          const registrations = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(registrations.map(reg => reg.unregister()));
+        }
+        // 3. Clear localStorage completely
+        localStorage.clear();
+
+        await Swal.fire({
+          title: 'Sıfırlandı!',
+          text: 'Önbellek ve cihaz veritabanı temizlendi. Uygulama v3.0 olarak yeniden başlatılacak.',
+          icon: 'success',
+          timer: 1500,
+          showConfirmButton: false,
+        });
+        window.location.href = window.location.origin + window.location.pathname + '?v=' + Date.now();
+      } catch (error) {
+        console.error('Cache clearing failed:', error);
+        Swal.fire({
+          title: 'Hata!',
+          text: 'Temizleme işlemi gerçekleştirilirken bir sorun oluştu.',
+          icon: 'error',
+          background: theme === 'dark' ? '#1e293b' : '#fff',
+          color: theme === 'dark' ? '#f8fafc' : '#1e293b'
+        });
+      }
     }
   };
 
@@ -1095,6 +1440,32 @@ function App() {
     }
   }, [editingNoteId, inlineEditingText]);
 
+  // Auto-heal sticky note associations when words or notes change
+  useEffect(() => {
+    if (!words || words.length === 0 || !stickyNotes || stickyNotes.length === 0) return;
+    
+    let changed = false;
+    const healedNotes = stickyNotes.map(note => {
+      if (note.wordTerm && note.wordTerm !== 'Manuel Not' && note.wordTerm !== 'MANUEL NOT') {
+        const matchingWord = words.find(w => w.term.toLowerCase() === note.wordTerm.toLowerCase());
+        if (matchingWord && note.wordId !== matchingWord.id) {
+          changed = true;
+          const status = note._status === 'created' ? 'created' : 'updated';
+          return {
+            ...note,
+            wordId: matchingWord.id,
+            _status: status
+          };
+        }
+      }
+      return note;
+    });
+
+    if (changed) {
+      setStickyNotes(healedNotes);
+    }
+  }, [words, stickyNotes]);
+
   const handleGlobalMouseDown = useCallback((e) => {
     if (homeTooltipRef.current && homeTooltipRef.current.contains(e.target)) return;
     setHomeSelectionTooltip(null);
@@ -1140,7 +1511,7 @@ function App() {
     return () => window.visualViewport.removeEventListener('resize', handleResize);
   }, []);
 
-  const [templateType, setTemplateType] = useState('sablon2');
+  const [templateType, setTemplateType] = useState('parser_sablon');
   const [selectedListIds, setSelectedListIds] = useState([]);
 
   const parsedPreview = useMemo(() => {
@@ -1149,7 +1520,8 @@ function App() {
     const blocks = [];
     let currentBlock = [];
     for (const line of lines) {
-      if (line.replace(/^[\*\-•]\s*/, '').replace(/\*/g, '').trim().toLowerCase().startsWith('kelime:')) {
+      const cleanLine = line.replace(/^[\*\-•]\s*/, '').replace(/\*/g, '').trim().toLowerCase();
+      if (cleanLine.startsWith('kelime:') || cleanLine.startsWith('word:')) {
         if (currentBlock.length > 0) {
           blocks.push(currentBlock.join('\n'));
           currentBlock = [];
@@ -1190,6 +1562,10 @@ function App() {
     return localStorage.getItem('quickStatusFilter') || '';
   });
 
+  const [activeLanguageFilter, setActiveLanguageFilter] = useState(() => {
+    return localStorage.getItem('activeLanguageFilter') || '';
+  });
+
   useEffect(() => {
     safeSetItem('showOnlyStarred', JSON.stringify(showOnlyStarred));
   }, [showOnlyStarred, safeSetItem]);
@@ -1198,6 +1574,19 @@ function App() {
     safeSetItem('quickStatusFilter', quickStatusFilter);
   }, [quickStatusFilter, safeSetItem]);
 
+  useEffect(() => {
+    safeSetItem('activeLanguageFilter', activeLanguageFilter);
+  }, [activeLanguageFilter, safeSetItem]);
+
+  const uniqueLanguages = useMemo(() => {
+    const langs = new Set();
+    (words || []).forEach(w => {
+      if (w.language && w._status !== 'deleted') {
+        langs.add(w.language);
+      }
+    });
+    return Array.from(langs).sort();
+  }, [words]);
 
   const [sortRules, setSortRules] = useState([]);
 
@@ -1292,7 +1681,7 @@ function App() {
   // Reset pagination when any filter/sort changes
   useEffect(() => {
     setVisibleCount(wordsPerPage);
-  }, [searchQuery, filters, sortRules, showDuplicates, showSameRoots, showFamilyMatches, showOnlyStarred, quickStatusFilter, wordsPerPage]);
+  }, [searchQuery, filters, sortRules, showDuplicates, showSameRoots, showFamilyMatches, showOnlyStarred, quickStatusFilter, activeLanguageFilter, wordsPerPage]);
 
   const [practiceOptions, setPracticeOptions] = useState(null);
 
@@ -1370,18 +1759,22 @@ function App() {
       if (isConfigMissing) return;
       try {
         const querySnapshot = await getDocs(collection(db, 'templates'));
-        if (querySnapshot.empty) {
-          // Seed initial templates if collection is empty
-          for (const t of templates) {
-            await setDoc(doc(db, 'templates', t.id), t);
+        const existingIds = querySnapshot.docs.map(doc => doc.id);
+        const localIds = templates.map(t => t.id);
+
+        // Delete any templates in Firestore that are not in local templates
+        for (const id of existingIds) {
+          if (!localIds.includes(id)) {
+            await deleteDoc(doc(db, 'templates', id));
           }
-        } else {
-          const fetchedTemplates = querySnapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-          }));
-          setTemplates(fetchedTemplates);
         }
+
+        // Upsert all local templates to Firestore
+        for (const t of templates) {
+          await setDoc(doc(db, 'templates', t.id), t);
+        }
+
+        setTemplates(templates);
       } catch (e) {
         console.warn('Şablonlar yüklenemedi:', e);
       }
@@ -1399,7 +1792,13 @@ function App() {
       if (t === 'system') {
         activeTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
       }
-      document.documentElement.setAttribute('data-bs-theme', activeTheme);
+      
+      // Override theme to light mode on homepage
+      if (currentView === 'home') {
+        document.documentElement.setAttribute('data-bs-theme', 'light');
+      } else {
+        document.documentElement.setAttribute('data-bs-theme', activeTheme);
+      }
     };
 
     applyTheme(theme);
@@ -1415,7 +1814,7 @@ function App() {
       mediaQuery.addEventListener('change', listener);
       return () => mediaQuery.removeEventListener('change', listener);
     }
-  }, [theme, safeSetItem]);
+  }, [theme, safeSetItem, currentView, authUser]);
 
   // Save wordsPerPage to Firestore and localStorage
   useEffect(() => {
@@ -1450,23 +1849,86 @@ function App() {
 
 
 
-  const handleSpeak = (text) => {
+  const handleSpeak = (text, wordContext = null) => {
     if (!('speechSynthesis' in window)) return;
+
+    let targetLang = 'en-US';
+    let lang = 'English';
+
+    if (wordContext) {
+      if (typeof wordContext === 'string') {
+        lang = wordContext;
+      } else if (wordContext.language) {
+        lang = wordContext.language;
+      } else if (wordContext.id) {
+        const found = words.find(w => w.id === wordContext.id);
+        if (found && found.language) lang = found.language;
+      }
+    }
+
+    const langLower = lang.toLowerCase();
+    if (langLower.includes('japanese') || langLower.includes('japonca') || langLower.includes('ja')) {
+      targetLang = 'ja-JP';
+    } else if (langLower.includes('arabic') || langLower.includes('arapça') || langLower.includes('ar')) {
+      targetLang = 'ar-SA';
+    } else if (langLower.includes('german') || langLower.includes('almanca') || langLower.includes('de')) {
+      targetLang = 'de-DE';
+    } else if (langLower.includes('spanish') || langLower.includes('ispanyolca') || langLower.includes('es')) {
+      targetLang = 'es-ES';
+    } else if (langLower.includes('french') || langLower.includes('fransızca') || langLower.includes('fr')) {
+      targetLang = 'fr-FR';
+    } else if (langLower.includes('turkish') || langLower.includes('türkçe') || langLower.includes('tr')) {
+      targetLang = 'tr-TR';
+    }
 
     const speak = (voices) => {
       window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = 'en-US';
+      
+      let targetText = text;
+      let preferredVoice = null;
+      if (targetLang === 'ja-JP') {
+        preferredVoice = voices.find(v => v.lang === 'ja-JP' || v.lang.startsWith('ja'));
+      } else if (targetLang === 'ar-SA') {
+        preferredVoice = voices.find(v => v.lang.startsWith('ar'));
+      } else if (targetLang === 'en-US') {
+        preferredVoice =
+          voices.find(v => v.name.includes('Google US English')) ||
+          voices.find(v => v.name.includes('Samantha')) ||
+          voices.find(v => v.name.includes('Alex')) ||
+          voices.find(v => v.lang === 'en-US' || v.lang === 'en-GB') ||
+          voices.find(v => v.lang.startsWith('en-'));
+      } else {
+        preferredVoice = voices.find(v => v.lang === targetLang || v.lang.startsWith(targetLang.split('-')[0]));
+      }
+
+      let selectedVoice = preferredVoice;
+      let selectedLang = targetLang;
+
+      if (!selectedVoice) {
+        selectedVoice = voices.find(v => v.default) || voices[0];
+        if (selectedVoice) {
+          selectedLang = selectedVoice.lang;
+          
+          const hasNonLatin = /[^\u0000-\u007F\u00C0-\u017F]/.test(text);
+          if (hasNonLatin && wordContext && typeof wordContext === 'object') {
+            let pron = wordContext.pronunciation || '';
+            if (pron.includes('(')) {
+              const match = pron.match(/\(([^)]+)\)/);
+              if (match) targetText = match[1].trim();
+            } else if (pron) {
+              targetText = pron.replace(/^\/|\/$/g, '').trim();
+            }
+          }
+        }
+      } else {
+        selectedLang = selectedVoice.lang;
+      }
+
+      const utterance = new SpeechSynthesisUtterance(targetText);
       utterance.rate = 0.9;
-
-      const englishVoice =
-        voices.find(v => v.name.includes('Google US English')) ||
-        voices.find(v => v.name.includes('Samantha')) ||
-        voices.find(v => v.name.includes('Alex')) ||
-        voices.find(v => v.lang === 'en-US' || v.lang === 'en-GB') ||
-        voices.find(v => v.lang.startsWith('en-'));
-
-      if (englishVoice) utterance.voice = englishVoice;
+      utterance.volume = 1.0;
+      if (selectedVoice) utterance.voice = selectedVoice;
+      utterance.lang = selectedLang;
       window.speechSynthesis.speak(utterance);
     };
 
@@ -1474,7 +1936,6 @@ function App() {
     if (voices.length > 0) {
       speak(voices);
     } else {
-      // Sesler henüz yüklenmedi, yüklenince başlat
       window.speechSynthesis.addEventListener('voiceschanged', () => {
         speak(window.speechSynthesis.getVoices());
       }, { once: true });
@@ -1590,6 +2051,16 @@ function App() {
       setStickyNotes(finalNotes);
       safeSetItem('local_sticky_notes', JSON.stringify(compactObj(finalNotes)));
 
+      // 6. Custom Quick Tests
+      const qQuick = query(collection(db, 'quick_tests'), where('userId', '==', user.uid));
+      const snapQuick = await getDocs(qQuick);
+      const fetchedQuick = snapQuick.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const finalQuick = forceOverwrite 
+        ? fetchedQuick 
+        : mergeCollections(customQuickTests, fetchedQuick);
+      setCustomQuickTests(finalQuick);
+      safeSetItem('local_custom_quick_tests', JSON.stringify(compactObj(finalQuick)));
+
       // Update sync time
       const nowMs = Date.now();
       safeSetItem('last_synced_ms', nowMs.toString());
@@ -1601,6 +2072,61 @@ function App() {
     }
   };
 
+  const handleSaveQuickTest = useCallback((id, name, config) => {
+    let generatedId = id;
+    setCustomQuickTests(prev => {
+      const now = new Date();
+      let updated;
+      if (id) {
+        // Update existing
+        updated = prev.map(q => {
+          if (q.id === id) {
+            const status = q._status === 'created' ? 'created' : 'updated';
+            return {
+              ...q,
+              name: name || q.name,
+              config: config !== undefined && config !== null ? config : q.config,
+              updatedAt: now,
+              _status: status
+            };
+          }
+          return q;
+        });
+      } else {
+        // Create new
+        generatedId = `local_quick_${Date.now()}`;
+        const newQuick = {
+          id: generatedId,
+          userId: authUser ? authUser.uid : 'anonymous',
+          name,
+          config,
+          createdAt: now,
+          updatedAt: now,
+          _status: 'created'
+        };
+        updated = [...prev, newQuick];
+      }
+      safeSetItem('local_custom_quick_tests', JSON.stringify(compactObj(updated)));
+      return updated;
+    });
+    return generatedId;
+  }, [authUser, safeSetItem]);
+
+  const handleDeleteQuickTest = useCallback((id) => {
+    setCustomQuickTests(prev => {
+      const existing = prev.find(q => q.id === id);
+      if (!existing) return prev;
+      let updated;
+      if (existing._status === 'created') {
+        updated = prev.filter(q => q.id !== id);
+      } else {
+        updated = prev.map(q => q.id === id ? { ...q, _status: 'deleted' } : q);
+      }
+      safeSetItem('local_custom_quick_tests', JSON.stringify(compactObj(updated)));
+      return updated;
+    });
+  }, [safeSetItem]);
+
   const unsyncedChangesCount = useMemo(() => {
     let count = 0;
     count += words.filter(w => w._status).length;
@@ -1608,8 +2134,9 @@ function App() {
     count += practiceTests.filter(t => t._status).length;
     count += stickyNotes.filter(n => n._status).length;
     count += Object.values(dailyStats).filter(s => s._status).length;
+    count += customQuickTests.filter(q => q._status).length;
     return count;
-  }, [words, customLists, practiceTests, stickyNotes, dailyStats]);
+  }, [words, customLists, practiceTests, stickyNotes, dailyStats, customQuickTests]);
 
   // Prevent accidental reload when there are unsynced changes
   useEffect(() => {
@@ -1673,8 +2200,16 @@ function App() {
     if (nUpd > 0) list.push({ key: 'notes-updated', category: 'stickyNotes', text: `${nUpd} yapışkan not güncellemesi eşitlenecek` });
     if (nDel > 0) list.push({ key: 'notes-deleted', category: 'stickyNotes', text: `${nDel} silinen yapışkan not eşitlenecek` });
 
+    // Quick Tests
+    const qNew = customQuickTests.filter(q => q._status === 'created').length;
+    const qUpd = customQuickTests.filter(q => q._status === 'updated').length;
+    const qDel = customQuickTests.filter(q => q._status === 'deleted').length;
+    if (qNew > 0) list.push({ key: 'quick-new', category: 'quickTests', text: `${qNew} yeni hızlı test eşitlenecek` });
+    if (qUpd > 0) list.push({ key: 'quick-updated', category: 'quickTests', text: `${qUpd} hızlı test güncellemesi eşitlenecek` });
+    if (qDel > 0) list.push({ key: 'quick-deleted', category: 'quickTests', text: `${qDel} silinen hızlı test eşitlenecek` });
+
     return list;
-  }, [words, customLists, practiceTests, dailyStats, stickyNotes]);
+  }, [words, customLists, practiceTests, dailyStats, stickyNotes, customQuickTests]);
 
   const handleSync = async (silent = false) => {
     if (!authUser) return;
@@ -1714,6 +2249,7 @@ function App() {
       const isLocalTestsEmpty = practiceTests.length === 0;
       const isLocalStatsEmpty = Object.keys(dailyStats).length === 0;
       const isLocalNotesEmpty = stickyNotes.length === 0;
+      const isLocalQuickEmpty = customQuickTests.length === 0;
 
       // Determine what collections need to be pulled based on the pre-push remote metadata!
       const needPullWords = isFirstSync || isLocalWordsEmpty || !remoteMetadata || (remoteMetadata.wordsUpdatedAt && remoteMetadata.wordsUpdatedAt > localSyncedMs);
@@ -1721,6 +2257,7 @@ function App() {
       const needPullTests = isFirstSync || isLocalTestsEmpty || !remoteMetadata || (remoteMetadata.testsUpdatedAt && remoteMetadata.testsUpdatedAt > localSyncedMs);
       const needPullStats = isFirstSync || isLocalStatsEmpty || !remoteMetadata || (remoteMetadata.statsUpdatedAt && remoteMetadata.statsUpdatedAt > localSyncedMs);
       const needPullNotes = isFirstSync || isLocalNotesEmpty || !remoteMetadata || (remoteMetadata.notesUpdatedAt && remoteMetadata.notesUpdatedAt > localSyncedMs);
+      const needPullQuick = isFirstSync || isLocalQuickEmpty || !remoteMetadata || (remoteMetadata.quickTestsUpdatedAt && remoteMetadata.quickTestsUpdatedAt > localSyncedMs);
 
       const batch = writeBatch(db);
       let hasChanges = false;
@@ -1731,6 +2268,7 @@ function App() {
       const localTestsChanged = practiceTests.some(t => t._status === 'created' || t._status === 'updated' || t._status === 'deleted');
       const localStatsChanged = Object.values(dailyStats).some(s => s._status === 'created' || s._status === 'updated');
       const localNotesChanged = stickyNotes.some(n => n._status === 'created' || n._status === 'updated' || n._status === 'deleted');
+      const localQuickTestsChanged = customQuickTests.some(q => q._status === 'created' || q._status === 'updated' || q._status === 'deleted');
 
       // Baseline arrays for pull & merge, initialized to current states
       let remoteWords = words;
@@ -1738,6 +2276,7 @@ function App() {
       let remoteTests = practiceTests;
       let remoteStats = dailyStats;
       let remoteNotes = stickyNotes;
+      let remoteQuickTests = customQuickTests;
 
       // Calculate specific counts for descriptive sync logging
       const newWordsCount = words.filter(w => w._status === 'created').length;
@@ -1760,6 +2299,10 @@ function App() {
       const newNotesCount = stickyNotes.filter(n => n._status === 'created').length;
       const updatedNotesCount = stickyNotes.filter(n => n._status === 'updated').length;
       const deletedNotesCount = stickyNotes.filter(n => n._status === 'deleted').length;
+
+      const newQuickCount = customQuickTests.filter(q => q._status === 'created').length;
+      const updatedQuickCount = customQuickTests.filter(q => q._status === 'updated').length;
+      const deletedQuickCount = customQuickTests.filter(q => q._status === 'deleted').length;
 
       setSyncProgress(15);
       setCurrentSyncStep('Yerel veriler paketleniyor...');
@@ -1930,6 +2473,30 @@ function App() {
         }
       });
 
+      // 5.5. Sync Custom Quick Tests
+      const updatedQuickTests = [...customQuickTests];
+      customQuickTests.forEach(q => {
+        if (q._status === 'created' || q._status === 'updated') {
+          const cleanQuick = { ...q };
+          delete cleanQuick._status;
+          cleanQuick.userId = authUser.uid; // Force correct userId to prevent disappearing
+          
+          // Use q.id directly as Firestore document ID to keep local/remote IDs in sync!
+          const docRef = doc(db, 'quick_tests', q.id);
+          batch.set(docRef, cleanQuick);
+          
+          const idx = updatedQuickTests.findIndex(item => item.id === q.id);
+          if (idx !== -1) {
+            delete updatedQuickTests[idx]._status;
+            updatedQuickTests[idx].userId = authUser.uid;
+          }
+          hasChanges = true;
+        } else if (q._status === 'deleted') {
+          batch.delete(doc(db, 'quick_tests', q.id));
+          hasChanges = true;
+        }
+      });
+
       // 6. Sync Metadata Update
       const nowMs = Date.now();
       const metadataUpdates = {};
@@ -1938,6 +2505,7 @@ function App() {
       if (localTestsChanged) metadataUpdates.testsUpdatedAt = nowMs;
       if (localStatsChanged) metadataUpdates.statsUpdatedAt = nowMs;
       if (localNotesChanged) metadataUpdates.notesUpdatedAt = nowMs;
+      if (localQuickTestsChanged) metadataUpdates.quickTestsUpdatedAt = nowMs;
 
       if (Object.keys(metadataUpdates).length > 0) {
         const metaDocRef = doc(db, 'sync_metadata', authUser.uid);
@@ -1957,6 +2525,7 @@ function App() {
         const cleanLists = updatedLists.filter(l => l._status !== 'deleted');
         const cleanTests = updatedTests.filter(t => t._status !== 'deleted');
         const cleanNotes = updatedNotes.filter(n => n._status !== 'deleted');
+        const cleanQuickTests = updatedQuickTests.filter(q => q._status !== 'deleted');
         
         // Update baseline remote arrays to contain the clean local modifications
         remoteWords = cleanWords;
@@ -1964,6 +2533,7 @@ function App() {
         remoteTests = cleanTests;
         remoteNotes = cleanNotes;
         remoteStats = updatedStats;
+        remoteQuickTests = cleanQuickTests;
 
         // Instant localStorage backup of clean data
         safeSetItem('local_words', JSON.stringify(compactObj(cleanWords)));
@@ -1971,133 +2541,10 @@ function App() {
         safeSetItem('local_practice_tests', JSON.stringify(compactObj(cleanTests)));
         safeSetItem('local_sticky_notes', JSON.stringify(compactObj(cleanNotes)));
         safeSetItem('local_daily_stats', JSON.stringify(compactObj(updatedStats)));
+        safeSetItem('local_custom_quick_tests', JSON.stringify(compactObj(cleanQuickTests)));
       } else {
         setSyncProgress(30);
       }
-
-      // Pull Remote Changes from Firestore conditionally (two-way merge)
-      // 1. Words
-      setSyncProgress(50);
-      setCurrentSyncStep('Buluttaki kelimeler sorgulanıyor...');
-      if (newWordsCount > 0) setSyncSteps(prev => [...prev, `${newWordsCount} yeni kelime eşitleniyor...`]);
-      if (starredWordsCount > 0) setSyncSteps(prev => [...prev, `${starredWordsCount} kelime yıldızlaması eşitleniyor...`]);
-      if (statusWordsCount > 0) setSyncSteps(prev => [...prev, `${statusWordsCount} kelime durum güncellemesi eşitleniyor...`]);
-      if (editedWordsCount > 0) setSyncSteps(prev => [...prev, `${editedWordsCount} kelime düzenlemesi eşitleniyor...`]);
-      if (deletedWordsCount > 0) setSyncSteps(prev => [...prev, `${deletedWordsCount} silinen kelime eşitleniyor...`]);
-
-      if (needPullWords) {
-        setCurrentSyncStep('Buluttaki kelimeler indiriliyor (getDocs)...');
-        checkAborted();
-        const qWords = query(collection(db, 'words'), where('userId', '==', authUser.uid));
-        const snapWords = await getDocs(qWords);
-        const fetchedWords = snapWords.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a, b) => {
-          const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
-          const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
-          return dateB - dateA;
-        });
-        remoteWords = mergeCollections(remoteWords, fetchedWords);
-      }
-      
-      // 2. Custom Lists
-      setSyncProgress(60);
-      setCurrentSyncStep('Buluttaki özel listeler sorgulanıyor...');
-      if (newListsCount > 0) setSyncSteps(prev => [...prev, `${newListsCount} yeni özel liste eşitleniyor...`]);
-      if (updatedListsCount > 0) setSyncSteps(prev => [...prev, `${updatedListsCount} özel liste düzenlemesi eşitleniyor...`]);
-      if (deletedListsCount > 0) setSyncSteps(prev => [...prev, `${deletedListsCount} silinen özel liste eşitleniyor...`]);
-
-      if (needPullLists) {
-        setCurrentSyncStep('Buluttaki özel listeler indiriliyor (getDocs)...');
-        checkAborted();
-        const qLists = query(collection(db, 'customLists'), where('userId', '==', authUser.uid));
-        const snapLists = await getDocs(qLists);
-        const fetchedLists = snapLists.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        remoteLists = mergeCollections(remoteLists, fetchedLists);
-      }
-
-      // 3. Practice Tests
-      setSyncProgress(70);
-      setCurrentSyncStep('Buluttaki pratik testler sorgulanıyor...');
-      if (newTestsCount > 0) setSyncSteps(prev => [...prev, `${newTestsCount} yeni pratik test eşitleniyor...`]);
-      if (updatedTestsCount > 0) setSyncSteps(prev => [...prev, `${updatedTestsCount} pratik test güncellemesi eşitleniyor...`]);
-      if (deletedTestsCount > 0) setSyncSteps(prev => [...prev, `${deletedTestsCount} silinen pratik test eşitleniyor...`]);
-
-      if (needPullTests) {
-        setCurrentSyncStep('Buluttaki pratik testler indiriliyor (getDocs)...');
-        checkAborted();
-        const qTests = query(collection(db, 'practice_tests'), where('userId', '==', authUser.uid));
-        const snapTests = await getDocs(qTests);
-        const fetchedTests = snapTests.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        const { uniqueTests, duplicateIds } = getUniqueAndDuplicateTests(fetchedTests);
-        
-        if (duplicateIds.length > 0) {
-          console.log(`Sync deduplication: Identified ${duplicateIds.length} duplicate tests in cloud.`);
-          deleteBatchFromFirestoreInBackground(duplicateIds);
-        }
-
-        const sortedTests = uniqueTests.sort((a, b) => {
-          if (a.isPinned && !b.isPinned) return -1;
-          if (!a.isPinned && b.isPinned) return 1;
-          const dateA = a.updatedAt?.toDate ? a.updatedAt.toDate() : new Date(a.updatedAt || 0);
-          const dateB = b.updatedAt?.toDate ? b.updatedAt.toDate() : new Date(b.updatedAt || 0);
-          return dateB - dateA;
-        });
-        remoteTests = mergeCollections(remoteTests, sortedTests);
-      }
-
-      // 4. Daily Stats
-      setSyncProgress(80);
-      setCurrentSyncStep('Buluttaki günlük çalışma istatistikleri sorgulanıyor...');
-      if (newStatsCount > 0) setSyncSteps(prev => [...prev, `${newStatsCount} yeni günlük çalışma istatistiği eşitleniyor...`]);
-      if (updatedStatsCount > 0) setSyncSteps(prev => [...prev, `${updatedStatsCount} günlük çalışma istatistiği güncellemesi eşitleniyor...`]);
-
-      if (needPullStats) {
-        setCurrentSyncStep('Buluttaki günlük çalışma istatistikleri indiriliyor (getDocs)...');
-        checkAborted();
-        const qStats = query(collection(db, 'daily_stats'), where('userId', '==', authUser.uid));
-        const snapStats = await getDocs(qStats);
-        const fetchedStats = {};
-        snapStats.forEach(docSnap => {
-          const data = docSnap.data();
-          const key = data.date || docSnap.id;
-          fetchedStats[key] = data;
-        });
-        remoteStats = mergeStats(remoteStats, fetchedStats);
-      }
-
-      // 5. Sticky Notes
-      setSyncProgress(90);
-      setCurrentSyncStep('Buluttaki yapışkan notlar sorgulanıyor...');
-      if (newNotesCount > 0) setSyncSteps(prev => [...prev, `${newNotesCount} yeni yapışkan not eşitleniyor...`]);
-      if (updatedNotesCount > 0) setSyncSteps(prev => [...prev, `${updatedNotesCount} yapışkan not güncellemesi eşitleniyor...`]);
-      if (deletedNotesCount > 0) setSyncSteps(prev => [...prev, `${deletedNotesCount} silinen yapışkan not eşitleniyor...`]);
-
-      if (needPullNotes) {
-        setCurrentSyncStep('Buluttaki yapışkan notlar indiriliyor (getDocs)...');
-        checkAborted();
-        const qNotes = query(collection(db, 'sticky_notes'), where('userId', '==', authUser.uid));
-        const snapNotes = await getDocs(qNotes);
-        const fetchedNotes = snapNotes.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a, b) => {
-          const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
-          const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
-          return dateB - dateA;
-        });
-        remoteNotes = mergeCollections(remoteNotes, fetchedNotes);
-      }
-
-      // Update local state with remote state (fully merged)
-      setCurrentSyncStep('Veriler birleştiriliyor ve yerel hafızaya kaydediliyor...');
-      setWords(remoteWords);
-      setCustomLists(remoteLists);
-      setPracticeTests(remoteTests);
-      setDailyStats(remoteStats);
-      setStickyNotes(remoteNotes);
-
-      // Save to localStorage
-      safeSetItem('local_words', JSON.stringify(compactObj(remoteWords)));
-      safeSetItem('local_custom_lists', JSON.stringify(compactObj(remoteLists)));
-      safeSetItem('local_practice_tests', JSON.stringify(compactObj(remoteTests)));
-      safeSetItem('local_daily_stats', JSON.stringify(compactObj(remoteStats)));
-      safeSetItem('local_sticky_notes', JSON.stringify(compactObj(remoteNotes)));
 
       // Save sync timestamps
       const nowMsSync = Date.now();
@@ -2105,6 +2552,7 @@ function App() {
       setLastSyncedMs(nowMsSync);
 
       setSyncProgress(100);
+      setSyncSuccess(true);
 
       const totalChangesCount = newWordsCount + starredWordsCount + statusWordsCount + editedWordsCount + deletedWordsCount +
                                 newListsCount + updatedListsCount + deletedListsCount +
@@ -2112,13 +2560,11 @@ function App() {
                                 newStatsCount + updatedStatsCount +
                                 newNotesCount + updatedNotesCount + deletedNotesCount;
       if (totalChangesCount === 0) {
-        setSyncSteps(prev => [...prev, "Tüm verileriniz güncel (yeni değişiklik yok)."]);
+        setSyncSteps(prev => [...prev, "Tüm yerel verileriniz bulut ile güncel (yeni değişiklik yok)."]);
+      } else {
+        setSyncSteps(prev => [...prev, "Yerel veriler buluta başarıyla aktarıldı."]);
       }
-      setSyncSteps(prev => [...prev, "Eşitleme başarıyla tamamlandı."]);
       setCurrentSyncStep('Eşitleme başarıyla tamamlandı.');
-
-      // Set sync success flag to swap cloud icon for 5s (No more alert popups!)
-      setSyncSuccess(true);
 
       setTimeout(() => {
         setSyncSuccess(false);
@@ -2150,6 +2596,56 @@ function App() {
     }
   };
 
+  const handlePull = async () => {
+    if (!authUser) return;
+    const theme = document.documentElement.getAttribute('data-bs-theme');
+    const result = await Swal.fire({
+      title: 'Buluttan Veri Çek',
+      text: 'Yerel verileriniz buluttaki en son verilerle güncellenecektir (varsa çakışan yerel düzenlemeleriniz ezilebilir). Devam etmek istiyor musunuz?',
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonColor: '#3085d6',
+      cancelButtonColor: '#aaa',
+      confirmButtonText: 'Evet, Verileri Çek',
+      cancelButtonText: 'Vazgeç',
+      background: theme === 'dark' ? '#1e293b' : '#fff',
+      color: theme === 'dark' ? '#f8fafc' : '#1e293b'
+    });
+
+    if (result.isConfirmed) {
+      try {
+        setSyncing(true);
+        setSyncProgress(10);
+        setCurrentSyncStep('Buluttan en son veriler çekiliyor...');
+        await fetchAllFromFirestoreOnce(authUser, true);
+        
+        const nowMsSync = Date.now();
+        safeSetItem('last_synced_ms', nowMsSync.toString());
+        setLastSyncedMs(nowMsSync);
+        setSyncProgress(100);
+        setSyncSuccess(true);
+        setSyncSteps(['Buluttan veri çekme işlemi başarıyla tamamlandı.']);
+        
+        Swal.fire({
+          icon: 'success',
+          title: 'Başarılı!',
+          text: 'Bulut verileriniz başarıyla yerel hafızaya yüklendi.',
+          timer: 1500,
+          showConfirmButton: false,
+          background: theme === 'dark' ? '#1e293b' : '#fff',
+          color: theme === 'dark' ? '#f8fafc' : '#1e293b'
+        });
+      } catch (err) {
+        console.error("Fetch failed:", err);
+      } finally {
+        setSyncing(false);
+        setTimeout(() => {
+          setCurrentSyncStep('');
+        }, 3000);
+      }
+    }
+  };
+
   const handleSyncCategory = async (category, itemKey) => {
     if (!authUser) return;
     
@@ -2168,6 +2664,7 @@ function App() {
       let remoteTests = practiceTests;
       let remoteStats = dailyStats;
       let remoteNotes = stickyNotes;
+      let remoteQuickTests = customQuickTests;
 
       const localSyncedMs = parseInt(localStorage.getItem('last_synced_ms') || '0', 10);
       const isFirstSync = localSyncedMs === 0;
@@ -2507,6 +3004,62 @@ function App() {
         
         setStickyNotes(remoteNotes);
         safeSetItem('local_sticky_notes', JSON.stringify(compactObj(remoteNotes)));
+      } else if (category === 'quickTests') {
+        setItemSyncProgress(prev => ({ ...prev, [itemKey]: 35 }));
+        const localQuickTestsChanged = customQuickTests.some(q => q._status === 'created' || q._status === 'updated' || q._status === 'deleted');
+        
+        const updatedQuickTests = [...customQuickTests];
+        customQuickTests.forEach(q => {
+          if (q._status === 'created' || q._status === 'updated') {
+            const cleanQuick = { ...q };
+            delete cleanQuick._status;
+            cleanQuick.userId = authUser.uid; // Force correct userId to prevent disappearing
+            
+            // Use q.id directly as Firestore document ID to keep local/remote IDs in sync!
+            const docRef = doc(db, 'quick_tests', q.id);
+            batch.set(docRef, cleanQuick);
+            
+            const idx = updatedQuickTests.findIndex(item => item.id === q.id);
+            if (idx !== -1) {
+              delete updatedQuickTests[idx]._status;
+              updatedQuickTests[idx].userId = authUser.uid;
+            }
+            hasChanges = true;
+          } else if (q._status === 'deleted') {
+            batch.delete(doc(db, 'quick_tests', q.id));
+            hasChanges = true;
+          }
+        });
+
+        if (localQuickTestsChanged) metadataUpdates.quickTestsUpdatedAt = nowMs;
+        if (Object.keys(metadataUpdates).length > 0) {
+          const metaDocRef = doc(db, 'sync_metadata', authUser.uid);
+          batch.set(metaDocRef, metadataUpdates, { merge: true });
+          hasChanges = true;
+        }
+
+        if (hasChanges) {
+          await batch.commit();
+          // Promote local state immediately to avoid re-fetching
+          const cleanQuickTests = updatedQuickTests.filter(q => q._status !== 'deleted');
+          setCustomQuickTests(cleanQuickTests);
+          safeSetItem('local_custom_quick_tests', JSON.stringify(compactObj(cleanQuickTests)));
+          remoteQuickTests = cleanQuickTests;
+        }
+
+        setItemSyncProgress(prev => ({ ...prev, [itemKey]: 65 }));
+        
+        const isLocalQuickEmpty = customQuickTests.length === 0;
+        const needPullQuick = isFirstSync || isLocalQuickEmpty;
+        
+        if (needPullQuick) {
+          const qQuick = query(collection(db, 'quick_tests'), where('userId', '==', authUser.uid));
+          const snapQuick = await getDocs(qQuick);
+          remoteQuickTests = snapQuick.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        }
+        
+        setCustomQuickTests(remoteQuickTests);
+        safeSetItem('local_custom_quick_tests', JSON.stringify(compactObj(remoteQuickTests)));
       }
 
       setItemSyncProgress(prev => ({ ...prev, [itemKey]: 100 }));
@@ -2681,6 +3234,32 @@ function App() {
       safeSetItem('local_daily_stats', JSON.stringify(compactObj(dailyStats)));
     }
   }, [dailyStats]);
+
+  useEffect(() => {
+    const handleClearStats = async (e) => {
+      const { onComplete, onError } = e.detail || {};
+      try {
+        if (authUser) {
+          const qStats = query(collection(db, 'daily_stats'), where('userId', '==', authUser.uid));
+          const snapStats = await getDocs(qStats);
+          const batch = writeBatch(db);
+          snapStats.forEach(docSnap => {
+            batch.delete(docSnap.ref);
+          });
+          await batch.commit();
+        }
+        setDailyStats({});
+        localStorage.removeItem('local_daily_stats');
+        if (onComplete) onComplete();
+      } catch (err) {
+        console.error("Firestore daily stats deletion failed: ", err);
+        if (onError) onError(err);
+      }
+    };
+
+    window.addEventListener('clear-daily-stats', handleClearStats);
+    return () => window.removeEventListener('clear-daily-stats', handleClearStats);
+  }, [authUser, safeSetItem]);
 
   const handleLogTestResults = async (correctDelta, wordStats) => {
     if (correctDelta === 0 && (!wordStats || Object.keys(wordStats).length === 0)) return;
@@ -3134,7 +3713,8 @@ function App() {
       let currentBlock = [];
 
       for (const line of lines) {
-        if (line.replace(/^[\*\-•]\s*/, '').replace(/\*/g, '').trim().toLowerCase().startsWith('kelime:')) {
+        const cleanLine = line.replace(/^[\*\-•]\s*/, '').replace(/\*/g, '').trim().toLowerCase();
+        if (cleanLine.startsWith('kelime:') || cleanLine.startsWith('word:')) {
           if (currentBlock.length > 0) {
             blocks.push(currentBlock.join('\n'));
             currentBlock = [];
@@ -3329,6 +3909,84 @@ function App() {
     }
   };
 
+  const handleReparseAllWords = async (onProgress) => {
+    let count = 0;
+    const wordsWithRaw = words.filter(w => w.raw && w.raw.trim());
+
+    if (wordsWithRaw.length === 0) {
+      if (onProgress) onProgress(100);
+      return 0;
+    }
+
+    const total = wordsWithRaw.length;
+
+    const getUpdatedFields = (word) => {
+      const parsed = parseTemplate(word.raw);
+      return {
+        term: parsed.term,
+        pronunciation: parsed.pronunciation || '',
+        shortMeanings: parsed.shortMeanings || '',
+        generalDefinition: parsed.generalDefinition || '',
+        cefrLevel: parsed.cefrLevel || '',
+        meanings: parsed.meanings || [],
+        synonyms: parsed.synonyms || '',
+        antonyms: parsed.antonyms || '',
+        collocations: parsed.collocations || [],
+        idioms: parsed.idioms || [],
+        wordFamily: parsed.wordFamily || [],
+        tips: parsed.tips || [],
+        grammar: parsed.grammar || [],
+        variants: parsed.variants || [],
+        rootWord: parsed.rootWord || calculateRootWord(parsed.term)
+      };
+    };
+
+    if (isConfigMissing) {
+      setWords(prev => prev.map(w => {
+        if (w.raw && w.raw.trim()) {
+          count++;
+          return { ...w, ...getUpdatedFields(w) };
+        }
+        return w;
+      }));
+      if (onProgress) onProgress(100);
+      return count;
+    }
+
+    try {
+      const chunks = [];
+      for (let i = 0; i < total; i += 500) {
+        chunks.push(wordsWithRaw.slice(i, i + 500));
+      }
+
+      for (let i = 0; i < chunks.length; i++) {
+        const chunk = chunks[i];
+        const batch = writeBatch(db);
+        chunk.forEach(word => {
+          batch.update(doc(db, 'words', word.id), getUpdatedFields(word));
+          count++;
+        });
+        await batch.commit();
+        if (onProgress) {
+          const percent = Math.round((count / total) * 100);
+          onProgress(percent);
+        }
+      }
+
+      setWords(prev => prev.map(w => {
+        if (w.raw && w.raw.trim()) {
+          return { ...w, ...getUpdatedFields(w) };
+        }
+        return w;
+      }));
+
+      return count;
+    } catch (error) {
+      console.error("Reparse all words error:", error);
+      throw error;
+    }
+  };
+
   const handleToggleStarBatch = async (wordIds, shouldStar) => {
     if (!wordIds || wordIds.length === 0) return;
     setWords(prev => prev.map(w => {
@@ -3446,10 +4104,9 @@ function App() {
               await deleteDoc(doc(db, 'words', selectedWords[i]));
               setBulkProgress(((i + 1) / selectedWords.length) * 100);
             }
-          } else {
-            setWords(words.filter(w => !selectedWords.includes(w.id)));
-            setBulkProgress(100);
           }
+          setWords(prev => prev.filter(w => !selectedWords.includes(w.id)));
+          setBulkProgress(100);
           setBulkActionStatus('completed');
           setTimeout(() => {
             setBulkActionStatus('idle');
@@ -3834,6 +4491,7 @@ function App() {
 
   let processedWords = words.filter(word => {
     if (word._status === 'deleted') return false;
+    if (activeLanguageFilter && word.language !== activeLanguageFilter) return false;
     if (showDuplicates && !duplicateIds.has(word.id)) return false;
     if (showSameRoots && !sameRootIds.has(word.id)) return false;
     if (showFamilyMatches && !familyMatchIds.has(word.id)) return false;
@@ -3927,7 +4585,31 @@ function App() {
     });
   }
 
+  const getLanguageFlag = (langName) => {
+    const lower = (langName || '').toLowerCase();
+    if (lower.includes('ing') || lower.includes('eng') || lower === 'en') return '🇬🇧';
+    if (lower.includes('ara') || lower === 'ar') return '🇸🇦';
+    if (lower.includes('tür') || lower === 'tr') return '🇹🇷';
+    if (lower.includes('alm') || lower === 'de') return '🇩🇪';
+    if (lower.includes('fra') || lower === 'fr') return '🇫🇷';
+    if (lower.includes('isp') || lower === 'es') return '🇪🇸';
+    if (lower.includes('rus') || lower === 'ru') return '🇷🇺';
+    if (lower.includes('ita') || lower === 'it') return '🇮🇹';
+    return '🌐';
+  };
+
   const filteredWords = processedWords;
+
+  const recentlyAddedWords = useMemo(() => {
+    return words
+      .filter(w => w._status !== 'deleted' && w.createdAt)
+      .sort((a, b) => {
+        const dateA = parseDate(a.createdAt) || 0;
+        const dateB = parseDate(b.createdAt) || 0;
+        return dateB - dateA;
+      })
+      .slice(0, 5);
+  }, [words]);
 
   const displayedWords = useMemo(() => {
     return filteredWords.slice(0, visibleCount);
@@ -3957,6 +4639,7 @@ function App() {
   };
 
   const projectedCount = words.filter(word => {
+    if (activeLanguageFilter && word.language !== activeLanguageFilter) return false;
     if (showDuplicates && !duplicateIds.has(word.id)) return false;
     if (showSameRoots && !sameRootIds.has(word.id)) return false;
 
@@ -4016,178 +4699,577 @@ function App() {
   }
 
   return (
-    <div className="min-vh-100 py-4">
+    <div className={(currentView === 'home' || currentView === 'settings' || currentView === 'sticky-notes' || currentView === 'custom-lists' || currentView === 'list-detail' || currentView === 'add-word' || currentView === 'practice-test') ? "min-vh-100" : "min-vh-100 py-4"}>
       {/* Global sticky note tooltip for homepage text selection disabled */}
-      {currentView === 'home' && (
-      <Container fluid className="main-app-container">
-            <div className={`sticky-top pt-2 ${showFiltersCollapse || isSelectionMode ? 'bg-body shadow-sm pb-3' : 'pb-1'} px-1 transition-all`} style={{ zIndex: 1020, top: 0 }}>
-              <Navbar className="glass-navbar border border-opacity-25 rounded-4 mb-2 px-2 px-md-4 py-2 py-md-3 shadow-sm d-flex flex-row align-items-center justify-content-between flex-nowrap bg-body-tertiary" style={{ zIndex: 1021 }}>
-              <Navbar.Brand className="d-flex align-items-center gap-2 m-0 p-0 h1 fs-4 fw-bold flex-shrink-0">
-                <img src="/iconv2.png" alt="Sözlük Logo" style={{ width: '36px', height: '36px', objectFit: 'contain' }} />
+      {(currentView === 'home' || currentView === 'settings' || currentView === 'sticky-notes' || currentView === 'custom-lists' || currentView === 'list-detail' || currentView === 'add-word' || currentView === 'practice-test') && (
+        <div className="premium-layout w-100">
+          {/* DESKTOP/TABLET SIDEBAR */}
+          <aside className={`premium-sidebar ${isSidebarCollapsed ? 'collapsed' : ''}`}>
+            <button className="premium-sidebar-toggle" onClick={toggleSidebar}>
+              <i className={`bi bi-chevron-${isSidebarCollapsed ? 'right' : 'left'}`}></i>
+            </button>
 
-              </Navbar.Brand>
+            <div className="premium-sidebar-logo-container">
+              <img src="/iconv2.png" alt="Logo" style={{ width: '32px', height: '32px', objectFit: 'contain' }} />
+              <span className="premium-sidebar-logo-text">Kelime Defteri</span>
+            </div>
+            
+            <nav className="premium-sidebar-nav">
+              <button 
+                className={`premium-sidebar-nav-item ${currentView === 'home' ? 'active' : ''}`}
+                onClick={() => navigateTo('home')}
+                title="Kelimelerim"
+              >
+                <i className="bi bi-book"></i>
+                <span>Kelimelerim</span>
+              </button>
+              
+              <button 
+                className={`premium-sidebar-nav-item ${currentView === 'add-word' ? 'active' : ''}`}
+                onClick={() => navigateTo('add-word')}
+                title="Yeni Kelime Ekle"
+              >
+                <i className="bi bi-plus-circle"></i>
+                <span>Yeni Kelime Ekle</span>
+              </button>
 
-              <InputGroup className="w-auto flex-grow-1 mx-2 mx-md-4" style={{ maxWidth: '400px' }}>
-                <InputGroup.Text className="bg-body-secondary border-0 text-muted rounded-start-pill ps-2 ps-md-3 d-flex align-items-center gap-2">
-                  <i className="bi bi-search" style={{ fontSize: '18px' }}></i>
-                  <i
-                    className={`bi bi-intersect ${showDuplicates ? 'text-primary' : 'text-muted'}`}
-                    style={{ fontSize: '16px', cursor: 'pointer', transition: 'color 0.2s ease-in-out' }}
-                    onClick={(e) => { e.stopPropagation(); setShowDuplicates(!showDuplicates); if (!showDuplicates) { setShowSameRoots(false); setShowFamilyMatches(false); } }}
-                    title="Sadece Benzer/Aynı Kelimeleri Göster"
-                  ></i>
-                  <i
-                    className={`bi bi-tree ${showSameRoots ? 'text-primary' : 'text-muted'}`}
-                    style={{ fontSize: '16px', cursor: 'pointer', transition: 'color 0.2s ease-in-out' }}
-                    onClick={(e) => { e.stopPropagation(); setShowSameRoots(!showSameRoots); if (!showSameRoots) { setShowDuplicates(false); setShowFamilyMatches(false); } }}
-                    title="Aynı Köke Sahip Kelimeleri Göster"
-                  ></i>
-                  <i
-                    className={`bi bi-people ${showFamilyMatches ? 'text-primary' : 'text-muted'}`}
-                    style={{ fontSize: '16px', cursor: 'pointer', transition: 'color 0.2s ease-in-out' }}
-                    onClick={(e) => { e.stopPropagation(); setShowFamilyMatches(!showFamilyMatches); if (!showFamilyMatches) { setShowDuplicates(false); setShowSameRoots(false); } }}
-                    title="Hem Kelime Olarak Ekli Hem De Başka Bir Kelimenin Ailesinde Olanları Göster"
-                  ></i>
-                </InputGroup.Text>
-                <Form.Control
-                  type="text"
-                  placeholder="Ara..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className={`bg-body-secondary border-0 shadow-none ${searchQuery ? '' : 'pe-2 pe-md-3'} py-1 py-md-2`}
-                  style={{ fontSize: '15px' }}
-                />
-                {searchQuery && (
-                  <InputGroup.Text
-                    className="bg-body-secondary border-0 text-secondary pe-3"
-                    style={{ cursor: 'pointer' }}
-                    onClick={() => setSearchQuery('')}
-                    title="Aramayı Temizle"
-                  >
-                    <i className="bi bi-x-circle-fill text-opacity-50 text-body"></i>
-                  </InputGroup.Text>
-                )}
-                <InputGroup.Text
-                  className="bg-body-secondary border-0 text-muted rounded-end-pill pe-3 d-flex"
-                  style={{ cursor: 'pointer' }}
-                  onClick={() => setShowFiltersCollapse(!showFiltersCollapse)}
-                  title="Filtreler"
-                >
-                  <i className={`bi bi-sliders ${showFiltersCollapse ? 'text-primary' : ''}`} style={{ fontSize: '18px' }}></i>
-                </InputGroup.Text>
-              </InputGroup>
-
-              <div className="ms-1 me-1 flex-shrink-0">
-                <DailyGoalTracker dailyStats={dailyStats} />
-              </div>
-
-              <div className="d-none d-md-flex gap-2 flex-shrink-0">
-                <Button variant="info" className="rounded-pill d-flex align-items-center justify-content-center gap-2 px-3 fw-bold shadow-sm text-dark text-nowrap" style={{ backgroundColor: '#4fd1c5', border: 'none', height: '40px' }} onClick={() => {
+              <button 
+                className={`premium-sidebar-nav-item premium-sidebar-practice-btn ${currentView === 'practice-test' ? 'active' : ''}`}
+                onClick={() => {
                   setDirectPracticeConfig(null);
                   setDirectPracticeWords(null);
                   navigateTo('practice-test');
-                }}>
-                  <i className="bi bi-controller" style={{ fontSize: '20px' }}></i> <span className="d-none d-lg-inline">Test Çöz</span>
-                </Button>
-                <Button variant="primary" className="rounded-pill d-flex align-items-center justify-content-center gap-2 px-3 fw-semibold shadow-sm text-nowrap" style={{ minWidth: '40px', height: '40px' }} onClick={() => navigateTo('add-word')}>
-                  <i className="bi bi-plus-lg" style={{ fontSize: '20px' }}></i> <span className="d-none d-lg-inline">Yeni Kelime</span>
-                </Button>
-                <Button
-                  variant="outline-secondary"
-                  className="rounded-circle d-flex align-items-center justify-content-center border-0 bg-body-secondary position-relative"
-                  style={{ width: '40px', height: '40px', minWidth: '40px' }}
-                  onClick={() => navigateTo('custom-lists')}
-                  title="Özel Listelerim"
-                >
-                  <i className="bi bi-collection-play-fill" style={{ fontSize: '18px', color: '#3b82f6' }}></i>
-                  {customLists.length > 0 && (
-                    <span
-                      className="position-absolute top-0 end-0 text-white fw-bold d-flex align-items-center justify-content-center"
-                      style={{
-                        width: '16px', height: '16px', borderRadius: '50%', fontSize: '9px',
-                        background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
-                        transform: 'translate(2px, -2px)'
-                      }}
-                    >
-                      {customLists.length > 99 ? '99+' : customLists.length}
-                    </span>
+                }}
+                title="Pratik Yap"
+              >
+                <i className="bi bi-controller"></i>
+                <span>Pratik Yap</span>
+              </button>
+
+              <button 
+                className={`premium-sidebar-nav-item ${currentView === 'custom-lists' || currentView === 'list-detail' ? 'active' : ''}`}
+                onClick={() => navigateTo('custom-lists')}
+                title="Özel Listelerim"
+              >
+                <i className="bi bi-collection-play"></i>
+                <span>Özel Listelerim</span>
+              </button>
+
+              <button 
+                className={`premium-sidebar-nav-item ${currentView === 'sticky-notes' ? 'active' : ''}`}
+                onClick={() => navigateTo('sticky-notes')}
+                title="Sticky Notlarım"
+              >
+                <i className="bi bi-pin-angle"></i>
+                <span>Sticky Notlarım</span>
+              </button>
+
+              <button 
+                className={`premium-sidebar-nav-item ${currentView === 'settings' ? 'active' : ''}`}
+                onClick={() => navigateTo('settings')}
+                title="Ayarlar"
+              >
+                <i className="bi bi-gear"></i>
+                <span>Ayarlar</span>
+              </button>
+            </nav>
+
+            {authUser && (
+              <div className={`premium-sidebar-footer d-flex flex-column ${isSidebarCollapsed ? 'collapsed' : ''}`}>
+                <div className="premium-sidebar-user-row d-flex align-items-center gap-2 mb-3">
+                  <div className="premium-sidebar-user-avatar">
+                    {authUser.photoURL ? (
+                      <img 
+                        src={authUser.photoURL} 
+                        alt={authUser.displayName || 'Avatar'} 
+                        referrerPolicy="no-referrer"
+                        className="avatar-img"
+                      />
+                    ) : (
+                      <div className="avatar-placeholder">
+                        {authUser.displayName ? authUser.displayName.charAt(0).toUpperCase() : (authUser.email ? authUser.email.charAt(0).toUpperCase() : 'U')}
+                      </div>
+                    )}
+                  </div>
+                  {!isSidebarCollapsed && (
+                    <div className="premium-sidebar-user-details text-truncate">
+                      <div className="d-flex align-items-center gap-1 text-truncate">
+                        <span className="premium-sidebar-user-name text-truncate fw-bold">{authUser.displayName || 'Serhat Akyol'}</span>
+                        <span className="premium-sidebar-version flex-shrink-0">v3.0</span>
+                      </div>
+                      <div className="premium-sidebar-user-email text-truncate text-muted">{authUser.email || 'srht.akyol.1649@gmail.com'}</div>
+                    </div>
                   )}
-                </Button>
-                <Button
-                  variant="outline-secondary"
-                  className="rounded-circle d-flex align-items-center justify-content-center border-0 bg-body-secondary position-relative"
-                  style={{ width: '40px', height: '40px', minWidth: '40px' }}
-                  onClick={() => navigateTo('sticky-notes')}
-                  title="Sticky Notlarım"
-                >
-                  <i className="bi bi-pin-angle-fill" style={{ fontSize: '18px', color: '#f59e0b' }}></i>
-                  {uncompletedNotesCount > 0 && (
-                    <span
-                      className="position-absolute top-0 end-0 text-white fw-bold d-flex align-items-center justify-content-center"
-                      style={{
-                        width: '16px', height: '16px', borderRadius: '50%', fontSize: '9px',
-                        background: 'linear-gradient(135deg, #f59e0b, #d97706)',
-                        transform: 'translate(2px, -2px)'
-                      }}
+                </div>
+
+                <div className={`premium-sidebar-theme-container mb-3 ${isSidebarCollapsed ? 'vertical' : 'horizontal'}`}>
+                  <button 
+                    type="button"
+                    className={`theme-btn ${theme === 'light' ? 'active' : ''}`}
+                    onClick={() => setTheme('light')}
+                    title="Açık Tema"
+                  >
+                    <i className="bi bi-sun"></i>
+                    {!isSidebarCollapsed && <span>Açık</span>}
+                  </button>
+
+                  <button 
+                    type="button"
+                    className={`theme-btn ${theme === 'dark' ? 'active' : ''}`}
+                    onClick={() => setTheme('dark')}
+                    title="Koyu Tema"
+                  >
+                    <i className="bi bi-moon"></i>
+                    {!isSidebarCollapsed && <span>Koyu</span>}
+                  </button>
+
+                  <button 
+                    type="button"
+                    className={`theme-btn ${theme === 'system' ? 'active' : ''}`}
+                    onClick={() => setTheme('system')}
+                    title="Sistem Teması"
+                  >
+                    <i className="bi bi-display"></i>
+                    {!isSidebarCollapsed && <span>Sistem</span>}
+                  </button>
+                </div>
+
+                <div className="premium-sidebar-actions-row d-flex align-items-center gap-2">
+                  <button 
+                    type="button"
+                    onClick={handleLogout}
+                    className={`logout-btn d-flex align-items-center justify-content-center ${isSidebarCollapsed ? 'collapsed' : 'w-100'}`}
+                    title="Çıkış Yap"
+                  >
+                    <i className="bi bi-box-arrow-right"></i>
+                    {!isSidebarCollapsed && <span>Çıkış Yap</span>}
+                  </button>
+
+                  {!isSidebarCollapsed && (
+                    <button 
+                      type="button"
+                      onClick={handleClearCache}
+                      className="sync-btn d-flex align-items-center justify-content-center"
+                      title="Önbelleği ve Cihaz Verilerini Temizle"
                     >
-                      {uncompletedNotesCount > 99 ? '99+' : uncompletedNotesCount}
-                    </span>
+                      <i className="bi bi-arrow-clockwise"></i>
+                    </button>
                   )}
-                </Button>
-                <Button variant="outline-secondary" className="rounded-circle d-flex align-items-center justify-content-center border-0 bg-body-secondary text-body" style={{ width: '40px', height: '40px', minWidth: '40px' }} onClick={() => navigateTo('settings')} title="Ayarlar">
-                  <i className="bi bi-gear-fill" style={{ fontSize: '20px' }}></i>
-                </Button>
+                </div>
               </div>
-            </Navbar>
+            )}
+          </aside>
 
+          {/* MAIN CONTENT AREA */}
+          <div className={`premium-content-area ${isSidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
+            <div className="premium-container">
+              {currentView === 'home' && (
+                <>
+                  <div className="sticky-top pt-2 pb-1" style={{ zIndex: 1020, top: 0 }}>
+                    <div className="premium-control-deck mb-2">
+                  {/* ROW 1: Search, View Mode, Tracker, Add Button */}
+                  <div className="d-flex flex-column flex-md-row align-items-stretch align-items-md-center justify-content-between gap-2 gap-md-3 pb-2 pb-md-3 border-bottom border-opacity-10 mb-2 mb-md-3">
+                    {/* Left: Brand + Search Wrapper */}
+                    <div className="d-flex flex-column flex-grow-1" style={{ maxWidth: '600px' }}>
+                      <div className="d-flex align-items-center gap-2 w-100">
+                        <Navbar.Brand className="d-flex d-md-none align-items-center gap-2 m-0 p-0 h1 fs-4 fw-bold flex-shrink-0">
+                          <img src="/iconv2.png" alt="Sözlük Logo" style={{ width: '36px', height: '36px', objectFit: 'contain' }} />
+                        </Navbar.Brand>
 
-              <Collapse in={showFiltersCollapse}>
-                <div className="w-100">
-                  <div className="row g-2 mt-1 mx-0">
-                    <div className="col-12 mb-1">
-                      <ButtonGroup size="sm" className="shadow-sm rounded-pill w-100">
-                        <Button
-                          variant={viewMode === 'grid' ? 'primary' : 'outline-primary'}
-                          className={`rounded-start-pill py-2 px-3 flex-grow-1 ${viewMode === 'grid' ? '' : 'bg-body'}`}
-                          onClick={() => setViewMode('grid')}
-                        >
-                          <i className="bi bi-grid-3x3-gap-fill me-2"></i>Klasik
-                        </Button>
-                        <Button
-                          variant={viewMode === 'detailed' ? 'primary' : 'outline-primary'}
-                          className={`rounded-end-pill py-2 px-3 flex-grow-1 ${viewMode === 'detailed' ? '' : 'bg-body'}`}
-                          onClick={() => setViewMode('detailed')}
-                        >
-                          <i className="bi bi-view-list me-2"></i>Detaylı
-                        </Button>
-                      </ButtonGroup>
+                        <div className="premium-search-wrapper w-100">
+                          <i className="bi bi-search text-primary opacity-75 fs-6 flex-shrink-0"></i>
+                          
+                          {/* Quick search rule filters */}
+                          <div className="d-none d-md-flex align-items-center gap-1 ms-2 me-1 border-end pe-2 border-opacity-10">
+                            <button 
+                              type="button"
+                              className={`premium-search-action-btn ${showDuplicates ? 'active' : ''}`}
+                              onClick={(e) => { e.stopPropagation(); setShowDuplicates(!showDuplicates); if (!showDuplicates) { setShowSameRoots(false); setShowFamilyMatches(false); } }}
+                              title="Sadece Benzer/Aynı Kelimeleri Göster"
+                            >
+                              <i className="bi bi-intersect"></i>
+                            </button>
+                            <button 
+                              type="button"
+                              className={`premium-search-action-btn ${showSameRoots ? 'active' : ''}`}
+                              onClick={(e) => { e.stopPropagation(); setShowSameRoots(!showSameRoots); if (!showSameRoots) { setShowDuplicates(false); setShowFamilyMatches(false); } }}
+                              title="Aynı Köke Sahip Kelimeleri Göster"
+                            >
+                              <i className="bi bi-tree"></i>
+                            </button>
+                            <button 
+                              type="button"
+                              className={`premium-search-action-btn ${showFamilyMatches ? 'active' : ''}`}
+                              onClick={(e) => { e.stopPropagation(); setShowFamilyMatches(!showFamilyMatches); if (!showFamilyMatches) { setShowDuplicates(false); setShowSameRoots(false); } }}
+                              title="Hem Kelime Olarak Ekli Hem De Başka Bir Kelimenin Ailesinde Olanları Göster"
+                            >
+                              <i className="bi bi-people"></i>
+                            </button>
+                          </div>
+
+                          <input
+                            type="text"
+                            placeholder="Kelime veya anlam ara..."
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className="premium-search-input"
+                          />
+
+                          {searchQuery && (
+                            <button 
+                              type="button"
+                              className="premium-search-action-btn text-danger me-1"
+                              onClick={() => setSearchQuery('')}
+                              title="Aramayı Temizle"
+                            >
+                              <i className="bi bi-x-circle-fill"></i>
+                            </button>
+                          )}
+                        </div>
+
+                        {/* On Mobile: Show Streak (DailyGoalTracker) and Three-Dots Menu Toggle next to Search */}
+                        <div className="d-flex d-md-none align-items-center gap-2 flex-shrink-0">
+                          <DailyGoalTracker dailyStats={dailyStats} />
+                          <button
+                            type="button"
+                            className="btn btn-outline-secondary border-secondary border-opacity-25 rounded-circle d-flex align-items-center justify-content-center p-0"
+                            style={{ width: '36px', height: '36px', backgroundColor: 'var(--bs-tertiary-bg)' }}
+                            onClick={() => setShowMobileHeaderMenu(!showMobileHeaderMenu)}
+                            title="Diğer Seçenekler"
+                          >
+                            <i className="bi bi-three-dots-vertical fs-5 text-body"></i>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Collapsible Mobile-only Options Area */}
+                      <div 
+                        className={`d-flex d-md-none flex-column gap-3 mt-2 rounded-3 mobile-header-dropdown ${showMobileHeaderMenu ? 'show' : ''}`}
+                        style={{ background: 'var(--bs-tertiary-bg)', border: showMobileHeaderMenu ? '1px solid rgba(0,0,0,0.08)' : '0 solid transparent' }}
+                      >
+                          {/* Row 1: View Toggle & Add Button */}
+                          <div className="d-flex align-items-center justify-content-between gap-2">
+                            <div className="premium-toggle-group w-100 m-0">
+                              <button
+                                type="button"
+                                className={`premium-toggle-btn py-1 ${viewMode === 'grid' ? 'active' : ''}`}
+                                onClick={() => setViewMode('grid')}
+                                style={{ fontSize: '0.8rem' }}
+                              >
+                                <i className="bi bi-grid-3x3-gap-fill"></i>
+                                <span>Klasik</span>
+                              </button>
+                              <button
+                                type="button"
+                                className={`premium-toggle-btn py-1 ${viewMode === 'detailed' ? 'active' : ''}`}
+                                onClick={() => setViewMode('detailed')}
+                                style={{ fontSize: '0.8rem' }}
+                              >
+                                <i className="bi bi-view-list"></i>
+                                <span>Detaylı</span>
+                              </button>
+                            </div>
+                            
+                            {/* Add Button */}
+                            <button 
+                              type="button"
+                              onClick={() => { navigateTo('add-word'); setShowMobileHeaderMenu(false); }}
+                              className="premium-add-btn m-0"
+                              style={{ width: '38px', height: '34px', padding: '0', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '12px' }}
+                            >
+                              <i className="bi bi-plus-lg" style={{ fontSize: '16px' }}></i>
+                            </button>
+                          </div>
+
+                          {/* Row 2: Quick Search Action Pills */}
+                          <div className="d-flex align-items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+                            <button 
+                              type="button"
+                              className={`premium-search-pill ${showDuplicates ? 'active' : ''}`}
+                              onClick={(e) => { e.stopPropagation(); setShowDuplicates(!showDuplicates); if (!showDuplicates) { setShowSameRoots(false); setShowFamilyMatches(false); } }}
+                            >
+                              <i className="bi bi-intersect me-1"></i>
+                              <span>Aynı Kelimeler</span>
+                            </button>
+                            <button 
+                              type="button"
+                              className={`premium-search-pill ${showSameRoots ? 'active' : ''}`}
+                              onClick={(e) => { e.stopPropagation(); setShowSameRoots(!showSameRoots); if (!showSameRoots) { setShowDuplicates(false); setShowFamilyMatches(false); } }}
+                            >
+                              <i className="bi bi-tree me-1"></i>
+                              <span>Aynı Kökler</span>
+                            </button>
+                            <button 
+                              type="button"
+                              className={`premium-search-pill ${showFamilyMatches ? 'active' : ''}`}
+                              onClick={(e) => { e.stopPropagation(); setShowFamilyMatches(!showFamilyMatches); if (!showFamilyMatches) { setShowDuplicates(false); setShowSameRoots(false); } }}
+                            >
+                              <i className="bi bi-people me-1"></i>
+                              <span>Aileler</span>
+                            </button>
+                          </div>
+
+                          <hr className="my-0 opacity-10" />
+
+                          {/* Row 3: Languages Scroll Bar */}
+                          <div className="d-flex align-items-center gap-2 overflow-x-auto pb-1 scrollbar-none" style={{ maxWidth: '100%' }}>
+                            <button
+                              className={`premium-filter-chip ${!activeLanguageFilter && !showOnlyStarred ? 'active-primary' : ''}`}
+                              onClick={() => { setActiveLanguageFilter(''); setShowOnlyStarred(false); }}
+                            >
+                              <span>🌐 Tüm Sözlük</span>
+                              <span className="badge rounded-pill bg-light text-dark ms-1">{words.filter(w => w._status !== 'deleted').length}</span>
+                            </button>
+
+                            {uniqueLanguages.map(lang => {
+                              const isActive = activeLanguageFilter === lang && !showOnlyStarred;
+                              return (
+                                <button
+                                  key={lang}
+                                  className={`premium-filter-chip ${isActive ? 'active-info' : ''}`}
+                                  onClick={() => { setActiveLanguageFilter(lang); setShowOnlyStarred(false); }}
+                                >
+                                  <span className="me-1 fs-6">{getLanguageFlag(lang)}</span>
+                                  <span>{getLanguageLabel(lang)}</span>
+                                  <span className={`badge rounded-pill ms-1 ${isActive ? 'bg-white text-info' : 'bg-info text-white'}`} style={{ fontSize: '0.75rem' }}>
+                                    {words.filter(w => w.language === lang && w._status !== 'deleted').length}
+                                  </span>
+                                </button>
+                              );
+                            })}
+
+                            <button
+                              className={`premium-filter-chip ${showOnlyStarred ? 'active-star' : ''}`}
+                              onClick={() => { setShowOnlyStarred(!showOnlyStarred); setActiveLanguageFilter(''); }}
+                            >
+                              <i className="bi bi-star-fill text-warning me-1"></i>
+                              <span>Yıldızlılar</span>
+                              <span className="badge rounded-pill bg-warning text-white ms-1">
+                                {words.filter(w => w.isStarred && w._status !== 'deleted').length}
+                              </span>
+                            </button>
+                          </div>
+
+                          {/* Row 4: Status Tabs & Actions */}
+                          <div className="d-flex flex-column gap-2">
+                            {/* Status Tabs */}
+                            <div className="d-flex align-items-center gap-1 bg-light p-1 rounded-3 flex-shrink-0 w-100 justify-content-between">
+                              <button
+                                className={`btn btn-sm py-1 px-3 border-0 rounded-2 fw-semibold flex-grow-1 text-center ${!quickStatusFilter ? 'bg-white text-dark shadow-sm' : 'text-muted'}`}
+                                onClick={() => setQuickStatusFilter('')}
+                                style={{ fontSize: '0.78rem' }}
+                              >
+                                Tümü
+                              </button>
+                              {[['Yeni', 'primary'], ['Öğreniyor', 'warning'], ['Öğrendi', 'success']].map(([status, color]) => {
+                                const isActive = quickStatusFilter === status;
+                                return (
+                                  <button
+                                    key={status}
+                                    className={`btn btn-sm py-1 px-3 border-0 rounded-2 fw-semibold flex-grow-1 text-center ${isActive ? 'bg-white text-dark shadow-sm' : 'text-muted'}`}
+                                    onClick={() => setQuickStatusFilter(isActive ? '' : status)}
+                                    style={{ fontSize: '0.78rem' }}
+                                  >
+                                    <span>{status}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+
+                            {/* Actions (Filter, Sort, List, Select) */}
+                            <div className="d-flex align-items-center gap-2 overflow-x-auto pb-1 scrollbar-none mt-1">
+                              <button
+                                className={`premium-filter-chip ${filteredWords.length !== words.length ? 'active-info' : ''}`}
+                                onClick={() => { setShowFilterModal(true); setShowMobileHeaderMenu(false); }}
+                              >
+                                <i className="bi bi-funnel-fill"></i>
+                                <span>Filtrele</span>
+                              </button>
+
+                              <button
+                                className={`premium-filter-chip ${sortRules.length > 0 ? 'active-info' : ''}`}
+                                onClick={() => { setShowSortModal(true); setShowMobileHeaderMenu(false); }}
+                              >
+                                <i className="bi bi-sort-down"></i>
+                                <span>Sırala</span>
+                              </button>
+
+                              <Dropdown onSelect={id => { setFilters({ ...filters, listId: id }); setShowMobileHeaderMenu(false); }}>
+                                <Dropdown.Toggle 
+                                  className={`premium-dropdown-toggle ${filters.listId ? 'active' : ''}`}
+                                  id="quick-list-dropdown-unified-mobile"
+                                >
+                                  <div className="d-flex align-items-center gap-1">
+                                    <i className="bi bi-collection-play-fill text-primary"></i>
+                                    <span className="text-truncate" style={{ maxWidth: '100px' }}>{
+                                      filters.listId === 'all_listed' ? 'Tüm Listeler' :
+                                      filters.listId ? customLists.find(l => l.id === filters.listId)?.name : 
+                                      'Listeler'
+                                    }</span>
+                                  </div>
+                                  <i className="bi bi-chevron-down small opacity-50"></i>
+                                </Dropdown.Toggle>
+                                <Dropdown.Menu className="shadow-lg border-0 rounded-4 mt-2 overflow-hidden" align="end">
+                                  <Dropdown.Item eventKey="" active={!filters.listId} className="py-2">
+                                    <i className="bi bi-grid-fill me-2 opacity-50"></i> Tüm Sözlük
+                                  </Dropdown.Item>
+                                  <Dropdown.Item eventKey="all_listed" active={filters.listId === 'all_listed'} className="py-2 d-flex justify-content-between align-items-center">
+                                    <div><i className="bi bi-collection-play-fill me-2 text-primary"></i> Tüm Listelerim</div>
+                                  </Dropdown.Item>
+                                  {customLists.length > 0 && <Dropdown.Divider className="m-0 border-opacity-10" />}
+                                  <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
+                                    {customLists.map(list => (
+                                      <Dropdown.Item key={list.id} eventKey={list.id} active={filters.listId === list.id} className="py-2">
+                                        {list.name}
+                                      </Dropdown.Item>
+                                    ))}
+                                  </div>
+                                </Dropdown.Menu>
+                              </Dropdown>
+
+                              <button
+                                className={`premium-filter-chip ${isSelectionMode ? 'active-primary' : ''}`}
+                                onClick={() => { setIsSelectionMode(!isSelectionMode); setSelectedWords([]); setShowMobileHeaderMenu(false); }}
+                              >
+                                <i className="bi bi-check2-square"></i>
+                                <span>{isSelectionMode ? 'İptal' : 'Seç'}</span>
+                              </button>
+                            </div>
+                          </div>
+                      </div>
                     </div>
 
-                    <div className="col-6 col-md-auto">
-                      <Button variant="outline-primary" size="sm" className="rounded-pill px-3 py-2 shadow-sm bg-body fw-medium d-flex align-items-center justify-content-center gap-2 w-100" onClick={() => setShowFilterModal(true)}>
+                    {/* Right: View Toggle, Goal Tracker, Add Button (Desktop only) */}
+                    <div className="d-none d-md-flex align-items-center gap-3 justify-content-between justify-content-md-end flex-shrink-0">
+                      <div className="premium-toggle-group" style={{ width: '180px' }}>
+                        <button
+                          type="button"
+                          className={`premium-toggle-btn py-1 ${viewMode === 'grid' ? 'active' : ''}`}
+                          onClick={() => setViewMode('grid')}
+                          style={{ fontSize: '0.8rem' }}
+                        >
+                          <i className="bi bi-grid-3x3-gap-fill"></i>
+                          <span>Klasik</span>
+                        </button>
+                        <button
+                          type="button"
+                          className={`premium-toggle-btn py-1 ${viewMode === 'detailed' ? 'active' : ''}`}
+                          onClick={() => setViewMode('detailed')}
+                          style={{ fontSize: '0.8rem' }}
+                        >
+                          <i className="bi bi-view-list"></i>
+                          <span>Detaylı</span>
+                        </button>
+                      </div>
+
+                      <DailyGoalTracker dailyStats={dailyStats} />
+
+                      <button 
+                        type="button"
+                        onClick={() => navigateTo('add-word')}
+                        title="Yeni Kelime Ekle"
+                        className="premium-add-btn"
+                      >
+                        <i className="bi bi-plus-lg" style={{ fontSize: '16px' }}></i>
+                        <span className="d-none d-sm-inline">Yeni Ekle</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* ROW 2: Filters, Languages, Statuses, Sorting */}
+                  <div className="d-none d-md-flex flex-wrap align-items-center justify-content-between gap-3">
+                    {/* Left: Languages Scroll Bar */}
+                    <div className="d-flex align-items-center gap-2 overflow-x-auto pb-1 pb-md-0 scrollbar-none flex-grow-1 flex-md-grow-0" style={{ maxWidth: '100%' }}>
+                      <button
+                        className={`premium-filter-chip ${!activeLanguageFilter && !showOnlyStarred ? 'active-primary' : ''}`}
+                        onClick={() => { setActiveLanguageFilter(''); setShowOnlyStarred(false); }}
+                      >
+                        <span>🌐 Tüm Sözlük</span>
+                        <span className="badge rounded-pill bg-light text-dark ms-1">{words.filter(w => w._status !== 'deleted').length}</span>
+                      </button>
+
+                      {uniqueLanguages.map(lang => {
+                        const isActive = activeLanguageFilter === lang && !showOnlyStarred;
+                        return (
+                          <button
+                            key={lang}
+                            className={`premium-filter-chip ${isActive ? 'active-info' : ''}`}
+                            onClick={() => { setActiveLanguageFilter(lang); setShowOnlyStarred(false); }}
+                          >
+                            <span className="me-1 fs-6">{getLanguageFlag(lang)}</span>
+                            <span>{getLanguageLabel(lang)}</span>
+                            <span className={`badge rounded-pill ms-1 ${isActive ? 'bg-white text-info' : 'bg-info text-white'}`} style={{ fontSize: '0.75rem' }}>
+                              {words.filter(w => w.language === lang && w._status !== 'deleted').length}
+                            </span>
+                          </button>
+                        );
+                      })}
+
+                      <button
+                        className={`premium-filter-chip ${showOnlyStarred ? 'active-star' : ''}`}
+                        onClick={() => { setShowOnlyStarred(!showOnlyStarred); setActiveLanguageFilter(''); }}
+                      >
+                        <i className="bi bi-star-fill text-warning me-1"></i>
+                        <span>Yıldızlılar</span>
+                        <span className="badge rounded-pill bg-warning text-white ms-1">
+                          {words.filter(w => w.isStarred && w._status !== 'deleted').length}
+                        </span>
+                      </button>
+                    </div>
+
+                    {/* Center: Status Tabs */}
+                    <div className="d-flex align-items-center gap-1 bg-light p-1 rounded-3 flex-shrink-0">
+                      <button
+                        className={`btn btn-sm py-1 px-3 border-0 rounded-2 fw-semibold ${!quickStatusFilter ? 'bg-white text-dark shadow-sm' : 'text-muted'}`}
+                        onClick={() => setQuickStatusFilter('')}
+                        style={{ fontSize: '0.78rem' }}
+                      >
+                        Tümü
+                      </button>
+                      {[['Yeni', 'primary'], ['Öğreniyor', 'warning'], ['Öğrendi', 'success']].map(([status, color]) => {
+                        const isActive = quickStatusFilter === status;
+                        const count = words.filter(w => w.learningStatus === status && w._status !== 'deleted' && (!activeLanguageFilter || w.language === activeLanguageFilter)).length;
+                        return (
+                          <button
+                            key={status}
+                            className={`btn btn-sm py-1 px-3 border-0 rounded-2 fw-semibold d-flex align-items-center gap-1 ${isActive ? 'bg-white text-dark shadow-sm' : 'text-muted'}`}
+                            onClick={() => setQuickStatusFilter(isActive ? '' : status)}
+                            style={{ fontSize: '0.78rem' }}
+                          >
+                            <span>{status}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Right: Actions (Sort, Filter, List selection, Selection mode) */}
+                    <div className="d-flex align-items-center gap-2 ms-md-auto overflow-x-auto w-100 w-md-auto pb-1 pb-md-0 scrollbar-none">
+                      <button
+                        className={`premium-filter-chip ${filteredWords.length !== words.length ? 'active-info' : ''}`}
+                        onClick={() => setShowFilterModal(true)}
+                      >
                         <i className="bi bi-funnel-fill"></i>
                         <span>Filtrele</span>
-                        <Badge bg="primary" className="rounded-pill fw-bold ms-1">{filteredWords.length}</Badge>
-                      </Button>
-                    </div>
+                        <span className="badge rounded-pill bg-primary ms-1" style={{ fontSize: '0.75rem' }}>{filteredWords.length}</span>
+                      </button>
 
-                    <div className="col-6 col-md-auto">
-                      <Button variant="outline-primary" size="sm" className="rounded-pill px-3 py-2 shadow-sm bg-body fw-medium d-flex align-items-center justify-content-center gap-2 w-100" onClick={() => setShowSortModal(true)}>
+                      <button
+                        className={`premium-filter-chip ${sortRules.length > 0 ? 'active-info' : ''}`}
+                        onClick={() => setShowSortModal(true)}
+                      >
                         <i className="bi bi-sort-down"></i>
                         <span>Sırala</span>
-                        {sortRules.length > 0 && <Badge bg="primary" className="rounded-pill ms-1">{sortRules.length}</Badge>}
-                      </Button>
-                    </div>
+                        {sortRules.length > 0 && (
+                          <span className="badge rounded-pill bg-primary ms-1" style={{ fontSize: '0.75rem' }}>{sortRules.length}</span>
+                        )}
+                      </button>
 
-                    <div className="col-12 col-md-auto">
-                      <Dropdown onSelect={id => setFilters({ ...filters, listId: id })} className="w-100">
+                      <Dropdown onSelect={id => setFilters({ ...filters, listId: id })}>
                         <Dropdown.Toggle 
-                          variant={filters.listId ? "primary" : "outline-primary"} 
-                          size="sm" 
-                          className="rounded-pill px-3 py-2 shadow-sm bg-body fw-medium d-flex align-items-center justify-content-between dropdown-toggle-no-caret w-100"
-                          id="quick-list-dropdown-mobile"
+                          className={`premium-dropdown-toggle ${filters.listId ? 'active' : ''}`}
+                          id="quick-list-dropdown-unified"
                         >
-                          <div className="d-flex align-items-center gap-2">
+                          <div className="d-flex align-items-center gap-1">
                             <i className="bi bi-collection-play-fill text-primary"></i>
                             <span className="text-truncate" style={{ maxWidth: '120px' }}>{
                               filters.listId === 'all_listed' ? 'Tüm Listeler' :
@@ -4197,89 +5279,157 @@ function App() {
                           </div>
                           <i className="bi bi-chevron-down small opacity-50"></i>
                         </Dropdown.Toggle>
-                        <Dropdown.Menu className="w-100 shadow-lg border-0 rounded-4 mt-2 overflow-hidden">
-                          <Dropdown.Item eventKey="" active={!filters.listId} className="py-3">
+                        <Dropdown.Menu className="shadow-lg border-0 rounded-4 mt-2 overflow-hidden" align="end">
+                          <Dropdown.Item eventKey="" active={!filters.listId} className="py-2">
                             <i className="bi bi-grid-fill me-2 opacity-50"></i> Tüm Sözlük
                           </Dropdown.Item>
-                          <Dropdown.Item eventKey="all_listed" active={filters.listId === 'all_listed'} className="py-3 d-flex justify-content-between align-items-center">
+                          <Dropdown.Item eventKey="all_listed" active={filters.listId === 'all_listed'} className="py-2 d-flex justify-content-between align-items-center">
                             <div><i className="bi bi-collection-play-fill me-2 text-primary"></i> Tüm Listelerim</div>
                           </Dropdown.Item>
                           {customLists.length > 0 && <Dropdown.Divider className="m-0 border-opacity-10" />}
-                          <div style={{ maxHeight: '250px', overflowY: 'auto' }}>
+                          <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
                             {customLists.map(list => (
-                              <Dropdown.Item key={list.id} eventKey={list.id} active={filters.listId === list.id} className="py-3">
+                              <Dropdown.Item key={list.id} eventKey={list.id} active={filters.listId === list.id} className="py-2">
                                 {list.name}
                               </Dropdown.Item>
                             ))}
                           </div>
                         </Dropdown.Menu>
                       </Dropdown>
-                    </div>
 
-                    <div className="col-6 col-md-auto">
-                      <Button variant={isSelectionMode ? "primary" : "outline-secondary"} size="sm" className="rounded-pill px-3 py-2 shadow-sm fw-medium d-flex align-items-center justify-content-center gap-2 w-100" onClick={() => { setIsSelectionMode(!isSelectionMode); setSelectedWords([]); }}>
+                      <button
+                        className={`premium-filter-chip ${isSelectionMode ? 'active-primary' : ''}`}
+                        onClick={() => { setIsSelectionMode(!isSelectionMode); setSelectedWords([]); }}
+                        title="Çoklu Seçim Modu"
+                      >
                         <i className="bi bi-check2-square"></i>
                         <span>{isSelectionMode ? 'İptal' : 'Seç'}</span>
-                      </Button>
+                      </button>
                     </div>
-
-                    <div className="col-6 col-md-auto">
-                      <Button
-                        variant={showOnlyStarred ? "warning" : "outline-warning"}
-                        size="sm"
-                        className="rounded-pill px-3 py-2 shadow-sm fw-medium d-flex align-items-center justify-content-center gap-2 w-100"
-                        onClick={() => setShowOnlyStarred(!showOnlyStarred)}
-                      >
-                        <i className={`bi ${showOnlyStarred ? 'bi-star-fill' : 'bi-star'}`}></i>
-                        <span>Yıldızlılar</span>
-                      </Button>
-                    </div>
-
-                    {/* Quick Status Filters - 2 columns on mobile */}
-                    {[['Yeni', 'primary'], ['Öğreniyor', 'warning'], ['Öğrendi', 'success']].map(([status, color]) => {
-                      const isActive = quickStatusFilter === status;
-                      return (
-                        <div key={status} className="col-6 col-md-auto">
-                          <Button
-                            variant={isActive ? color : `outline-${color}`}
-                            size="sm"
-                            className="rounded-pill px-3 py-2 shadow-sm fw-medium d-flex align-items-center justify-content-center gap-2 w-100"
-                            onClick={() => setQuickStatusFilter(isActive ? '' : status)}
-                          >
-                            <span className="small">{status}</span>
-                            <Badge bg={isActive ? 'light' : color} text={isActive ? color : 'white'} className="rounded-pill fw-bold">{words.filter(w => w.learningStatus === status).length}</Badge>
-                          </Button>
-                        </div>
-                      );
-                    })}
                   </div>
                 </div>
-              </Collapse>
+              </div>
 
               {/* Bulk Action Bar - Now below filters and sticky */}
               {isSelectionMode && (
-                <div className="mt-2 px-1 animated fadeIn">
-                  <div className="d-flex align-items-center justify-content-between bg-primary bg-opacity-10 px-3 py-2 rounded-4 border border-primary border-opacity-25 shadow-sm">
-                    <div className="d-flex align-items-center gap-2">
-                      <Form.Check
-                        type="checkbox"
-                        id="select-all-main"
-                        onChange={handleSelectAll}
-                        checked={filteredWords.length > 0 && selectedWords.length === filteredWords.length}
-                      />
-                      <span className="fw-bold text-primary small">{selectedWords.length} Seçili</span>
-                    </div>
-                    <Button variant="primary" size="sm" className="rounded-pill px-4 fw-bold" disabled={selectedWords.length === 0} onClick={() => setShowBulkEditModal(true)}>
+                <div className="premium-bulk-dock">
+                  <div className="d-flex align-items-center gap-2">
+                    <Form.Check
+                      type="checkbox"
+                      id="select-all-main"
+                      onChange={handleSelectAll}
+                      checked={filteredWords.length > 0 && selectedWords.length === filteredWords.length}
+                      style={{ transform: 'scale(1.15)', cursor: 'pointer' }}
+                    />
+                    <span className="fw-bold text-white small ms-1">{selectedWords.length} Seçili</span>
+                  </div>
+                  
+                  <div className="vr bg-secondary opacity-50" style={{ height: '20px' }}></div>
+                  
+                  <div className="d-flex align-items-center gap-2">
+                    <button 
+                      type="button" 
+                      className="btn btn-sm btn-primary rounded-pill px-3 fw-bold" 
+                      disabled={selectedWords.length === 0} 
+                      onClick={() => setShowBulkEditModal(true)}
+                    >
                       İşlem Yap
-                    </Button>
+                    </button>
+                    <button 
+                      type="button" 
+                      className="btn btn-sm btn-outline-light rounded-pill px-3 fw-bold border-opacity-25" 
+                      onClick={() => { setIsSelectionMode(false); setSelectedWords([]); }}
+                    >
+                      İptal
+                    </button>
                   </div>
                 </div>
               )}
-            </div>
 
 
               <main>
-              {loading ? (
+                {/* Premium Welcome Banner */}
+                <div className="premium-welcome-banner animate-fade-in d-none d-md-block">
+                  <h1 className="premium-welcome-banner-title">Kelime Hazineni Genişlet</h1>
+                  <p className="premium-welcome-banner-text">
+                    Kişisel sözlüğünde kelimelerini kaydet, öğrenme aşamalarını takip et ve test çözerek bilgilerini pekiştir.
+                  </p>
+                  <div className="premium-stats-grid">
+                    <div className="premium-stat-card">
+                      <div className="premium-stat-card-icon">
+                        <i className="bi bi-journal-bookmark-fill"></i>
+                      </div>
+                      <div>
+                        <h4 className="premium-stat-card-value">{words.filter(w => w._status !== 'deleted').length}</h4>
+                        <p className="premium-stat-card-label">Toplam Kelime</p>
+                      </div>
+                    </div>
+                    <div className="premium-stat-card">
+                      <div className="premium-stat-card-icon" style={{ background: 'rgba(6, 182, 212, 0.1)', color: '#0891b2' }}>
+                        <i className="bi bi-plus-circle-fill"></i>
+                      </div>
+                      <div>
+                        <h4 className="premium-stat-card-value">
+                          {words.filter(w => w.learningStatus === 'Yeni' && w._status !== 'deleted').length}
+                        </h4>
+                        <p className="premium-stat-card-label">Yeni Kelimeler</p>
+                      </div>
+                    </div>
+                    <div className="premium-stat-card">
+                      <div className="premium-stat-card-icon" style={{ background: 'rgba(245, 158, 11, 0.1)', color: '#d97706' }}>
+                        <i className="bi bi-hourglass-split"></i>
+                      </div>
+                      <div>
+                        <h4 className="premium-stat-card-value">
+                          {words.filter(w => w.learningStatus === 'Öğreniyor' && w._status !== 'deleted').length}
+                        </h4>
+                        <p className="premium-stat-card-label">Öğrenme Aşamasında</p>
+                      </div>
+                    </div>
+                    <div className="premium-stat-card">
+                      <div className="premium-stat-card-icon" style={{ background: 'rgba(34, 197, 94, 0.1)', color: '#16a34a' }}>
+                        <i className="bi bi-check-circle-fill"></i>
+                      </div>
+                      <div>
+                        <h4 className="premium-stat-card-value">
+                          {words.filter(w => w.learningStatus === 'Öğrendi' && w._status !== 'deleted').length}
+                        </h4>
+                        <p className="premium-stat-card-label">Öğrenilenler</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {recentlyAddedWords.length > 0 && (
+                    <div className="mt-4 pt-3 border-top border-opacity-10">
+                      <span className="small text-muted fw-bold text-uppercase d-block mb-2">Son Eklenen Kelimeler</span>
+                      <div className="d-flex flex-wrap gap-2">
+                        {recentlyAddedWords.map(word => (
+                          <div 
+                            key={word.id} 
+                            className="premium-welcome-recent-word-pill d-flex align-items-center gap-2 cursor-pointer"
+                            onClick={() => setSelectedWord(word)}
+                          >
+                            <span className="fw-bold">{word.term}</span>
+                            {word.shortMeanings && (
+                              <span className="text-muted text-truncate" style={{ maxWidth: '120px', fontSize: '0.8rem' }}>
+                                — {word.shortMeanings.split(',')[0]}
+                              </span>
+                            )}
+                            <span className="text-muted ms-1 ps-2 border-start border-opacity-10" style={{ fontSize: '0.75rem' }}>
+                              {(() => {
+                                const parsed = parseDate(word.createdAt);
+                                return parsed ? parsed.toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' }) : '';
+                              })()}
+                            </span>
+                            <i className="bi bi-chevron-right small text-muted opacity-50" style={{ fontSize: '10px' }}></i>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {loading ? (
                 <div className="d-flex justify-content-center py-5">
                   <Spinner animation="border" variant="primary" />
                 </div>
@@ -4289,7 +5439,7 @@ function App() {
                   {displayedWords.map((word) => (
                     <Col key={word.id}>
                       <Card
-                        className={`h-100 interactive-card border ${isSelectionMode && selectedWords.includes(word.id) ? 'border-primary border-2 bg-primary bg-opacity-10' : 'border-opacity-25'} bg-body-tertiary shadow-sm`}
+                        className={`h-100 premium-word-card ${isSelectionMode && selectedWords.includes(word.id) ? 'border-primary border-2 bg-primary bg-opacity-10' : ''}`}
                         onClick={(e) => isSelectionMode && handleSelectWord(e, word.id)}
                         style={{ cursor: isSelectionMode ? 'pointer' : 'default', position: 'relative', overflow: 'visible' }}
                         data-word-id={word.id}
@@ -4308,7 +5458,7 @@ function App() {
                               borderRadius: '50%',
                               zIndex: 10,
                               boxShadow: '0 0 5px rgba(245, 158, 11, 0.5)',
-                              border: '1.5px solid var(--bs-body-tertiary-bg)'
+                              border: '1.5px solid #fff'
                             }}
                             title="Bu kelimeye ait notlar var"
                           />
@@ -4333,7 +5483,7 @@ function App() {
                                 title={word.isStarred ? "Yıldızı Kaldır" : "Yıldızla"}
                               ></i>
                               <Card.Title
-                                className="m-0 fs-4 fw-bold"
+                                className="m-0 fs-4 fw-bold premium-word-card-title"
                                 style={{ cursor: !isSelectionMode ? 'pointer' : 'default', lineHeight: '1.2' }}
                                 onClick={(e) => {
                                   if (!isSelectionMode) {
@@ -4345,23 +5495,33 @@ function App() {
                                 {word.term}
                               </Card.Title>
 
-                              {word.pronunciation && (
-                                <div
-                                  className="text-muted font-monospace small bg-body-secondary d-inline-flex px-2 py-1 rounded w-auto interactive-pronunciation align-items-center ms-1"
-                                  style={{ cursor: 'pointer', height: 'fit-content' }}
-                                  title="Sesli Dinle"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    if (isSelectionMode) {
-                                      handleSelectWord(e, word.id);
-                                    } else {
-                                      handleSpeak(word.term);
-                                    }
-                                  }}
-                                >
-                                  <i className="bi bi-volume-up-fill me-1" style={{ fontSize: '14px' }}></i> /{word.pronunciation.replace(/^\/|\/$/g, '')}/
-                                </div>
-                              )}
+                              {(() => {
+                                if (!word.pronunciation) return null;
+                                let displayPron = word.pronunciation;
+                                if (displayPron.includes('(')) {
+                                  const match = displayPron.match(/^(.*?)\s*\(([^)]+)\)$/);
+                                  if (match) displayPron = match[2].trim();
+                                } else {
+                                  displayPron = displayPron.replace(/^\/|\/$/g, '').trim();
+                                }
+                                return (
+                                  <div
+                                    className="premium-audio-pill ms-1"
+                                    title="Sesli Dinle"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (isSelectionMode) {
+                                        handleSelectWord(e, word.id);
+                                      } else {
+                                        handleSpeak(word.term, word);
+                                      }
+                                    }}
+                                  >
+                                    <i className="bi bi-volume-up-fill" style={{ fontSize: '13px' }}></i>
+                                    <span>{displayPron}</span>
+                                  </div>
+                                );
+                              })()}
                             </div>
                             {(() => {
                               const listsWithWord = customLists?.filter(l => l.wordIds?.includes(word.id)) || [];
@@ -4454,7 +5614,7 @@ function App() {
                           {word.shortMeanings && (
                             <Card.Text className="text-primary fw-medium mb-2">
                               {highlightText(
-                                word.shortMeanings,
+                                word.shortMeanings.split(',').map((m, idx) => `${idx + 1}. ${m.trim()}`).join(', '),
                                 stickyNotes.filter(n => n.wordId === word.id).map(n => n.text),
                                 () => navigateTo('sticky-notes')
                               )}
@@ -4494,9 +5654,18 @@ function App() {
                                     {meaning.examples && meaning.examples.length > 0 && (
                                       <ul className="small text-muted mb-0 ps-3 mt-1">
                                         {meaning.examples.map((ex, exIdx) => {
-                                          const match = ex.match(/^(.*?)(\([^)]+\))?$/);
-                                          const engPart = match ? match[1].trim() : ex;
-                                          const trPart = match && match[2] ? match[2].trim() : null;
+                                          let engPart = '';
+                                          let trPart = null;
+                                          if (ex) {
+                                            if (typeof ex === 'object') {
+                                              engPart = ex.en || '';
+                                              trPart = ex.tr ? `(${ex.tr})` : null;
+                                            } else if (typeof ex === 'string') {
+                                              const match = ex.match(/^(.*?)(\([^)]+\))?$/);
+                                              engPart = match ? match[1].trim() : ex;
+                                              trPart = match && match[2] ? match[2].trim() : null;
+                                            }
+                                          }
                                           const hasEng = engPart.length > 0;
                                           return (
                                             <li key={exIdx} className="fst-italic text-break d-flex align-items-start gap-1">
@@ -4504,7 +5673,7 @@ function App() {
                                                 <Button
                                                   variant="link"
                                                   className="p-0 text-primary opacity-50 hover-opacity-100 transition-all border-0 shadow-none flex-shrink-0"
-                                                  onClick={(e) => { e.stopPropagation(); handleSpeak(engPart); }}
+                                                  onClick={(e) => { e.stopPropagation(); handleSpeak(engPart, word); }}
                                                   title="Sesli Dinle"
                                                 >
                                                   <i className="bi bi-volume-up" style={{ fontSize: '14px' }}></i>
@@ -4538,7 +5707,7 @@ function App() {
                                         <Button
                                           variant="link"
                                           className="p-0 text-primary opacity-50 hover-opacity-100 transition-all border-0 shadow-none flex-shrink-0"
-                                          onClick={(e) => { e.stopPropagation(); handleSpeak(speakText); }}
+                                          onClick={(e) => { e.stopPropagation(); handleSpeak(speakText, word); }}
                                           title="Sesli Dinle"
                                         >
                                           <i className="bi bi-volume-up" style={{ fontSize: '14px' }}></i>
@@ -4571,7 +5740,7 @@ function App() {
                                         <Button
                                           variant="link"
                                           className="p-0 text-primary opacity-50 hover-opacity-100 transition-all border-0 shadow-none flex-shrink-0"
-                                          onClick={(e) => { e.stopPropagation(); handleSpeak(speakText); }}
+                                          onClick={(e) => { e.stopPropagation(); handleSpeak(speakText, word); }}
                                           title="Sesli Dinle"
                                         >
                                           <i className="bi bi-volume-up" style={{ fontSize: '14px' }}></i>
@@ -4629,7 +5798,7 @@ function App() {
                                         <Button
                                           variant="link"
                                           className="p-0 text-primary opacity-50 hover-opacity-100 transition-all border-0 shadow-none flex-shrink-0"
-                                          onClick={(e) => { e.stopPropagation(); handleSpeak(speakText); }}
+                                          onClick={(e) => { e.stopPropagation(); handleSpeak(speakText, word); }}
                                           title="Sesli Dinle"
                                         >
                                           <i className="bi bi-volume-up" style={{ fontSize: '14px' }}></i>
@@ -4656,29 +5825,17 @@ function App() {
                           )}
 
                           <div className={`border-top border-opacity-10 pt-3 d-flex justify-content-between align-items-center ${viewMode === 'detailed' ? 'mt-auto' : ''}`}>
-
-
                             <div className="d-flex gap-2 align-items-center px-1">
                               {word.learningStatus && (
-                                <Badge
-                                  bg={word.learningStatus === 'Öğrendi' ? 'success' : word.learningStatus === 'Öğreniyor' ? 'warning' : 'info'}
-                                  text={word.learningStatus === 'Öğreniyor' ? 'dark' : 'light'}
-                                  className="rounded-pill px-2"
-                                  style={{ fontSize: '0.7rem', fontWeight: 'bold' }}
-                                >
+                                <span className={`premium-badge premium-badge-status-${word.learningStatus === 'Öğrendi' ? 'ogrendi' : word.learningStatus === 'Öğreniyor' ? 'ogreniyor' : 'yeni'}`}>
                                   {word.learningStatus}
-                                </Badge>
+                                </span>
                               )}
                               {word.cefrLevel && (
                                 <div className="d-flex align-items-center gap-1">
-                                  <Badge
-                                    bg="primary"
-                                    text="light"
-                                    className="rounded-pill px-2"
-                                    style={{ fontSize: '0.7rem', fontWeight: 'bold' }}
-                                  >
+                                  <span className={`premium-badge premium-badge-cefr premium-badge-cefr-${word.cefrLevel.charAt(0).toLowerCase()}`}>
                                     {word.cefrLevel.split(' ')[0]}
-                                  </Badge>
+                                  </span>
                                   {word.rootWord && word.rootWord.toLowerCase() !== word.term.toLowerCase() && (
                                     <span className="text-muted small fst-italic ms-1" style={{ fontSize: '0.65rem', opacity: 0.8 }}>
                                       ({word.rootWord})
@@ -4753,179 +5910,165 @@ function App() {
                 </div>
               )}
             </main>
-          
-        
-      </Container>
-      )}
+          </>)}
 
-      
-      
-      {/* Practice Test Page */}
-      {currentView === 'practice-test' && (
-        <Container fluid className="main-app-container">
-          <div className="d-none d-md-block sticky-top" style={{ zIndex: 1021, top: '0', backgroundColor: 'transparent' }}>
-            <PageHeader 
-              title="Test Çöz" 
-              icon="bi-controller" 
-              onBack={() => {
-                  if (practiceTestRef.current) {
-                    const handled = practiceTestRef.current.goBack();
-                    if (!handled) {
-                      setCurrentView('home');
-                      setDirectPracticeConfig(null);
-                      setDirectPracticeWords(null);
-                    }
-                  } else {
-                    setCurrentView('home');
-                    setDirectPracticeConfig(null);
-                    setDirectPracticeWords(null);
-                  }
-              }} 
+          {currentView === 'settings' && (
+            <SettingsPage 
+              theme={theme}
+              setTheme={setTheme}
+              viewMode={viewMode}
+              setViewMode={setViewMode}
+              wordsPerPage={wordsPerPage}
+              setWordsPerPage={setWordsPerPage}
+              navigateTo={navigateTo}
+              dailyStats={dailyStats}
+              authUser={authUser}
+              onLogout={handleLogout}
+              onFixRoots={handleFixRoots}
+              onReparseAllWords={handleReparseAllWords}
+            />
+          )}
+
+          {currentView === 'sticky-notes' && (
+            <StickyNotesPage
+              stickyNotes={activeStickyNotes}
+              manualNoteText={manualNoteText}
+              setManualNoteText={setManualNoteText}
+              manualNoteTitle={manualNoteTitle}
+              setManualNoteTitle={setManualNoteTitle}
+              handleAddNote={handleAddNote}
+              handleDeleteNote={handleDeleteNote}
+              handleToggleNoteCompletion={handleToggleNoteCompletion}
+              editingNoteId={editingNoteId}
+              setEditingNoteId={setEditingNoteId}
+              inlineEditingText={inlineEditingText}
+              setInlineEditingText={setInlineEditingText}
+              inlineEditingTitle={inlineEditingTitle}
+              setInlineEditingTitle={setInlineEditingTitle}
+              inlineEditingSelectedWords={inlineEditingSelectedWords}
+              setInlineEditingSelectedWords={setInlineEditingSelectedWords}
+              handleUpdateNote={handleUpdateNote}
+              handleAddWordsToDictionary={handleAddWordsToDictionary}
+              onWordClick={setSelectedWord}
+              theme={theme}
+              navigateTo={navigateTo}
+              dailyStats={dailyStats}
+              words={words}
+            />
+          )}
+
+          {currentView === 'custom-lists' && (
+            <CustomListsPage
+              customLists={activeCustomLists}
+              handleCreateList={handleCreateList}
+              handleUpdateList={handleUpdateList}
+              handleDeleteList={handleDeleteList}
+              handleMoveList={handleMoveList}
+              navigateTo={navigateTo}
+              setCurrentListId={setCurrentListId}
               dailyStats={dailyStats}
             />
-          </div>
-          <PracticeTestContainer
-            ref={practiceTestRef}
-            words={directPracticeWords || words}
-            initialConfig={directPracticeConfig}
-            onCancel={() => {
-              setCurrentView('home');
-              setDirectPracticeConfig(null);
-              setDirectPracticeWords(null);
-            }}
-            savedOptions={practiceOptions}
-            onSaveOptions={setPracticeOptions}
-            onUpdateStatus={handleUpdateStatus}
-            onUpdateStage={handleUpdateStage}
-            onUpdateStagesBatch={handleUpdateStagesBatch}
-            onUpdateStatusBatch={handleUpdateStatusBatch}
-            onToggleStar={handleToggleStar}
-            onToggleStarBatch={handleToggleStarBatch}
-            onDelete={handleDelete}
-            onEdit={handleEdit}
-            onLogTestResults={handleLogTestResults}
-            dailyStats={dailyStats}
-            practiceTests={activePracticeTests}
-            onSaveTest={handleSaveTest}
-            onDeleteTest={handleDeleteTest}
-            onDeleteAllTests={handleDeleteAllTests}
-            onTogglePinTest={handleTogglePinTest}
-            customLists={activeCustomLists}
-            onAddWordsToList={handleAddWordsToList}
-            onRemoveWordFromList={handleRemoveWordFromList}
-            stickyNotes={activeStickyNotes}
-            onUpdateNote={handleUpdateNote}
-            onAddNote={handleAddNote}
-            onDeleteNote={handleDeleteNote}
-            onOpenNotesModal={() => setCurrentView('sticky-notes')}
-            onLoadTestDetails={handleLoadTestDetails}
-          />
-        </Container>
-      )}
+          )}
 
-      {/* Add Word Page */}
-      {currentView === 'add-word' && (
-        <AddWordPage 
-          words={words}
-          templateType={templateType}
-          setTemplateType={setTemplateType}
-          templates={templates}
-          setShowTemplateExampleModal={setShowTemplateExampleModal}
-          learningStatus={learningStatus}
-          setLearningStatus={setLearningStatus}
-          selectedDate={selectedDate}
-          setSelectedDate={setSelectedDate}
-          termText={termText}
-          setTermText={setTermText}
-          parsedPreview={parsedPreview}
-          isSubmitting={isSubmitting}
-          handleSubmit={handleSubmit}
-          editingWordId={editingWordId}
-          theme={theme}
-          navigateTo={navigateTo}
-          closeModal={closeModal}
-          onWordClick={setSelectedWord}
-          dailyStats={dailyStats}
-          customLists={activeCustomLists}
-          selectedListIds={selectedListIds}
-          setSelectedListIds={setSelectedListIds}
-        />
-      )}
+          {currentView === 'list-detail' && (
+            <ListDetailPage
+              listId={currentListId}
+              customLists={activeCustomLists}
+              words={words}
+              handleRemoveWordFromList={handleRemoveWordFromList}
+              navigateTo={navigateTo}
+              onWordClick={setSelectedWord}
+              handleSpeak={handleSpeak}
+              dailyStats={dailyStats}
+              stickyNotes={activeStickyNotes}
+            />
+          )}
 
-      {/* Sticky Notes Page */}
-      {currentView === 'sticky-notes' && (
-        <StickyNotesPage
-          stickyNotes={activeStickyNotes}
-          manualNoteText={manualNoteText}
-          setManualNoteText={setManualNoteText}
-          manualNoteTitle={manualNoteTitle}
-          setManualNoteTitle={setManualNoteTitle}
-          handleAddNote={handleAddNote}
-          handleDeleteNote={handleDeleteNote}
-          handleToggleNoteCompletion={handleToggleNoteCompletion}
-          editingNoteId={editingNoteId}
-          setEditingNoteId={setEditingNoteId}
-          inlineEditingText={inlineEditingText}
-          setInlineEditingText={setInlineEditingText}
-          inlineEditingTitle={inlineEditingTitle}
-          setInlineEditingTitle={setInlineEditingTitle}
-          inlineEditingSelectedWords={inlineEditingSelectedWords}
-          setInlineEditingSelectedWords={setInlineEditingSelectedWords}
-          handleUpdateNote={handleUpdateNote}
-          handleAddWordsToDictionary={handleAddWordsToDictionary}
-          onWordClick={setSelectedWord}
-          theme={theme}
-          navigateTo={navigateTo}
-          dailyStats={dailyStats}
-          words={words}
-        />
-      )}
+          {currentView === 'add-word' && (
+            <AddWordPage 
+              words={words}
+              templateType={templateType}
+              setTemplateType={setTemplateType}
+              templates={templates}
+              setShowTemplateExampleModal={setShowTemplateExampleModal}
+              learningStatus={learningStatus}
+              setLearningStatus={setLearningStatus}
+              selectedDate={selectedDate}
+              setSelectedDate={setSelectedDate}
+              termText={termText}
+              setTermText={setTermText}
+              parsedPreview={parsedPreview}
+              isSubmitting={isSubmitting}
+              handleSubmit={handleSubmit}
+              editingWordId={editingWordId}
+              theme={theme}
+              navigateTo={navigateTo}
+              closeModal={closeModal}
+              onWordClick={setSelectedWord}
+              dailyStats={dailyStats}
+              customLists={activeCustomLists}
+              selectedListIds={selectedListIds}
+              setSelectedListIds={setSelectedListIds}
+            />
+          )}
 
-      {/* Settings Page */}
-      {currentView === 'settings' && (
-        <SettingsPage 
-          theme={theme}
-          setTheme={setTheme}
-          viewMode={viewMode}
-          setViewMode={setViewMode}
-          wordsPerPage={wordsPerPage}
-          setWordsPerPage={setWordsPerPage}
-          navigateTo={navigateTo}
-          dailyStats={dailyStats}
-          authUser={authUser}
-          onLogout={handleLogout}
-          onFixRoots={handleFixRoots}
-        />
-      )}
+          {currentView === 'practice-test' && (
+            <PracticeTestContainer
+              ref={practiceTestRef}
+              words={directPracticeWords || words}
+              initialConfig={directPracticeConfig}
+              onCancel={() => {
+                setCurrentView('home');
+                setDirectPracticeConfig(null);
+                setDirectPracticeWords(null);
+              }}
+              savedOptions={practiceOptions}
+              onSaveOptions={setPracticeOptions}
+              onUpdateStatus={handleUpdateStatus}
+              onUpdateStage={handleUpdateStage}
+              onUpdateStagesBatch={handleUpdateStagesBatch}
+              onUpdateStatusBatch={handleUpdateStatusBatch}
+              onToggleStar={handleToggleStar}
+              onToggleStarBatch={handleToggleStarBatch}
+              onDelete={handleDelete}
+              onEdit={handleEdit}
+              onLogTestResults={handleLogTestResults}
+              dailyStats={dailyStats}
+              practiceTests={activePracticeTests}
+              onSaveTest={handleSaveTest}
+              onDeleteTest={handleDeleteTest}
+              onDeleteAllTests={handleDeleteAllTests}
+              onTogglePinTest={handleTogglePinTest}
+              customLists={activeCustomLists}
+              customQuickTests={activeQuickTests}
+              onSaveQuickTest={handleSaveQuickTest}
+              onDeleteQuickTest={handleDeleteQuickTest}
+              onAddWordsToList={handleAddWordsToList}
+              onRemoveWordFromList={handleRemoveWordFromList}
+              stickyNotes={activeStickyNotes}
+              onUpdateNote={handleUpdateNote}
+              onAddNote={handleAddNote}
+              onDeleteNote={handleDeleteNote}
+              onOpenNotesModal={() => setCurrentView('sticky-notes')}
+              onLoadTestDetails={handleLoadTestDetails}
+            />
+          )}
+        </div>
+      </div>
+    </div>
+  )}
 
-      {/* Custom Lists Page */}
-      {currentView === 'custom-lists' && (
-        <CustomListsPage
-          customLists={activeCustomLists}
-          handleCreateList={handleCreateList}
-          handleUpdateList={handleUpdateList}
-          handleDeleteList={handleDeleteList}
-          handleMoveList={handleMoveList}
-          navigateTo={navigateTo}
-          setCurrentListId={setCurrentListId}
-          dailyStats={dailyStats}
-        />
-      )}
+      
+      
 
-      {/* List Detail Page */}
-      {currentView === 'list-detail' && (
-        <ListDetailPage
-          listId={currentListId}
-          customLists={activeCustomLists}
-          words={words}
-          handleRemoveWordFromList={handleRemoveWordFromList}
-          navigateTo={navigateTo}
-          onWordClick={setSelectedWord}
-          handleSpeak={handleSpeak}
-          dailyStats={dailyStats}
-          stickyNotes={activeStickyNotes}
-        />
-      )}
+
+
+
+
+
+
+
+
 
       {/* FLOATING SYNC STATUS BAR */}
       {!isKeyboardOpen && authUser && (
@@ -4963,7 +6106,7 @@ function App() {
                 <span>İptal Et</span>
               </button>
             )}
-            <button
+             <button
               onClick={() => handleSync()}
               disabled={syncing}
               className={`btn btn-sm d-flex align-items-center gap-2 fw-bold px-3 py-2 transition-all rounded-pill ${unsyncedChangesCount > 0 ? 'btn-primary shadow-sm' : 'btn-outline-secondary'}`}
@@ -4973,11 +6116,21 @@ function App() {
                 <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
               ) : (
                 <>
-                  <i className="bi bi-arrow-repeat"></i>
+                  <i className="bi bi-cloud-arrow-up-fill"></i>
                   <span>Sync Et</span>
                 </>
               )}
             </button>
+            {!syncing && (
+              <button
+                onClick={() => handlePull()}
+                className="btn btn-sm btn-outline-secondary d-flex align-items-center gap-2 fw-bold px-3 py-2 transition-all rounded-pill"
+                style={{ fontSize: '12px', border: '1px solid rgba(0,0,0,0.15)', flexShrink: 0 }}
+              >
+                <i className="bi bi-cloud-arrow-down-fill"></i>
+                <span>Buluttan Çek</span>
+              </button>
+            )}
           </div>
 
           {/* Progress Bar */}
@@ -5136,9 +6289,13 @@ function App() {
           <button 
             className="mobile-nav-center-btn" 
             onClick={() => {
-              setDirectPracticeConfig(null);
-              setDirectPracticeWords(null);
-              navigateTo('practice-test');
+              if (currentView === 'practice-test' && practiceTestRef.current) {
+                practiceTestRef.current.resetToOptions();
+              } else {
+                setDirectPracticeConfig(null);
+                setDirectPracticeWords(null);
+                navigateTo('practice-test');
+              }
             }}
           >
             <i className="bi bi-controller"></i>
@@ -5534,8 +6691,8 @@ function App() {
                   <div className="d-flex gap-2">
                     {[
                       { key: 'mixed', label: 'Karışık' },
-                      { key: 'term', label: 'İngilizce → Türkçe' },
-                      { key: 'definition', label: 'Türkçe → İngilizce' }
+                      { key: 'term', label: 'Yabancı Dil → Türkçe' },
+                      { key: 'definition', label: 'Türkçe → Yabancı Dil' }
                     ].map(({ key, label }) => (
                       <button
                         key={key}

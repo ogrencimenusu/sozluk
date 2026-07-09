@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Modal, Button, Row, Col, Badge, Dropdown } from 'react-bootstrap';
+import { Modal, Button, Row, Col, Badge, Dropdown, Card } from 'react-bootstrap';
 import Swal from 'sweetalert2';
 
 /**
  * Splits `text` into segments, wrapping matches from `highlights` in
  * <mark className="sticky-highlight">.
  */
-function highlightText(text, highlights) {
+function highlightText(text, highlights, onClick) {
   if (!text || !highlights || highlights.length === 0) return text;
   const escaped = highlights
     .filter(h => h && h.length >= 2)
@@ -15,11 +15,19 @@ function highlightText(text, highlights) {
   const regex = new RegExp(`(${escaped.join('|')})`, 'gi');
   const parts = text.split(regex);
   if (parts.length === 1) return text;
-  // Reset lastIndex before each test call
   return parts.map((part, i) => {
     regex.lastIndex = 0;
     return regex.test(part)
-      ? <mark key={i} className="sticky-highlight">{part}</mark>
+      ? (
+        <mark
+          key={i}
+          className="sticky-highlight"
+          style={onClick ? { cursor: 'pointer' } : undefined}
+          onClick={onClick ? (e) => { e.stopPropagation(); onClick(); } : undefined}
+        >
+          {part}
+        </mark>
+      )
       : part;
   });
 }
@@ -302,6 +310,91 @@ function WordDetailModal({
         (n.selectedWords && n.selectedWords.some(sw => sw.toLowerCase() === word?.term?.toLowerCase()))
     );
 
+    // Parse values from new template fields safely
+    let ipaPart = word?.pronunciation || '';
+    let trPart = '';
+    if (word?.pronunciation && word.pronunciation.includes('(')) {
+      const match = word.pronunciation.match(/^(.*?)\s*\(([^)]+)\)$/);
+      if (match) {
+        ipaPart = match[1].trim();
+        trPart = match[2].trim();
+      }
+    }
+
+    let wordType = 'N/A';
+    let tone = 'N/A';
+    let statusStr = 'Yalın';
+    let conj = 'N/A';
+    
+    if (word?.grammar && Array.isArray(word.grammar)) {
+      word.grammar.forEach(g => {
+        if (g.startsWith('Türü:')) wordType = g.substring(5).trim();
+        else if (g.startsWith('Zaman/Çekim:')) statusStr = g.substring(12).trim();
+        else if (g.startsWith('Ton:')) tone = g.substring(4).trim();
+        else if (g.startsWith('Çekimler:')) conj = g.substring(9).trim();
+      });
+    }
+
+    const parsePipeItems = (val) => {
+      if (!val) return [];
+      if (Array.isArray(val)) {
+        return val.map(item => ({
+          word: item.en || '',
+          meaning: item.tr || ''
+        })).filter(x => x.word);
+      }
+      const sep = val.includes(',,') ? ',,' : ',';
+      return val.split(sep).map(item => {
+        const parts = item.split('|').map(p => p.trim());
+        return {
+          word: parts[0],
+          meaning: parts[1] || ''
+        };
+      }).filter(x => x.word);
+    };
+
+    const synonymItems = parsePipeItems(word?.synonyms);
+    const antonymItems = parsePipeItems(word?.antonyms);
+
+    const parseCollocation = (col) => {
+      if (!col) return null;
+      if (typeof col === 'object' && col.en) {
+        return {
+          phrase: col.en,
+          translation: col.tr || ''
+        };
+      }
+      const parts = col.split('|').map(p => p.trim());
+      return {
+        phrase: parts[0],
+        translation: parts[1] || ''
+      };
+    };
+
+    const parseFamilyItem = (item) => {
+      if (!item) return null;
+      const match = item.match(/^(.*?)\s*\(([^)]+)\)$/);
+      return {
+        word: match ? match[1].trim() : item,
+        meaning: match ? match[2].trim() : ''
+      };
+    };
+
+    let confusable = '';
+    let confusableNote = '';
+    let mnemonic = '';
+    if (word?.tips && Array.isArray(word.tips)) {
+      word.tips.forEach(t => {
+        if (t.startsWith('Karıştırılabilir:')) {
+          confusable = t.substring(17).trim();
+        } else if (t.startsWith('Açıklama:')) {
+          confusableNote = t.substring(9).trim();
+        } else if (t.startsWith('İpucu:')) {
+          mnemonic = t.substring(6).trim();
+        }
+      });
+    }
+
     const handleCopyNote = useCallback((note, isAssociated) => {
         if (!word?.term) return;
         
@@ -540,64 +633,411 @@ function WordDetailModal({
                 </Modal.Header>
 
                 <Modal.Body className="p-4 p-md-5 custom-scroll" ref={modalBodyRef}>
-                    <div className="mb-4">
-                        {word.pronunciation && (
-                            <div
-                                className="text-muted font-monospace d-inline-flex align-items-center bg-body-secondary px-3 py-2 rounded-3 fs-5 w-auto interactive-pronunciation mb-2"
-                                style={{ cursor: 'pointer', transition: 'all 0.2s ease-in-out' }}
-                                title="Sesli Dinle"
-                                onClick={() => onSpeak && onSpeak(word.term)}
-                                onMouseEnter={e => e.currentTarget.classList.add('shadow-sm')}
-                                onMouseLeave={e => e.currentTarget.classList.remove('shadow-sm')}
-                            >
-                                <i className="bi bi-volume-up-fill me-2 text-primary" style={{ fontSize: '24px' }}></i> /{word.pronunciation.replace(/^\/|\/$/g, '')}/
-                            </div>
-                        )}
-                        {word.cefrLevel && (
-                            <div className="ps-2 border-start border-3 border-info border-opacity-50 mt-1">
-                                <span className="fw-bold text-info-emphasis me-1" style={{ fontSize: '0.9rem' }}>
-                                    {word.cefrLevel.split(/[(\/\s]/)[0]}
-                                </span>
-                                <span className="text-muted small italic">
-                                    {word.cefrLevel.includes(' ') || word.cefrLevel.includes('(') ? word.cefrLevel.substring(word.cefrLevel.split(/[(\/\s]/)[0].length) : ''}
-                                </span>
-                            </div>
-                        )}
-                        {word.variants && word.variants.length > 0 && (
-                            <div className="mt-3 d-flex flex-wrap gap-2">
-                                <span className="text-muted small fw-bold text-uppercase letter-spacing-1 d-block w-100 mb-1" style={{ fontSize: '0.7rem' }}>Varyantlar:</span>
-                                {word.variants.map((v, i) => (
-                                    <Badge key={i} bg="info" className="bg-opacity-10 text-info fw-normal border border-info border-opacity-25" style={{ fontSize: '0.75rem' }}>{v}</Badge>
-                                ))}
-                            </div>
-                        )}
+                    {/* Hero Section / Word Header */}
+                    <div className="mb-4 bg-body rounded-4 p-4 shadow-sm border border-opacity-10">
+                        <Row className="align-items-center g-3">
+                            <Col md={7}>
+                                <div className="d-flex align-items-center gap-3 mb-2 flex-wrap">
+                                    {trPart && (
+                                        <div
+                                            className="d-inline-flex align-items-center bg-primary bg-opacity-10 border border-primary border-opacity-25 text-primary px-3 py-2 rounded-3 fs-5 fw-bold interactive-pronunciation"
+                                            style={{ cursor: 'pointer', transition: 'all 0.2s' }}
+                                            title="Sesli Dinle"
+                                            onClick={() => onSpeak && onSpeak(word.term, word)}
+                                        >
+                                            <i className="bi bi-volume-up-fill me-2"></i>
+                                            {trPart}
+                                        </div>
+                                    )}
+                                    {ipaPart && (
+                                        <span className="text-muted font-monospace bg-body-secondary bg-opacity-75 px-3 py-2.5 rounded-3 fs-6">
+                                            /{ipaPart.replace(/^\/|\/$/g, '')}/
+                                        </span>
+                                    )}
+                                </div>
+                                
+                                {word.rootWord && word.rootWord.toLowerCase() !== word.term.toLowerCase() && (
+                                    <div className="small text-muted mt-2">
+                                        Kök Kelime: <span className="fw-semibold text-primary">{word.rootWord}</span>
+                                    </div>
+                                )}
+                            </Col>
+                            <Col md={5} className="d-flex flex-wrap gap-2 justify-content-md-end">
+                                {word.language && (
+                                    <Badge bg="dark" className="px-3 py-2 fw-semibold text-uppercase bg-opacity-75" style={{ fontSize: '0.75rem', letterSpacing: '0.5px' }}>
+                                        Dil: {word.language}
+                                    </Badge>
+                                )}
+                                {wordType && wordType !== 'N/A' && (
+                                    <Badge bg="secondary" className="px-3 py-2 fw-semibold text-uppercase bg-opacity-75" style={{ fontSize: '0.75rem', letterSpacing: '0.5px' }}>
+                                        {wordType}
+                                    </Badge>
+                                )}
+                                {word.cefrLevel && (
+                                    <Badge bg="info" className="px-3 py-2 fw-semibold text-uppercase bg-opacity-75" style={{ fontSize: '0.75rem', letterSpacing: '0.5px' }}>
+                                        {word.language?.toLowerCase() === 'japanese' ? 'JLPT:' : word.language?.toLowerCase() === 'arabic' ? 'Seviye:' : 'CEFR:'} {word.cefrLevel}
+                                    </Badge>
+                                )}
+                                {statusStr && statusStr !== 'Yalın' && (
+                                    <Badge bg="warning" className="px-3 py-2 fw-semibold text-dark bg-opacity-75" style={{ fontSize: '0.75rem', letterSpacing: '0.5px' }}>
+                                        {statusStr}
+                                    </Badge>
+                                )}
+                                {tone && tone !== 'N/A' && (
+                                    <Badge bg="dark" className="px-3 py-2 fw-semibold text-light bg-opacity-75" style={{ fontSize: '0.75rem', letterSpacing: '0.5px' }}>
+                                        Ton: {tone}
+                                    </Badge>
+                                )}
+                            </Col>
+                        </Row>
                     </div>
 
-                    {word.shortMeanings && (
-                        <div className="mb-4 border-start border-success border-4 ps-4 py-2 position-relative bg-body-secondary bg-opacity-50 rounded-end-4">
-                            <i className="bi bi-bookmark-star-fill text-success opacity-25 position-absolute end-0 top-0 m-3" style={{ fontSize: '2rem', transform: 'rotate(15deg)' }}></i>
-                            <h6 className="text-uppercase text-success fw-bold small letter-spacing-2 mb-2 d-flex align-items-center gap-2">
-                                <i className="bi bi-list-task"></i> Kısa Anlamları
-                            </h6>
-                            <p className="m-0 fs-6 text-body lh-base pe-5" style={{ fontWeight: '500' }}>
-                                {highlightText(word.shortMeanings, stickyHighlights, onOpenNotesModal)}
-                            </p>
+                    <Row className="g-4 mb-4">
+                        {/* Left Column: Meanings & Examples */}
+                        <Col xs={12} lg={7} className="d-flex flex-column gap-4">
+                            {/* Meanings Block */}
+                            <div className="mb-2 bg-body rounded-4 p-4 shadow-sm border border-opacity-10">
+                                <h5 className="text-uppercase text-muted fw-bold small letter-spacing-1 border-bottom border-opacity-10 pb-2 mb-3 d-flex align-items-center gap-2">
+                                    <i className="bi bi-bookmark-fill text-success"></i> Kelime Anlamları
+                                </h5>
+                                <div className="d-flex flex-column gap-2 mt-3">
+                                    {word.meanings && word.meanings.length > 0 ? (
+                                        word.meanings.map((m, idx) => (
+                                            <div key={idx} className="d-flex align-items-center gap-2.5 p-2.5 px-3 rounded-3 bg-body-secondary bg-opacity-25 hover-bg-opacity-50 transition-all border border-secondary border-opacity-10">
+                                                <span className="fs-6 fw-bold text-success" style={{ minWidth: '20px' }}>
+                                                    {idx + 1}.
+                                                </span>
+                                                <span className="fs-6 text-body-emphasis fw-medium">{highlightText(m.definition, stickyHighlights, onOpenNotesModal)}</span>
+                                            </div>
+                                        ))
+                                    ) : (
+                                        <div className="text-muted small">Anlam kaydı bulunamadı.</div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Examples Block */}
+                            <div className="mb-2 bg-body rounded-4 p-4 shadow-sm border border-opacity-10">
+                                <h5 className="text-uppercase text-muted fw-bold small letter-spacing-1 border-bottom border-opacity-10 pb-2 mb-3 d-flex align-items-center gap-2">
+                                    <i className="bi bi-chat-left-quote-fill text-primary"></i> Örnek Cümleler
+                                </h5>
+                                {(() => {
+                                    // Extract all distinct examples across meanings
+                                    const allExamples = [];
+                                    if (word.meanings && Array.isArray(word.meanings)) {
+                                        word.meanings.forEach(m => {
+                                            if (m.examples && Array.isArray(m.examples)) {
+                                                m.examples.forEach(ex => {
+                                                    if (ex) {
+                                                        const isDup = allExamples.some(ae => {
+                                                            if (typeof ae === 'object' && typeof ex === 'object') {
+                                                                return ae.en === ex.en;
+                                                            }
+                                                            return ae === ex;
+                                                        });
+                                                        if (!isDup) {
+                                                            allExamples.push(ex);
+                                                        }
+                                                    }
+                                                });
+                                            }
+                                        });
+                                    }
+
+                                    if (allExamples.length === 0) {
+                                        return <div className="text-muted small fst-italic py-2">Örnek cümle bulunamadı.</div>;
+                                    }
+
+                                    return (
+                                        <div className="d-flex flex-column gap-3 mt-3">
+                                            {allExamples.map((ex, exIdx) => {
+                                                let engPart = '';
+                                                let trPart = null;
+                                                if (ex) {
+                                                    if (typeof ex === 'object' && ex.en) {
+                                                        engPart = ex.en;
+                                                        trPart = ex.tr || null;
+                                                    } else if (typeof ex === 'string') {
+                                                        engPart = ex;
+                                                        const trimmedEx = ex.trim();
+                                                        if (trimmedEx.endsWith(')')) {
+                                                            let balance = 0;
+                                                            let openParenIdx = -1;
+                                                            for (let i = trimmedEx.length - 1; i >= 0; i--) {
+                                                                if (trimmedEx[i] === ')') balance++;
+                                                                else if (trimmedEx[i] === '(') {
+                                                                    balance--;
+                                                                    if (balance === 0) {
+                                                                        openParenIdx = i;
+                                                                        break;
+                                                                    }
+                                                                }
+                                                            }
+                                                            if (openParenIdx !== -1) {
+                                                                engPart = trimmedEx.substring(0, openParenIdx).trim();
+                                                                trPart = trimmedEx.substring(openParenIdx + 1, trimmedEx.length - 1).trim();
+                                                            }
+                                                        }
+                                                    }
+                                                }
+
+                                                // Strip double/single quotes
+                                                engPart = engPart.replace(/^['"]|['"]$/g, '').trim();
+                                                if (trPart) trPart = trPart.replace(/^['"]|['"]$/g, '').trim();
+
+                                                return (
+                                                    <div key={exIdx} className="example-bubble bg-body-secondary bg-opacity-25 rounded-3 p-3 position-relative border-start border-3 border-primary border-opacity-50">
+                                                        <div className="d-flex align-items-start gap-2 fs-6">
+                                                            <Button
+                                                                variant="link"
+                                                                className="p-0 text-primary opacity-50 hover-opacity-100 transition-all flex-shrink-0 mt-0.5"
+                                                                onClick={() => onSpeak && onSpeak(engPart, word)}
+                                                                title="Cümleyi Dinle"
+                                                            >
+                                                                <i className="bi bi-volume-up" style={{ fontSize: '1.1rem' }}></i>
+                                                            </Button>
+                                                            <div className="flex-grow-1">
+                                                                <span className="fw-medium text-body">"{highlightText(engPart, stickyHighlights, onOpenNotesModal)}"</span>
+                                                                {trPart && (
+                                                                    <div className="text-muted small fst-italic mt-1.5 pt-1.5 border-top border-secondary border-opacity-10">
+                                                                        {highlightText(trPart, stickyHighlights, onOpenNotesModal)}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    );
+                                })()}
+                            </div>
+                        </Col>
+
+                        {/* Right Column: Synonyms, Antonyms, Collocations */}
+                        <Col xs={12} lg={5} className="d-flex flex-column gap-4">
+                            {/* Synonyms */}
+                            <div>
+                                <h5 className="text-uppercase text-muted fw-bold small letter-spacing-1 border-bottom border-opacity-10 pb-2 mb-3 d-flex align-items-center gap-2">
+                                    <i className="bi bi-shuffle text-primary"></i> Eş Anlamlılar
+                                </h5>
+                                {synonymItems.length > 0 ? (
+                                    <div className="d-flex flex-wrap gap-2">
+                                        {synonymItems.map((item, idx) => (
+                                            <Badge key={idx} bg="primary" className="bg-opacity-10 text-primary border border-primary border-opacity-25 px-3 py-2 fw-medium rounded-pill d-flex align-items-center gap-1.5" style={{ fontSize: '0.85rem' }}>
+                                                <span className="fw-bold">{item.word}</span>
+                                                {item.meaning && <span className="opacity-75 small">({item.meaning})</span>}
+                                            </Badge>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="text-muted small fst-italic">Eş anlamlı kaydı bulunamadı.</div>
+                                )}
+                            </div>
+
+                            {/* Antonyms */}
+                            <div>
+                                <h5 className="text-uppercase text-muted fw-bold small letter-spacing-1 border-bottom border-opacity-10 pb-2 mb-3 d-flex align-items-center gap-2">
+                                    <i className="bi bi-arrow-left-right text-danger"></i> Zıt Anlamlılar
+                                </h5>
+                                {antonymItems.length > 0 ? (
+                                    <div className="d-flex flex-wrap gap-2">
+                                        {antonymItems.map((item, idx) => (
+                                            <Badge key={idx} bg="danger" className="bg-opacity-10 text-danger border border-danger border-opacity-25 px-3 py-2 fw-medium rounded-pill d-flex align-items-center gap-1.5" style={{ fontSize: '0.85rem' }}>
+                                                <span className="fw-bold">{item.word}</span>
+                                                {item.meaning && <span className="opacity-75 small">({item.meaning})</span>}
+                                            </Badge>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="text-muted small fst-italic">Zıt anlamlı kaydı bulunamadı.</div>
+                                )}
+                            </div>
+
+                            {/* Collocations & Patterns */}
+                            <div>
+                                <h5 className="text-uppercase text-muted fw-bold small letter-spacing-1 border-bottom border-opacity-10 pb-2 mb-3 d-flex align-items-center gap-2">
+                                    <i className="bi bi-hash text-warning"></i> Kalıplar ve Öbekler
+                                </h5>
+                                {word.collocations && word.collocations.length > 0 ? (
+                                    <div className="d-flex flex-column gap-2 bg-body rounded-4 p-3 border border-opacity-10 shadow-sm">
+                                        {word.collocations.map((c, i) => {
+                                            const parsed = parseCollocation(c);
+                                            if (!parsed) return null;
+                                            return (
+                                                <div key={i} className="d-flex align-items-center gap-2 pb-2 border-bottom border-opacity-10 last-child-border-0">
+                                                    <Button
+                                                        variant="link"
+                                                        className="p-0 text-primary opacity-50 hover-opacity-100 transition-all border-0 shadow-none"
+                                                        onClick={() => onSpeak && onSpeak(parsed.phrase, word)}
+                                                        title="Sesli Dinle"
+                                                    >
+                                                        <i className="bi bi-volume-up" style={{ fontSize: '1rem' }}></i>
+                                                    </Button>
+                                                    <div className="fs-6">
+                                                        <span className="fw-semibold text-body-emphasis">{highlightText(parsed.phrase, stickyHighlights, onOpenNotesModal)}</span>
+                                                        {parsed.translation && <span className="text-muted ms-2">— {highlightText(parsed.translation, stickyHighlights, onOpenNotesModal)}</span>}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                ) : (
+                                    <div className="text-muted small fst-italic">Kalıp kaydı bulunamadı.</div>
+                                )}
+                            </div>
+                        </Col>
+                    </Row>
+
+                    {/* Word Conjugations (CONJUGATION) */}
+                    {conj && conj !== 'N/A' && (
+                        <div className="mb-4 bg-body rounded-4 p-4 shadow-sm border border-opacity-10">
+                            <h5 className="text-uppercase text-muted fw-bold small letter-spacing-2 border-bottom border-opacity-10 pb-2 mb-3 d-flex align-items-center gap-2">
+                                <i className="bi bi-file-earmark-code-fill text-primary"></i> {
+                                    word.language?.toLowerCase() === 'japanese' ? 'Kelime Çekimleri (Ta/Te/Nai)' :
+                                    word.language?.toLowerCase() === 'arabic' ? 'Kelime Çekimleri (Mazi/Muzari/Masdar)' :
+                                    'Kelime Çekimleri (Conjugations)'
+                                }
+                            </h5>
+                            <div className="d-flex flex-wrap gap-2 mt-3">
+                                {conj.split('|').map((part, idx) => {
+                                    const subParts = part.split(':').map(p => p.trim());
+                                    if (subParts.length < 2) return null;
+                                    return (
+                                        <Badge key={idx} bg="secondary" className="bg-opacity-10 text-secondary border border-secondary border-opacity-25 px-3 py-2.5 fw-medium rounded-3" style={{ fontSize: '0.9rem' }}>
+                                            <span className="fw-bold text-primary">{subParts[0]}</span>: {subParts[1]}
+                                        </Badge>
+                                    );
+                                })}
+                            </div>
                         </div>
                     )}
 
-                    {word.generalDefinition && (
-                        <div className="mb-4 border-start border-primary border-4 ps-4 py-2 position-relative bg-body-secondary bg-opacity-50 rounded-end-4">
-                            <i className="bi bi-info-circle-fill text-primary opacity-25 position-absolute end-0 top-0 m-3" style={{ fontSize: '2rem', transform: 'rotate(15deg)' }}></i>
-                            <h6 className="text-uppercase text-primary fw-bold small letter-spacing-2 mb-2 d-flex align-items-center gap-2">
-                                <i className="bi bi-journal-text"></i> Genel Tanımı
-                            </h6>
-                            <p className="m-0 fs-6 text-body lh-base pe-5" style={{ fontWeight: '500' }}>
-                                {highlightText(word.generalDefinition, stickyHighlights, onOpenNotesModal)}
-                            </p>
+                    {/* Special Note (SPECIAL_NOTE) */}
+                    {word.specialNote && word.specialNote !== 'N/A' && (
+                        <div className="mb-4 bg-body rounded-4 p-4 shadow-sm border border-opacity-10">
+                            <h5 className="text-uppercase text-muted fw-bold small letter-spacing-1 border-bottom border-opacity-10 pb-2 mb-3 d-flex align-items-center gap-2">
+                                <i className="bi bi-info-circle-fill text-info"></i> {
+                                    word.language?.toLowerCase() === 'japanese' ? 'Kanji / Dil Bilgisi Detayı' :
+                                    word.language?.toLowerCase() === 'arabic' ? 'Kök Harfleri (Sülasi) & Not' :
+                                    'Dil Bilgisi / Kelime Notu'
+                                }
+                            </h5>
+                            <div className="text-body-emphasis mt-3 p-3 bg-body-secondary bg-opacity-25 rounded-3 border border-secondary border-opacity-10" style={{ fontSize: '0.95rem', lineHeight: '1.6' }}>
+                                {highlightText(word.specialNote, stickyHighlights, onOpenNotesModal)}
+                            </div>
                         </div>
                     )}
 
-                    {/* ── STICKY NOTES SECTION (Moved under General Definition) ── */}
+                    {/* Word Family (TABLO) */}
+                    {(() => {
+                        const splitByCommaOutsideParentheses = (str) => {
+                            const result = [];
+                            let current = '';
+                            let depth = 0;
+                            for (let i = 0; i < str.length; i++) {
+                                const char = str[i];
+                                if (char === '(') {
+                                    depth++;
+                                    current += char;
+                                } else if (char === ')') {
+                                    depth = Math.max(0, depth - 1);
+                                    current += char;
+                                } else if (char === ',' && depth === 0) {
+                                    result.push(current.trim());
+                                    current = '';
+                                } else {
+                                    current += char;
+                                }
+                            }
+                            if (current.trim()) {
+                                result.push(current.trim());
+                            }
+                            return result;
+                        };
+
+                        let familyList = [];
+                        if (word.wordFamily) {
+                            let rawItems = [];
+                            if (Array.isArray(word.wordFamily)) {
+                                // Join and split to fix any bad splits that may have happened in database
+                                const joined = word.wordFamily.join(', ');
+                                rawItems = splitByCommaOutsideParentheses(joined);
+                            } else if (typeof word.wordFamily === 'string') {
+                                rawItems = splitByCommaOutsideParentheses(word.wordFamily);
+                            }
+
+                            rawItems.forEach(item => {
+                                const cleaned = item.replace(/^(Diğer Haller:|Kelime Ailesi:)\s*/i, '');
+                                if (cleaned.trim()) {
+                                    familyList.push(cleaned.trim());
+                                }
+                            });
+                        }
+
+                        if (familyList.length === 0) return null;
+
+                        return (
+                            <div className="mb-4 bg-body rounded-4 p-4 shadow-sm border border-opacity-10">
+                                <h5 className="text-uppercase text-muted fw-bold small letter-spacing-2 border-bottom border-opacity-10 pb-2 mb-3 d-flex align-items-center gap-2">
+                                    <i className="bi bi-diagram-3-fill text-primary"></i> Kelime Ailesi (Word Family)
+                                </h5>
+                                <div className="d-flex flex-wrap gap-3 mt-3">
+                                    {familyList.map((item, i) => {
+                                        const parsed = parseFamilyItem(item);
+                                        if (!parsed) return null;
+                                        const isCurrent = parsed.word.toLowerCase() === word.term.toLowerCase();
+                                        return (
+                                            <Card key={i} className={`flex-grow-1 border-0 shadow-xs rounded-3 ${isCurrent ? 'bg-primary bg-opacity-10 border border-primary border-opacity-25' : 'bg-body-secondary bg-opacity-50'}`} style={{ minWidth: '160px' }}>
+                                                <Card.Body className="p-3 text-center">
+                                                    <div className={`fw-bold fs-6 ${isCurrent ? 'text-primary' : 'text-body-emphasis'}`}>{highlightText(parsed.word, stickyHighlights, onOpenNotesModal)}</div>
+                                                    {parsed.meaning && <div className="text-muted small mt-1">{highlightText(parsed.meaning, stickyHighlights, onOpenNotesModal)}</div>}
+                                                </Card.Body>
+                                            </Card>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        );
+                    })()}
+
+                    {/* Confusables & Mnemonics */}
+                    {(confusable || mnemonic) && (
+                        <Row className="g-4 mb-4">
+                            {confusable && (
+                                <Col md={mnemonic ? 6 : 12}>
+                                    <div className="bg-danger bg-opacity-10 border-start border-danger border-4 p-4 rounded-end-4 h-100 position-relative overflow-hidden">
+                                        <h5 className="text-uppercase text-danger fw-bold small letter-spacing-2 mb-2 d-flex align-items-center gap-2">
+                                            <i className="bi bi-exclamation-circle-fill"></i> Dikkat: Karışabilir!
+                                        </h5>
+                                        <div className="fw-semibold text-danger-emphasis mb-2" style={{ fontSize: '1.05rem' }}>
+                                            Bununla Karıştırmayın: <span className="badge bg-danger text-white rounded-pill px-3 py-1.5 ms-1 fw-bold">{confusable}</span>
+                                        </div>
+                                        {confusableNote && confusableNote !== 'N/A' && (
+                                            <p className="text-body-secondary m-0 small lh-base" style={{ fontWeight: '500' }}>
+                                                {highlightText(confusableNote, stickyHighlights, onOpenNotesModal)}
+                                            </p>
+                                        )}
+                                    </div>
+                                </Col>
+                            )}
+                            
+                            {mnemonic && (
+                                <Col md={confusable ? 6 : 12}>
+                                    <div className="bg-warning bg-opacity-10 border-start border-warning border-4 p-4 rounded-end-4 h-100 position-relative overflow-hidden">
+                                        <h5 className="text-uppercase text-warning fw-bold text-warning-emphasis small letter-spacing-2 mb-2 d-flex align-items-center gap-2">
+                                            <i className="bi bi-lightbulb-fill"></i> Akılda Tutma İpucu
+                                        </h5>
+                                        <p className="text-body-secondary m-0 small lh-base" style={{ fontWeight: '500' }}>
+                                            {highlightText(mnemonic, stickyHighlights, onOpenNotesModal)}
+                                        </p>
+                                    </div>
+                                </Col>
+                            )}
+                        </Row>
+                    )}
+
+                    {/* ── STICKY NOTES SECTION ── */}
                     <div className="sticky-notes-section mb-4">
                         <h5 className="text-uppercase fw-bold small letter-spacing-2 border-bottom border-opacity-10 pb-2 mb-4 d-flex align-items-center gap-2 sticky-notes-title">
                             <i className="bi bi-pin-angle-fill text-warning"></i>
@@ -870,245 +1310,6 @@ function WordDetailModal({
                             </div>
                         )}
                     </div>
-
-                    {word.meanings && word.meanings.length > 0 && (
-                        <div className="mb-5">
-                            <h5 className="text-uppercase text-muted fw-bold small letter-spacing-1 border-bottom border-opacity-10 pb-2 mb-4">Anlamları ve Örnek Cümleler</h5>
-                            <div className="d-flex flex-column gap-3">
-                                {word.meanings.map((m, idx) => (
-                                    <div key={idx} className="meaning-item bg-body shadow-sm p-3 rounded-4 border border-opacity-10">
-                                        <div className="d-flex align-items-center flex-wrap gap-2 mb-2 fw-bold lh-base">
-                                            <Badge bg="primary" className="fw-semibold px-2 py-1 me-1 small" style={{ fontSize: '0.75rem' }}>{m.context || `Anlamı ${idx + 1}`}</Badge>
-                                            <Button
-                                                variant="link"
-                                                className="p-0 text-primary opacity-75 hover-opacity-100 transition-all border-0 shadow-none flex-shrink-0"
-                                                onClick={() => onSpeak && onSpeak(m.definition)}
-                                                title="Sesli Dinle"
-                                            >
-                                                <i className="bi bi-volume-up-fill" style={{ fontSize: '1.1rem' }}></i>
-                                            </Button>
-                                            <span className="fs-6">{highlightText(m.definition, stickyHighlights, onOpenNotesModal)}</span>
-                                        </div>
-                                        {m.examples && m.examples.length > 0 && (
-                                            <div className="ms-md-3 ms-2 d-flex flex-column gap-1 mt-2">
-                                                {m.examples
-                                                    .filter(ex =>
-                                                        !ex.toLowerCase().includes('detaylı i̇nceleme') &&
-                                                        !ex.toLowerCase().includes('detaylı inceleme') &&
-                                                        ex.replace(/['"]/g, '').trim() !== 'Detaylı İnceleme'
-                                                    )
-                                                    .map((ex, exIdx) => {
-                                                        const match = ex.match(/^(.*?)(\([^)]+\))?$/);
-                                                        let engPart = match ? match[1].trim() : ex;
-                                                        let trPart = match && match[2] ? match[2].trim() : null;
-                                                        let label = null;
-                                                        const colonIdx = engPart.indexOf(':');
-                                                        if (colonIdx !== -1) {
-                                                            label = engPart.substring(0, colonIdx + 1).trim();
-                                                            engPart = engPart.substring(colonIdx + 1).trim();
-                                                        }
-                                                        return (
-                                                            <div key={exIdx} className={`position-relative pe-3 ps-3 fs-6 ${engPart ? 'mb-2' : 'mb-1'}`}>
-                                                                {engPart && <span className="position-absolute start-0 text-primary fw-bold" style={{ top: '0' }}>•</span>}
-                                                                {label && <div className="fw-bold text-primary extra-small mb-0 opacity-75" style={{ fontSize: '0.7rem' }}>{label}</div>}
-                                                                {engPart && (
-                                                                    <div className="d-flex align-items-start gap-2 fst-italic text-body mb-0 lh-sm" style={{ fontSize: '0.95rem' }}>
-                                                                        <Button
-                                                                            variant="link"
-                                                                            className="p-0 text-primary opacity-50 hover-opacity-100 transition-all flex-shrink-0"
-                                                                            onClick={() => onSpeak && onSpeak(engPart)}
-                                                                            title="Sesli Dinle"
-                                                                        >
-                                                                            <i className="bi bi-volume-up" style={{ fontSize: '1.1rem' }}></i>
-                                                                        </Button>
-                                                                        <span className="flex-grow-1">"{highlightText(engPart, stickyHighlights, onOpenNotesModal)}"</span>
-                                                                    </div>
-                                                                )}
-                                                                {trPart && <div className={`text-muted fst-italic extra-small ps-2 border-start border-2 border-primary ms-1 ${engPart ? 'mt-0' : ''}`} style={{ fontSize: '0.85rem' }}>{highlightText(trPart, stickyHighlights, onOpenNotesModal)}</div>}
-                                                            </div>
-                                                        );
-                                                    })}
-                                            </div>
-                                        )}
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-
-                    <Row className="g-4 mb-4">
-                        {word.synonyms && (
-                            <Col md={6}>
-                                <h5 className="text-uppercase text-muted fw-bold small letter-spacing-1 border-bottom border-opacity-10 pb-2 mb-3">Eş Anlamlılar</h5>
-                                <ul className="custom-ul">
-                                    {word.synonyms.split(',').map((syn, idx) => (
-                                        <li key={idx} className="fs-6 text-body">{highlightText(syn.trim(), stickyHighlights, onOpenNotesModal)}</li>
-                                    ))}
-                                </ul>
-                            </Col>
-                        )}
-                        {word.antonyms && (
-                            <Col md={6}>
-                                <h5 className="text-uppercase text-muted fw-bold small letter-spacing-1 border-bottom border-opacity-10 pb-2 mb-3">Zıt Anlamlılar</h5>
-                                <ul className="custom-ul">
-                                    {word.antonyms.split(',').map((ant, idx) => (
-                                        <li key={idx} className="fs-6 text-body">{highlightText(ant.trim(), stickyHighlights, onOpenNotesModal)}</li>
-                                    ))}
-                                </ul>
-                            </Col>
-                        )}
-                    </Row>
-
-                    {word.collocations && word.collocations.length > 0 && (
-                        <div className="mb-4">
-                            <h5 className="text-uppercase text-muted fw-bold small letter-spacing-1 border-bottom border-opacity-10 pb-2 mb-3">Kullanıldığı Edatlar (Collocations)</h5>
-                            <ul className="custom-ul">
-                                {word.collocations.map((item, i) => {
-                                    const lines = item.split('\n');
-                                    return (
-                                        <li key={i} className="fs-6 mb-3">
-                                            <div className="fw-medium text-body d-flex align-items-start gap-2">
-                                                <Button
-                                                    variant="link"
-                                                    className="p-0 text-primary opacity-50 hover-opacity-100 transition-all border-0 shadow-none flex-shrink-0 mt-0"
-                                                    style={{ paddingTop: '2px' }}
-                                                    onClick={() => onSpeak && onSpeak(lines[0])}
-                                                    title="Sesli Dinle"
-                                                >
-                                                    <i className="bi bi-volume-up" style={{ fontSize: '1rem' }}></i>
-                                                </Button>
-                                                <span className="flex-grow-1">{highlightText(lines[0], stickyHighlights, onOpenNotesModal)}</span>
-                                            </div>
-                                            {lines.slice(1).map((line, li) => (
-                                                <div key={li} className="text-muted fst-italic small ps-2 border-start border-2 border-primary ms-1 mt-1">{highlightText(line, stickyHighlights, onOpenNotesModal)}</div>
-                                            ))}
-                                        </li>
-                                    );
-                                })}
-                            </ul>
-                        </div>
-                    )}
-
-                    {word.idioms && word.idioms.length > 0 && (
-                        <div className="mb-4">
-                            <h5 className="text-uppercase text-muted fw-bold small letter-spacing-1 border-bottom border-opacity-10 pb-2 mb-3">Deyimler (Idioms)</h5>
-                            <ul className="custom-ul">
-                                {word.idioms.map((item, i) => {
-                                    const lines = item.split('\n');
-                                    return (
-                                        <li key={i} className="fs-6 mb-3">
-                                            <div className="fw-medium text-body d-flex align-items-start gap-2">
-                                                <Button
-                                                    variant="link"
-                                                    className="p-0 text-primary opacity-50 hover-opacity-100 transition-all border-0 shadow-none flex-shrink-0 mt-0"
-                                                    style={{ paddingTop: '2px' }}
-                                                    onClick={() => onSpeak && onSpeak(lines[0])}
-                                                    title="Sesli Dinle"
-                                                >
-                                                    <i className="bi bi-volume-up" style={{ fontSize: '1rem' }}></i>
-                                                </Button>
-                                                <span className="flex-grow-1">{highlightText(lines[0], stickyHighlights, onOpenNotesModal)}</span>
-                                            </div>
-                                            {lines.slice(1).map((line, li) => (
-                                                <div key={li} className="text-muted fst-italic small ps-2 border-start border-2 border-primary ms-1 mt-1">{highlightText(line, stickyHighlights, onOpenNotesModal)}</div>
-                                            ))}
-                                        </li>
-                                    );
-                                })}
-                            </ul>
-                        </div>
-                    )}
-
-                    {word.wordFamily && word.wordFamily.length > 0 && (
-                        <div className="mb-4">
-                            <h5 className="text-uppercase text-muted fw-bold small letter-spacing-2 border-bottom border-opacity-10 pb-2 mb-3 d-flex align-items-center gap-2">
-                                <i className="bi bi-diagram-3-fill text-primary"></i> Kelime Ailesi (Word Family)
-                            </h5>
-                            <div className="d-flex flex-column gap-2 ps-1">
-                                {word.wordFamily.map((item, i) => {
-                                    const parts = item.split('–');
-                                    return (
-                                        <div key={i} className="d-flex align-items-baseline gap-2 border-bottom border-opacity-10 pb-2 last-child-border-0">
-                                            <i className="bi bi-arrow-right-short text-primary"></i>
-                                            <div className="flex-grow-1">
-                                                <span className="fw-bold text-body">{highlightText(parts[0]?.trim(), stickyHighlights, onOpenNotesModal)}</span>
-                                                {parts[1] && <span className="text-muted small ms-2 fst-italic">— {highlightText(parts[1].trim(), stickyHighlights, onOpenNotesModal)}</span>}
-                                            </div>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        </div>
-                    )}
-
-                    {word.grammar && word.grammar.length > 0 && (
-                        <div className="mb-4 bg-body-tertiary p-3 rounded-4 border border-opacity-10 shadow-sm border-start border-primary border-4">
-                            <h5 className="text-uppercase text-primary fw-bold small letter-spacing-2 mb-3 d-flex align-items-center gap-2">
-                                <i className="bi bi-code-square"></i> Gramer Özellikleri
-                            </h5>
-                            <div className="d-flex flex-column gap-2 ps-1">
-                                {word.grammar.map((item, i) => {
-                                    const parts = item.split(':');
-                                    return (
-                                        <div key={i} className="d-flex align-items-baseline gap-2">
-                                            <i className="bi bi-dot text-primary fs-4 lh-1"></i>
-                                            <div className="fs-6">
-                                                <span className="text-muted-emphasis fw-semibold me-2">{highlightText(parts[0]?.trim() + ':', stickyHighlights, onOpenNotesModal)}</span>
-                                                <span className="text-body">{highlightText(parts.slice(1).join(':').trim(), stickyHighlights, onOpenNotesModal)}</span>
-                                            </div>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        </div>
-                    )}
-
-                    {word.tips && word.tips.length > 0 && (
-                        <div className="mb-4 bg-danger bg-opacity-10 border-start border-danger border-4 p-3 rounded-end-4 overflow-hidden position-relative">
-                            <i className="bi bi-patch-exclamation text-danger opacity-10 position-absolute end-0 bottom-0 m-n2" style={{ fontSize: '4rem' }}></i>
-                            <h6 className="text-uppercase text-danger fw-bold small letter-spacing-2 mb-3 d-flex align-items-center gap-2">
-                                <i className="bi bi-exclamation-triangle-fill"></i> Sık Yapılan Hatalar ve İpuçları
-                            </h6>
-                            <div className="d-flex flex-column gap-2">
-                                {word.tips.map((item, i) => {
-                                    const lower = item.toLowerCase();
-                                    const isErrorReason = lower.startsWith('hata nedeni:');
-                                    const isWrong = lower.startsWith('yanlış kullanım:');
-                                    const isCorrect = lower.startsWith('doğru kullanım:');
-                                    const isTranslation = lower.startsWith('(') && lower.endsWith(')');
-
-                                    let content = item;
-                                    let styleClass = "text-body-emphasis";
-                                    let icon = null;
-                                    let extraMargin = "";
-
-                                    if (isErrorReason) {
-                                        styleClass = "bg-warning bg-opacity-10 text-warning-emphasis p-2 rounded-3 mb-1 border-start border-warning border-3 d-flex align-items-start";
-                                        icon = <i className="bi bi-lightbulb-fill text-warning me-2 mt-1"></i>;
-                                        extraMargin = "mt-2";
-                                    } else if (isWrong) {
-                                        styleClass = "text-danger-emphasis fw-semibold ps-4 position-relative mb-0";
-                                        icon = <i className="bi bi-x-lg text-danger position-absolute start-0 top-0 mt-1" style={{fontSize: '0.8rem'}}></i>;
-                                    } else if (isCorrect) {
-                                        styleClass = "text-success-emphasis fw-semibold ps-4 position-relative mb-0";
-                                        icon = <i className="bi bi-check-lg text-success position-absolute start-0 top-0 mt-1"></i>;
-                                    } else if (isTranslation) {
-                                        styleClass = "text-muted small fst-italic ps-4 mb-2 opacity-75";
-                                    }
-
-                                    return (
-                                        <div key={i} className={`fs-6 ${styleClass} ${extraMargin}`}>
-                                            {icon}
-                                            {highlightText(content, stickyHighlights, onOpenNotesModal)}
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        </div>
-                    )}
-
-
-
                 </Modal.Body>
             </Modal>
         </>

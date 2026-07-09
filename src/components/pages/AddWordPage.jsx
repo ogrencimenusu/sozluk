@@ -68,13 +68,52 @@ const AddWordPage = ({
   }, [words]);
 
   return (
-    <Container fluid className="main-app-container animation-fade-in" style={{ animation: 'fadeIn 0.3s ease-in-out' }}>
-      <PageHeader 
-        title={editingWordId ? "Kelime Düzenle" : "Kelime Ekle"} 
-        icon="bi-plus-lg" 
-        onBack={closeModal} 
-        dailyStats={dailyStats} 
-      />
+    <div className="premium-add-word-wrapper animate-fade-in py-2">
+      {/* Premium Dashboard Header Banner */}
+      <div 
+        className="premium-header-banner mb-4 p-4 p-md-5 rounded-4 d-flex align-items-center gap-4 text-white position-relative overflow-hidden" 
+        style={{ 
+          background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)',
+          boxShadow: '0 10px 30px rgba(99, 102, 241, 0.12)',
+          borderRadius: '24px'
+        }}
+      >
+        {/* Background glow overlay */}
+        <div 
+          className="position-absolute rounded-circle" 
+          style={{ 
+            width: '180px', 
+            height: '180px', 
+            background: 'rgba(255, 255, 255, 0.08)', 
+            top: '-60px', 
+            right: '-30px',
+            filter: 'blur(35px)',
+            pointerEvents: 'none'
+          }}
+        ></div>
+        
+        <div 
+          className="d-flex align-items-center justify-content-center rounded-circle flex-shrink-0" 
+          style={{ 
+            width: '56px', 
+            height: '56px', 
+            background: 'rgba(255, 255, 255, 0.15)',
+            border: '1px solid rgba(255, 255, 255, 0.25)',
+            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.05)',
+            backdropFilter: 'blur(4px)'
+          }}
+        >
+          <i className="bi bi-bookmark-plus-fill fs-3 text-white"></i>
+        </div>
+        <div>
+          <h2 className="fw-extrabold mb-1" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontSize: '1.65rem', fontWeight: '800', letterSpacing: '-0.5px' }}>
+            {editingWordId ? "Kelime Düzenle" : "Yeni Kelime Ekle"}
+          </h2>
+          <p className="mb-0 text-white-50 small" style={{ fontSize: '0.88rem', opacity: 0.85 }}>
+            Sözlüğünüze yeni kelimeler kazandırın veya mevcut kelime detaylarını güncelleyin.
+          </p>
+        </div>
+      </div>
 
       <Row className="g-4">
         {/* Sol Kolon: Son Eklenen Kelimeler - Desktop'ta solda, Mobil'de altta (order-2) */}
@@ -269,7 +308,7 @@ const AddWordPage = ({
                     value={termText}
                     onChange={e => setTermText(e.target.value)}
                     required
-                    placeholder="Kelime: compromise&#10;Türkçe Okunuşu: kom-pro-mayz..."
+                    placeholder="WORD: agitated&#10;&#10;[SECTION: DIL_BILGISI]&#10;BASE_FORM: agitate&#10;ZELEME_DURUMU: Past Participle (V3)&#10;...&#10;&#10;[WORD_END]"
                     className="font-monospace bg-body-secondary border-0 p-4 rounded-4 shadow-none fs-6"
                     style={{ resize: 'vertical' }}
                   />
@@ -330,7 +369,7 @@ const AddWordPage = ({
           </Card>
         </Col>
       </Row>
-    </Container>
+    </div>
   );
 };
 

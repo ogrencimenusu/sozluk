@@ -13,7 +13,8 @@ const PracticeTestContainer = forwardRef((props, ref) => {
         practiceTests, onSaveTest, onDeleteTest, onDeleteAllTests, onTogglePinTest,
         customLists, onAddWordsToList, onRemoveWordFromList,
         stickyNotes, onUpdateNote, onUpdateStatus,
-        onLoadTestDetails, onAddNote, onDeleteNote, onOpenNotesModal
+        onLoadTestDetails, onAddNote, onDeleteNote, onOpenNotesModal,
+        customQuickTests, onSaveQuickTest, onDeleteQuickTest
     } = props;
 
     const [testState, setTestState] = useState('options'); // 'options' | 'running' | 'results'
@@ -33,11 +34,14 @@ const PracticeTestContainer = forwardRef((props, ref) => {
     // Expose goBack to parent
     useImperativeHandle(ref, () => ({
         goBack: () => {
-            if (testState === 'running') {
+            if (testState === 'running' || testState === 'results') {
                 handleCloseTest();
                 return true; // Handled internally
             }
             return false; // Not handled, parent should handle
+        },
+        resetToOptions: () => {
+            handleCloseTest();
         }
     }));
 
@@ -63,6 +67,11 @@ const PracticeTestContainer = forwardRef((props, ref) => {
         // Filter by Learning Status (Only if no custom lists are selected)
         if (!hasListSelection && config.learningStatus) {
             pool = pool.filter(w => config.learningStatus[w.learningStatus || 'Yeni']);
+        }
+
+        // Filter by Language
+        if (config.selectedLanguage && config.selectedLanguage !== 'all') {
+            pool = pool.filter(w => w.language === config.selectedLanguage);
         }
 
         // Filter by Custom Lists
@@ -139,53 +148,146 @@ const PracticeTestContainer = forwardRef((props, ref) => {
             let turkishTranslation = null;
 
             if (isFormatExample) {
-                const candidates = [];
-                if (targetWord.meanings) {
-                    for (const m of targetWord.meanings) {
-                        // Check if this context is allowed by filter
-                        if (config.selectedContexts && m.context) {
-                            const ctxLower = m.context.toLowerCase();
-                            let matchesCategory = false;
-                            let belongsToAnyCategory = false;
+                let wordGrammarStatus = 'Yalın Hal';
+                if (targetWord.grammar && Array.isArray(targetWord.grammar)) {
+                    targetWord.grammar.forEach(g => {
+                        if (g.startsWith('Zaman/Çekim:')) {
+                            wordGrammarStatus = g.substring(12).trim();
+                        }
+                    });
+                }
 
-                            if (ctxLower.includes('yalın hal')) { belongsToAnyCategory = true; if (config.selectedContexts['Yalın Hal']) matchesCategory = true; }
-                            else if (ctxLower.includes('geniş zaman')) { belongsToAnyCategory = true; if (config.selectedContexts['Geniş Zaman']) matchesCategory = true; }
-                            else if (ctxLower.includes('geçmiş zaman')) { belongsToAnyCategory = true; if (config.selectedContexts['Geçmiş Zaman']) matchesCategory = true; }
-                            else if (ctxLower.includes('past participle')) { belongsToAnyCategory = true; if (config.selectedContexts['Past Participle']) matchesCategory = true; }
-                            else if (ctxLower.includes('şimdiki zaman') || ctxLower.includes('devam eden')) { belongsToAnyCategory = true; if (config.selectedContexts['Şimdiki Zaman']) matchesCategory = true; }
-                            
-                            // If it belongs to one of the 5 categories but that category is unchecked, skip it.
-                            if (belongsToAnyCategory && !matchesCategory) {
-                                continue;
+                // Check if grammar matches config.selectedContexts (if filter is active)
+                if (config.selectedContexts) {
+                    const statusLower = wordGrammarStatus.toLowerCase();
+                    let belongsToAnyCategory = false;
+                    let matchesCategory = false;
+
+                    if (statusLower.includes('yalın')) {
+                        belongsToAnyCategory = true;
+                        if (config.selectedContexts['Yalın Hal']) matchesCategory = true;
+                    } else if (statusLower.includes('geniş zaman') || statusLower.includes('present')) {
+                        belongsToAnyCategory = true;
+                        if (config.selectedContexts['Geniş Zaman']) matchesCategory = true;
+                    } else if (statusLower.includes('geçmiş zaman') || statusLower.includes('past tense') || statusLower.includes('v2')) {
+                        belongsToAnyCategory = true;
+                        if (config.selectedContexts['Geçmiş Zaman']) matchesCategory = true;
+                    } else if (statusLower.includes('past participle') || statusLower.includes('v3')) {
+                        belongsToAnyCategory = true;
+                        if (config.selectedContexts['Past Participle']) matchesCategory = true;
+                    } else if (statusLower.includes('şimdiki zaman') || statusLower.includes('devam eden') || statusLower.includes('continuous')) {
+                        belongsToAnyCategory = true;
+                        if (config.selectedContexts['Şimdiki Zaman']) matchesCategory = true;
+                    }
+
+                    if (belongsToAnyCategory && !matchesCategory) {
+                        isFormatExample = false;
+                    }
+                }
+
+                if (isFormatExample) {
+                    const candidates = [];
+                    const rawExamples = [];
+                    if (targetWord.meanings && Array.isArray(targetWord.meanings)) {
+                        targetWord.meanings.forEach(m => {
+                            if (m.examples && Array.isArray(m.examples)) {
+                                m.examples.forEach(ex => {
+                                    if (ex && !rawExamples.includes(ex)) {
+                                        rawExamples.push(ex);
+                                    }
+                                });
                             }
-                        }
+                        });
+                    }
 
-                        const termToMatch = targetWord.term.toLowerCase().slice(0, Math.max(3, targetWord.term.length - 2));
-                        
-                        if (m.definition && m.definition.toLowerCase().includes(termToMatch)) {
-                            candidates.push({ text: m.definition, context: m.context, translation: null });
-                        }
-                        if (m.examples) {
-                            for (const ex of m.examples) {
-                                const match = ex.match(/^(.*?)(\([^)]+\))?$/);
-                                let engPart = match ? match[1].trim() : ex;
-                                let trPart = match && match[2] ? match[2].trim() : null;
-                                if (engPart && engPart.toLowerCase().includes(termToMatch)) {
-                                    candidates.push({ text: engPart, context: m.context, translation: trPart });
+                    const termLower = targetWord.term.toLowerCase();
+                    const termRoot = termLower.slice(0, Math.max(3, termLower.length - 2));
+
+                    rawExamples.forEach(ex => {
+                        let engPart = '';
+                        let trPart = null;
+                        if (ex) {
+                            if (typeof ex === 'object' && ex.en) {
+                                engPart = ex.en;
+                                trPart = ex.tr || null;
+                            } else if (typeof ex === 'string') {
+                                engPart = ex;
+                                const trimmedEx = ex.trim();
+                                if (trimmedEx.endsWith(')')) {
+                                    let balance = 0;
+                                    let openParenIdx = -1;
+                                    for (let i = trimmedEx.length - 1; i >= 0; i--) {
+                                        if (trimmedEx[i] === ')') balance++;
+                                        else if (trimmedEx[i] === '(') {
+                                            balance--;
+                                            if (balance === 0) {
+                                                openParenIdx = i;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    if (openParenIdx !== -1) {
+                                        engPart = trimmedEx.substring(0, openParenIdx).trim();
+                                        trPart = trimmedEx.substring(openParenIdx + 1, trimmedEx.length - 1).trim();
+                                    }
                                 }
                             }
                         }
+
+                        engPart = engPart.replace(/^['"]|['"]$/g, '').trim();
+                        if (trPart) trPart = trPart.replace(/^['"]|['"]$/g, '').trim();
+
+                        if (engPart.toLowerCase().includes(termRoot)) {
+                            candidates.push({ text: engPart, context: wordGrammarStatus, translation: trPart });
+                        }
+                    });
+
+                    if (candidates.length > 0) {
+                        const chosen = candidates[Math.floor(Math.random() * candidates.length)];
+                        exampleSentence = chosen.text;
+                        sentenceContext = chosen.context;
+                        turkishTranslation = chosen.translation;
+                    } else if (rawExamples.length > 0) {
+                        const firstEx = rawExamples[0];
+                        let engPart = '';
+                        let trPart = null;
+                        if (firstEx) {
+                            if (typeof firstEx === 'object' && firstEx.en) {
+                                engPart = firstEx.en;
+                                trPart = firstEx.tr || null;
+                            } else if (typeof firstEx === 'string') {
+                                engPart = firstEx;
+                                const trimmedEx = firstEx.trim();
+                                if (trimmedEx.endsWith(')')) {
+                                    let balance = 0;
+                                    let openParenIdx = -1;
+                                    for (let i = trimmedEx.length - 1; i >= 0; i--) {
+                                        if (trimmedEx[i] === ')') balance++;
+                                        else if (trimmedEx[i] === '(') {
+                                            balance--;
+                                            if (balance === 0) {
+                                                openParenIdx = i;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    if (openParenIdx !== -1) {
+                                        engPart = trimmedEx.substring(0, openParenIdx).trim();
+                                        trPart = trimmedEx.substring(openParenIdx + 1, trimmedEx.length - 1).trim();
+                                    }
+                                }
+                            }
+                        }
+
+                        exampleSentence = engPart.replace(/^['"]|['"]$/g, '').trim();
+                        sentenceContext = wordGrammarStatus;
+                        turkishTranslation = trPart ? trPart.replace(/^['"]|['"]$/g, '').trim() : null;
+                    } else {
+                        isFormatExample = false;
+                        isFormatDefinition = true;
+                        activeFormat = 'definition';
                     }
-                }
-                
-                if (candidates.length > 0) {
-                    // Pick a random candidate
-                    const chosen = candidates[Math.floor(Math.random() * candidates.length)];
-                    exampleSentence = chosen.text;
-                    sentenceContext = chosen.context;
-                    turkishTranslation = chosen.translation;
                 } else {
-                    isFormatExample = false;
                     isFormatDefinition = true;
                     activeFormat = 'definition';
                 }
@@ -199,21 +301,34 @@ const PracticeTestContainer = forwardRef((props, ref) => {
                 const termLower = targetWord.term.toLowerCase();
                 let replaced = false;
                 let extractedTargetWord = targetWord.term; // fallback
-                const wordsInSentence = exampleSentence.split(/([\b\s.,!?;:()]+)/);
-                const processedWords = wordsInSentence.map(token => {
-                    if (!replaced && /[A-Za-z]+/.test(token)) {
-                        const tLower = token.toLowerCase();
-                        if (tLower === termLower || (tLower.startsWith(termLower.slice(0, Math.max(3, termLower.length - 1))) && levenshteinDistance(tLower, termLower) <= 3)) {
-                            replaced = true;
-                            extractedTargetWord = token; // capture the exact word form used in the sentence
-                            // Do not output trailing underscore if word ends quickly, use formula
-                            return '_ '.repeat(Math.max(5, token.length)).trim();
+                let processedSentence = exampleSentence;
+
+                // Simple check for exact substring first (natively works for space-less Japanese and exact Arabic)
+                const indexOfTerm = exampleSentence.toLowerCase().indexOf(termLower);
+                if (indexOfTerm !== -1) {
+                    extractedTargetWord = exampleSentence.substring(indexOfTerm, indexOfTerm + targetWord.term.length);
+                    const replaceStr = '_ '.repeat(Math.max(5, extractedTargetWord.length)).trim();
+                    processedSentence = exampleSentence.substring(0, indexOfTerm) + replaceStr + exampleSentence.substring(indexOfTerm + targetWord.term.length);
+                    replaced = true;
+                }
+
+                // If not replaced (e.g. English inflections like trail -> trailed), fallback to token/regex search
+                if (!replaced) {
+                    const wordsInSentence = exampleSentence.split(/([\b\s.,!?;:()]+)/);
+                    const processedWords = wordsInSentence.map(token => {
+                        if (!replaced && /[A-Za-z]+/.test(token)) {
+                            const tLower = token.toLowerCase();
+                            if (tLower === termLower || (tLower.startsWith(termLower.slice(0, Math.max(3, termLower.length - 1))) && levenshteinDistance(tLower, termLower) <= 3)) {
+                                replaced = true;
+                                extractedTargetWord = token; // capture the exact word form used in the sentence
+                                return '_ '.repeat(Math.max(5, token.length)).trim();
+                            }
                         }
-                    }
-                    return token;
-                });
+                        return token;
+                    });
+                    processedSentence = processedWords.join('');
+                }
                 
-                let processedSentence = processedWords.join('');
                 if (!replaced) {
                     const termRoot = targetWord.term.toLowerCase().slice(0, Math.max(3, targetWord.term.length - 2));
                     const fallbackRegex = new RegExp(`\\b\\w{0,2}${termRoot}\\w*\\b`, 'i');
@@ -221,7 +336,6 @@ const PracticeTestContainer = forwardRef((props, ref) => {
                     if (match && match[0]) {
                         extractedTargetWord = match[0];
                     }
-                    // Prevent replacement with 'undefined' if somehow length isn't calculated
                     const replaceStr = '_ '.repeat(Math.max(5, extractedTargetWord?.length || targetWord.term.length)).trim();
                     processedSentence = exampleSentence.replace(new RegExp(`\\b\\w{0,2}${termRoot}\\w*\\b`, 'gi'), replaceStr);
                 }
@@ -497,7 +611,7 @@ const PracticeTestContainer = forwardRef((props, ref) => {
     };
 
     return (
-        <div className="bg-body d-flex flex-column" style={{ minHeight: '100vh' }}>
+        <div className="bg-transparent d-flex flex-column" style={{ minHeight: '100vh' }}>
             {testState === 'options' && (
                 <PracticeTestOptions
                     maxQuestions={words.length}
@@ -512,6 +626,10 @@ const PracticeTestContainer = forwardRef((props, ref) => {
                     onDeleteAllTests={onDeleteAllTests}
                     onTogglePinTest={onTogglePinTest}
                     customLists={customLists}
+                    customQuickTests={customQuickTests}
+                    onSaveQuickTest={onSaveQuickTest}
+                    onDeleteQuickTest={onDeleteQuickTest}
+                    dailyStats={dailyStats}
                 />
             )}
             {testState === 'running' && (

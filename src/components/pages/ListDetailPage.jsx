@@ -33,25 +33,53 @@ const ListDetailPage = ({
   const listWords = words.filter(w => list.wordIds?.includes(w.id));
 
   return (
-    <Container fluid className="main-app-container animation-fade-in" style={{ animation: 'fadeIn 0.3s ease-in-out' }}>
-      <PageHeader 
-        title={list.name} 
-        icon="bi-collection-play-fill" 
-        onBack={() => navigateTo('custom-lists')} 
-        dailyStats={dailyStats}
-        rightContent={
-          <div className="d-flex align-items-center gap-2">
-            <Badge bg="primary" className="bg-opacity-10 text-primary rounded-pill px-3 py-2 fw-bold shadow-sm d-none d-sm-block">
-              {listWords.length} Kelime
-            </Badge>
+    <div className="premium-list-detail-wrapper animate-fade-in py-2">
+      {/* Premium Dashboard Header Banner */}
+      <div 
+        className="premium-header-banner mb-4 p-4 p-md-5 rounded-4 d-flex align-items-center justify-content-between text-white position-relative overflow-hidden" 
+        style={{ 
+          background: 'linear-gradient(135deg, #0284c7 0%, #3b82f6 100%)',
+          boxShadow: '0 10px 30px rgba(14, 165, 233, 0.12)',
+          borderRadius: '24px'
+        }}
+      >
+        {/* Background glow overlay */}
+        <div 
+          className="position-absolute rounded-circle" 
+          style={{ 
+            width: '180px', 
+            height: '180px', 
+            background: 'rgba(255, 255, 255, 0.08)', 
+            top: '-60px', 
+            right: '-30px',
+            filter: 'blur(35px)',
+            pointerEvents: 'none'
+          }}
+        ></div>
+        
+        <div className="d-flex align-items-center gap-4">
+          <div 
+            className="d-flex align-items-center justify-content-center rounded-circle flex-shrink-0" 
+            style={{ 
+              width: '56px', 
+              height: '56px', 
+              background: 'rgba(255, 255, 255, 0.15)',
+              border: '1px solid rgba(255, 255, 255, 0.25)',
+              boxShadow: '0 8px 32px rgba(0, 0, 0, 0.05)',
+              backdropFilter: 'blur(4px)'
+            }}
+          >
+            <i className="bi bi-folder2-open fs-3 text-white"></i>
           </div>
-        }
-      />
-
-      <div className="mb-4 d-sm-none text-center">
-         <Badge bg="primary" className="bg-opacity-10 text-primary rounded-pill px-3 py-2 fw-bold shadow-sm">
-            {listWords.length} Kelime
-         </Badge>
+          <div>
+            <h2 className="fw-extrabold mb-1" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontSize: '1.65rem', fontWeight: '800', letterSpacing: '-0.5px' }}>
+              {list.name}
+            </h2>
+            <p className="mb-0 text-white-50 small" style={{ fontSize: '0.88rem', opacity: 0.85 }}>
+              Bu listede şu an {listWords.length} kelime bulunuyor.
+            </p>
+          </div>
+        </div>
       </div>
 
       <Row className="g-3 g-md-4">
@@ -99,7 +127,17 @@ const ListDetailPage = ({
                   <div className="d-flex justify-content-between align-items-start mb-2">
                     <div className="min-w-0 flex-grow-1 pe-2">
                       <h4 className="fw-bold mb-0 text-primary text-truncate" title={word.term}>{word.term}</h4>
-                      {word.pronunciation && <span className="text-muted small">/{word.pronunciation}/</span>}
+                      {(() => {
+                        if (!word.pronunciation) return null;
+                        let displayPron = word.pronunciation;
+                        if (displayPron.includes('(')) {
+                          const match = displayPron.match(/^(.*?)\s*\(([^)]+)\)$/);
+                          if (match) displayPron = match[2].trim();
+                        } else {
+                          displayPron = displayPron.replace(/^\/|\/$/g, '').trim();
+                        }
+                        return <span className="text-muted small">({displayPron})</span>;
+                      })()}
                     </div>
                     <Button 
                       variant="link" 
@@ -112,7 +150,7 @@ const ListDetailPage = ({
                   </div>
 
                   <p className="text-body fw-medium mb-3 line-clamp-2" title={word.shortMeanings} style={{ fontSize: '0.95rem' }}>
-                    {word.shortMeanings}
+                    {word.shortMeanings ? word.shortMeanings.split(',').map((m, idx) => `${idx + 1}. ${m.trim()}`).join(', ') : ''}
                   </p>
 
                   <div className="mt-auto pt-3 border-top border-opacity-10 d-flex justify-content-between align-items-center">
@@ -131,7 +169,7 @@ const ListDetailPage = ({
                     <Button 
                       variant="link" 
                       className="p-0 text-primary opacity-50 hover-opacity-100"
-                      onClick={(e) => { e.stopPropagation(); handleSpeak(word.term); }}
+                      onClick={(e) => { e.stopPropagation(); handleSpeak(word.term, word); }}
                     >
                       <i className="bi bi-volume-up-fill fs-5"></i>
                     </Button>
@@ -142,7 +180,7 @@ const ListDetailPage = ({
           ))
         )}
       </Row>
-    </Container>
+    </div>
   );
 };
 
